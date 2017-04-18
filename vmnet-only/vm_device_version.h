@@ -35,6 +35,8 @@
 #endif
 #endif
 
+#include <linux/pci_ids.h>
+
 /* LSILogic 53C1030 Parallel SCSI controller
  * LSILogic SAS1068 SAS controller
  */
@@ -53,7 +55,10 @@
  *    VMware HD Audio codec
  *    VMware HD Audio controller
  */
+#ifndef PCI_VENDOR_ID_VMWARE
 #define PCI_VENDOR_ID_VMWARE                    0x15AD
+#endif
+
 #define PCI_DEVICE_ID_VMWARE_SVGA3              0x0406
 #define PCI_DEVICE_ID_VMWARE_SVGA2              0x0405
 #define PCI_DEVICE_ID_VMWARE_SVGA               0x0710
