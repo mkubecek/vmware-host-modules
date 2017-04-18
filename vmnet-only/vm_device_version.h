@@ -76,7 +76,11 @@
 #define PCI_DEVICE_ID_VMWARE_1394               0x0780
 #define PCI_DEVICE_ID_VMWARE_BRIDGE             0x0790
 #define PCI_DEVICE_ID_VMWARE_ROOTPORT           0x07A0
+
+#ifndef PCI_DEVICE_ID_VMWARE_VMXNET3
 #define PCI_DEVICE_ID_VMWARE_VMXNET3            0x07B0
+#endif
+
 #define PCI_DEVICE_ID_VMWARE_PVSCSI             0x07C0
 #define PCI_DEVICE_ID_VMWARE_82574              0x07D0
 #define PCI_DEVICE_ID_VMWARE_AHCI               0x07E0
