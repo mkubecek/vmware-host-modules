@@ -74,6 +74,11 @@
 #include <linux/kthread.h>
 #include <linux/wait.h>
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+#include <linux/signal.h>
+#include <linux/sched/signal.h>
+#endif
+
 
 #include "vmware.h"
 #include "x86apic.h"
