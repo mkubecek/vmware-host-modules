@@ -105,7 +105,11 @@ long LinuxDriver_Ioctl(struct file *filp, u_int iocmd,
 static int LinuxDriver_Close(struct inode *inode, struct file *filp);
 static unsigned int LinuxDriverPoll(struct file *file, poll_table *wait);
 #if defined(VMW_NOPAGE_2624)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+static int LinuxDriverFault(struct vm_fault *fault);
+#else
 static int LinuxDriverFault(struct vm_area_struct *vma, struct vm_fault *fault);
+#endif
 #else
 static struct page *LinuxDriverNoPage(struct vm_area_struct *vma,
                                       unsigned long address,
@@ -882,14 +886,21 @@ LinuxDriverPollTimeout(unsigned long clientData)  // IN:
  */
 
 #if defined(VMW_NOPAGE_2624)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+static int LinuxDriverFault(struct vm_fault *fault)     //IN/OUT
+#else
 static int LinuxDriverFault(struct vm_area_struct *vma, //IN
                             struct vm_fault *fault)     //IN/OUT
+#endif
 #else
 static struct page *LinuxDriverNoPage(struct vm_area_struct *vma, //IN
                                       unsigned long address,      //IN
                                       int *type)                  //OUT: Fault type
 #endif
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+   struct vm_area_struct *vma = fault->vma;
+#endif
    VMLinux *vmLinux = (VMLinux *) vma->vm_file->private_data;
    unsigned long pg;
    struct page* page;
