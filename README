@@ -1,0 +1,23 @@
+This repository tracks patches needed to build VMware (Player and
+Workstation) host modules against recent kernels. As it focuses on recent
+kernels (older ones do not need patching), only vmmon and vmnet modules are
+currently handled as the rest has been upstreamed for some time.
+
+Main branch master handles only "infrastructure" files which do not belong
+to VMware module sources. Two other branches, "player" and "workstation"
+track upstream module sources distributed with Player and Workstation,
+respectively. Tags of the form "p${version}" (e.g.  "p12.5.5") and
+"w${version}" correspond to clean unpacked sources of modules from
+a particular version of Player or Workstation.
+
+From these tags, branches "player-${version}" and "workstation-${version}"
+are forked. These branches track changes needed to build these modules
+against recent kernel versions. Tag "p${ver}-k${ver}" marks the set of
+changes needed to build modules from Player ${ver} against kernel ${ver},
+e.g. p12.5.5-k4.11 is for Player 12.5.5 and kernel 4.11; similar naming
+scheme "w${ver}-k${kver}" is used for Workstation modules. In general,
+later points in the branch should also work with older kernels (e.g.
+p12.5.5-k4.11 with kernel 4.10) but it's not completely reliable.
+
+This repository is provided "as is" with no guarantees. Use the contents on
+your own risk.
