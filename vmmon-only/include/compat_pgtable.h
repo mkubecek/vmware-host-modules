@@ -64,28 +64,48 @@
  * Appeared in 2.6.10-rc2-mm1.  Older kernels did L4 page tables as 
  * part of pgd_offset, or they did not have L4 page tables at all.
  * In 2.6.11 pml4 -> pgd -> pmd -> pte hierarchy was replaced by
- * pgd -> pud -> pmd -> pte hierarchy.
+ * pgd -> pud -> pmd -> pte hierarchy. In 4.12, it was replaced by
+ * pgd -> p4d -> pud -> pmd -> pte hierarchy (5-level page tables).
  */
-#ifdef PUD_MASK
+#ifdef P4D_MASK
 #   define compat_pgd_offset(mm, address)   pgd_offset(mm, address)
 #   define compat_pgd_present(pgd)          pgd_present(pgd)
-#   define compat_pud_offset(pgd, address)  pud_offset(pgd, address)
+#   define compat_p4d_offset(pgd, address)  p4d_offset(pgd, address)
+#   define compat_p4d_present(p4d)          p4d_present(p4d)
+#   define compat_pud_offset(p4d, address)  pud_offset(p4d, address)
 #   define compat_pud_present(pud)          pud_present(pud)
 typedef pgd_t  compat_pgd_t;
+typedef p4d_t  compat_p4d_t;
+typedef pud_t  compat_pud_t;
+#elif defined(PUD_MASK)
+#   define compat_pgd_offset(mm, address)   pgd_offset(mm, address)
+#   define compat_pgd_present(pgd)          pgd_present(pgd)
+#   define compat_p4d_offset(pgd, address)  (pgd)
+#   define compat_p4d_present(p4d)          (1)
+#   define compat_pud_offset(p4d, address)  pud_offset(p4d, address)
+#   define compat_pud_present(pud)          pud_present(pud)
+typedef pgd_t  compat_pgd_t;
+typedef pgd_t  compat_p4d_t;
 typedef pud_t  compat_pud_t;
 #elif defined(pml4_offset)
 #   define compat_pgd_offset(mm, address)   pml4_offset(mm, address)
 #   define compat_pgd_present(pml4)         pml4_present(pml4)
+#   define compat_p4d_offset(pml4, address) (pml4)
+#   define compat_p4d_present(pml4)         (1)
 #   define compat_pud_offset(pml4, address) pml4_pgd_offset(pml4, address)
 #   define compat_pud_present(pgd)          pgd_present(pgd)
 typedef pml4_t compat_pgd_t;
+typedef pml4_t  compat_p4d_t;
 typedef pgd_t  compat_pud_t;
 #else
 #   define compat_pgd_offset(mm, address)   pgd_offset(mm, address)
 #   define compat_pgd_present(pgd)          pgd_present(pgd)
-#   define compat_pud_offset(pgd, address)  (pgd)
+#   define compat_p4d_offset(pgd, address)  (pgd)
+#   define compat_p4d_present(p4d)          (1)
+#   define compat_pud_offset(p4d, address)  (p4d)
 #   define compat_pud_present(pud)          (1)
 typedef pgd_t  compat_pgd_t;
+typedef pgd_t  compat_p4d_t;
 typedef pgd_t  compat_pud_t;
 #endif
 
