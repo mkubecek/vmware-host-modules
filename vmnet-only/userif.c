@@ -36,6 +36,9 @@
 #include <linux/slab.h>
 #include <linux/version.h>
 #include <linux/wait.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+#include <linux/taskstats_kern.h>  // For <linux/sched/signal.h> without version dependency
+#endif
 
 #include <net/checksum.h>
 #include <net/sock.h>
