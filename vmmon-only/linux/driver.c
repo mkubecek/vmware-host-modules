@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2016 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -1358,7 +1358,6 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
    case IOCTL_VMX86_CREATE_VM:
    case IOCTL_VMX86_INIT_CROSSGDT:
    case IOCTL_VMX86_SET_UID:
-   case IOCTL_VMX86_LOOK_UP_MPN:
    case IOCTL_VMX86_GET_NUM_VMS:
    case IOCTL_VMX86_GET_TOTAL_MEM_USAGE:
    case IOCTL_VMX86_SET_HARD_LIMIT:
@@ -1368,8 +1367,6 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
    case IOCTL_VMX86_GET_KHZ_ESTIMATE:
    case IOCTL_VMX86_GET_ALL_CPUID:
    case IOCTL_VMX86_GET_ALL_MSRS:
-   case IOCTL_VMX86_READ_PAGE:
-   case IOCTL_VMX86_WRITE_PAGE:
    case IOCTL_VMX86_SET_POLL_TIMEOUT_PTR:
    case IOCTL_VMX86_GET_KERNEL_CLOCK_RATE:
    case IOCTL_VMX86_GET_REFERENCE_CLOCK_HZ:
@@ -1530,7 +1527,7 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       if (retval) {
          break;
       }
-      args.ret.status = HostIF_LookupUserMPN(vm, args.uAddr, &args.ret.mpn);
+      args.ret.status = Vmx86_LookupUserMPN(vm, args.uAddr, &args.ret.mpn);
       retval = HostIF_CopyToUser((void *)ioarg, &args, sizeof args);
       break;
    }
@@ -1849,7 +1846,7 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
          if (retval) {
             break;
          }
-         retval = HostIF_ReadPage(req.mpn, req.uAddr, FALSE);
+         retval = HostIF_ReadPage(vm, req.mpn, req.uAddr, FALSE);
          break;
       }
 
@@ -1860,7 +1857,7 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
          if (retval) {
             break;
          }
-         retval = HostIF_WritePage(req.mpn, req.uAddr, FALSE);
+         retval = HostIF_WritePage(vm, req.mpn, req.uAddr, FALSE);
          break;
       }
 

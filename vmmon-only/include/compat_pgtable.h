@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2002 VMware, Inc. All rights reserved.
+ * Copyright (C) 2002-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -30,80 +30,32 @@
 #include <asm/pgtable.h>
 
 
-/* pte_page() API modified in 2.3.23 to return a struct page * --hpreg */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 3, 23)
-#   define compat_pte_page pte_page
-#else
-#   include "compat_page.h"
-
-#   define compat_pte_page(_pte) virt_to_page(pte_page(_pte))
-#endif
-
-
-/* Appeared in 2.5.5 --hpreg */
-#ifndef pte_offset_map
-/*  Appeared in SuSE 8.0's 2.4.18 --hpreg */
-#   ifdef pte_offset_atomic
-#      define pte_offset_map pte_offset_atomic
-#      define pte_unmap pte_kunmap
-#   else
-#      define pte_offset_map pte_offset
-#      define pte_unmap(_pte)
-#   endif
-#endif
-
-
-/* Appeared in 2.5.74-mmX --petr */
-#ifndef pmd_offset_map
-#   define pmd_offset_map(pgd, address) pmd_offset(pgd, address)
-#   define pmd_unmap(pmd)
-#endif
-
-
 /*
- * Appeared in 2.6.10-rc2-mm1.  Older kernels did L4 page tables as 
- * part of pgd_offset, or they did not have L4 page tables at all.
- * In 2.6.11 pml4 -> pgd -> pmd -> pte hierarchy was replaced by
- * pgd -> pud -> pmd -> pte hierarchy.
+ * p4d level appeared in 4.12.
  */
-#ifdef PUD_MASK
-#   define compat_pgd_offset(mm, address)   pgd_offset(mm, address)
-#   define compat_pgd_present(pgd)          pgd_present(pgd)
-#   define compat_pud_offset(pgd, address)  pud_offset(pgd, address)
-#   define compat_pud_present(pud)          pud_present(pud)
-typedef pgd_t  compat_pgd_t;
-typedef pud_t  compat_pud_t;
-#elif defined(pml4_offset)
-#   define compat_pgd_offset(mm, address)   pml4_offset(mm, address)
-#   define compat_pgd_present(pml4)         pml4_present(pml4)
-#   define compat_pud_offset(pml4, address) pml4_pgd_offset(pml4, address)
-#   define compat_pud_present(pgd)          pgd_present(pgd)
-typedef pml4_t compat_pgd_t;
-typedef pgd_t  compat_pud_t;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
+#   define compat_p4d_offset(pgd, address)  p4d_offset(pgd, address)
+#   define compat_p4d_present(p4d)          p4d_present(p4d)
+#   define compat_p4d_large(p4d)            p4d_large(p4d)
+#   define compat_p4d_pfn(p4d)              p4d_pfn(p4d)
+#   define COMPAT_P4D_MASK                  P4D_MASK
+typedef p4d_t compat_p4d_t;
 #else
-#   define compat_pgd_offset(mm, address)   pgd_offset(mm, address)
-#   define compat_pgd_present(pgd)          pgd_present(pgd)
-#   define compat_pud_offset(pgd, address)  (pgd)
-#   define compat_pud_present(pud)          (1)
-typedef pgd_t  compat_pgd_t;
-typedef pgd_t  compat_pud_t;
+#   define compat_p4d_offset(pgd, address)  (pgd)
+#   define compat_p4d_present(p4d)          (1)
+#   define compat_p4d_large(p4d)            (0)
+#   define compat_p4d_pfn(p4d)              INVALID_MPN  /* Not used */
+#   define COMPAT_P4D_MASK                  0            /* Not used */
+typedef pgd_t compat_p4d_t;
 #endif
-
-
-#define compat_pgd_offset_k(mm, address) pgd_offset_k(address)
-
-
-/* Introduced somewhere in 2.6.0, + backported to some 2.4 RedHat kernels */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 0) && !defined(pte_pfn)
-#   define pte_pfn(pte) page_to_pfn(compat_pte_page(pte))
+/* p[gu]d_large did not exist before 2.6.25 */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 25)
+#   define pud_large(pud) 0
+#   define pgd_large(pgd) 0
 #endif
-
-
-/* A page_table_lock field is added to struct mm_struct in 2.3.10 --hpreg */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 3, 10)
-#   define compat_get_page_table_lock(_mm) (&(_mm)->page_table_lock)
-#else
-#   define compat_get_page_table_lock(_mm) NULL
+/* pud_pfn did not exist before 3.8. */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 8, 0)
+#   define pud_pfn(pud)  INVALID_MPN
 #endif
 
 
@@ -128,11 +80,7 @@ typedef pgd_t  compat_pud_t;
 #define VM_PAGE_KERNEL_EXEC PAGE_KERNEL
 #endif
 #else
-#ifdef PAGE_KERNEL_EXECUTABLE
-#define VM_PAGE_KERNEL_EXEC PAGE_KERNEL_EXECUTABLE
-#else
 #define VM_PAGE_KERNEL_EXEC PAGE_KERNEL_EXEC
-#endif
 #endif
 
 

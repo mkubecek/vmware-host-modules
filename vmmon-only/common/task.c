@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2016 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -39,6 +39,9 @@
 #   include <linux/string.h> /* memset() in the kernel */
 
 #   define EXPORT_SYMTAB
+#   if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
+#      define LINUX_GDT_IS_RO
+#   endif
 #else
 #   include <string.h>
 #endif
@@ -59,6 +62,13 @@
 #include "x86vtinstr.h"
 #include "apic.h"
 #include "x86perfctr.h"
+
+#ifdef LINUX_GDT_IS_RO
+#   include <asm/desc.h>
+#   define default_rw_gdt get_current_gdt_rw()
+#else
+#   define default_rw_gdt NULL
+#endif
 
 #if defined(_WIN64)
 #   include "x86.h"
@@ -691,11 +701,28 @@ TaskRestoreHostGDTTRLDT(Descriptor *tempGDTBase,
        */
 
       desc = (Descriptor *)((VA)HOST_KERNEL_LA_2_VA(hostGDT64.offset + tr));
+#ifdef LINUX_GDT_IS_RO
+      /*
+       * If GDT is read-only, we must always load TR from alternative gdt,
+       * otherwise CPU gets page fault when marking TR busy.
+       */
+      {
+         DTR64 rwGDT64;
+
+         rwGDT64.offset = (unsigned long)tempGDTBase;
+         rwGDT64.limit = hostGDT64.limit;
+         Desc_SetType((Descriptor *)((unsigned long)tempGDTBase + tr), TASK_DESC);
+         _Set_GDT((DTR *)&rwGDT64);
+         SET_TR(tr);
+         _Set_GDT((DTR *)&hostGDT64);
+      }
+#else
       if (Desc_Type(desc) == TASK_DESC_BUSY) {
          Desc_SetType(desc, TASK_DESC);
       }
       _Set_GDT((DTR *)&hostGDT64);
       SET_TR(tr);
+#endif
       SET_LDT(ldt);
    }
 }
@@ -1747,7 +1774,8 @@ Task_Switch(VMDriver *vm,  // IN
    ASSERT(pCPU < ARRAYSIZE(hvRootPage) && pCPU < ARRAYSIZE(tmpGDT));
 
    hvRootMPN = Atomic_Read64(&hvRootPage[pCPU]);
-   tempGDTBase = USE_TEMPORARY_GDT ? Atomic_ReadPtr(&tmpGDT[pCPU]) : NULL;
+   tempGDTBase = USE_TEMPORARY_GDT ? Atomic_ReadPtr(&tmpGDT[pCPU])
+                                   : default_rw_gdt;
 
    /*
     * We can't allocate memory with interrupts disabled on all hosts

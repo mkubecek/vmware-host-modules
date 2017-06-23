@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -122,14 +122,10 @@ EXTERN MPN HostIF_GetNextAnonPage(VMDriver *vm, MPN mpn);
 EXTERN int HostIF_GetLockedPageList(VMDriver *vm, VA64 uAddr,
                                     unsigned int numPages);
 
-EXTERN int HostIF_ReadPage(MPN mpn, VA64 addr, Bool kernelBuffer);
-EXTERN int HostIF_WritePage(MPN mpn, VA64 addr, Bool kernelBuffer);
-#ifdef _WIN32
-/* Add a HostIF_ReadMachinePage() if/when needed */
+EXTERN int HostIF_ReadPage(VMDriver *vm, MPN mpn, VA64 addr, Bool kernelBuffer);
+EXTERN int HostIF_WritePage(VMDriver *vm, MPN mpn, VA64 addr,
+                            Bool kernelBuffer);
 EXTERN int HostIF_WriteMachinePage(MPN mpn, VA64 addr);
-#else
-#define HostIF_WriteMachinePage(_a, _b) HostIF_WritePage((_a), (_b), TRUE)
-#endif
 #if defined __APPLE__
 // There is no need for a fast clock lock on Mac OS.
 #define HostIF_FastClockLock(_callerID) do {} while (0)
@@ -144,5 +140,9 @@ EXTERN MPN HostIF_AllocMachinePage(void);
 EXTERN void HostIF_FreeMachinePage(MPN mpn);
 
 EXTERN int HostIF_SafeRDMSR(uint32 msr, uint64 *val);
+
+#if defined __APPLE__
+EXTERN void HostIF_PageUnitTest(void);
+#endif
 
 #endif // ifdef _HOSTIF_H_

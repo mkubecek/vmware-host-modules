@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2013 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2013, 2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -1104,7 +1104,7 @@ VNetBridgeNotifyLogBridgeUpError(int errno,        // IN: the error number
       case -ENODEV:
          LOG(0, (KERN_WARNING "bridge-%s: interface %s not found or not "
                  "up\n", bridgeName, devName));
-	 break;
+         break;
       case -EINVAL:
          LOG(0, (KERN_WARNING "bridge-%s: interface %s is not a valid "
                  "Ethernet interface\n", bridgeName, devName));
@@ -1143,11 +1143,16 @@ VNetBridgeNotifyLogBridgeUpError(int errno,        // IN: the error number
 static int
 VNetBridgeNotify(struct notifier_block *this, // IN: callback data (bridge)
                  u_long msg,                  // IN: type of event
-                 void *data)                  // IN: device pertaining to event
+                 void *data)                  // IN: net_device or notifier info
 {
    VNetBridge *bridge = list_entry(this, VNetBridge, notifier);
-   struct net_device *dev = (struct net_device *) data;
+   struct net_device *dev;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 0)
+   dev = netdev_notifier_info_to_dev(data);
+#else
+   dev = (struct net_device *)data;
+#endif
    switch (msg) {
    case NETDEV_UNREGISTER:
       LOG(2, (KERN_DEBUG "bridge-%s: interface %s is unregistering\n",
@@ -1179,7 +1184,7 @@ VNetBridgeNotify(struct notifier_block *this, // IN: callback data (bridge)
 
          LOG(1, (KERN_DEBUG "bridge-%s: enabling the bridge on dev up\n",
                  bridge->name));
-	 errno = VNetBridgeUp(bridge, FALSE);
+         errno = VNetBridgeUp(bridge, FALSE);
          if (errno != 0) {
             VNetBridgeNotifyLogBridgeUpError(errno, bridge->name, dev->name);
          }
