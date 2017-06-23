@@ -24,6 +24,7 @@
 
 #ifndef _X86MSR_H_
 #define _X86MSR_H_
+#include <asm/msr-index.h>
 #define INCLUDE_ALLOW_USERLEVEL
 #define INCLUDE_ALLOW_VMX
 
@@ -151,7 +152,9 @@ MSRQuery;
 #define MSR_TSX_CTRL_RTM_DISABLE                  (1ULL << 0)
 #define MSR_TSX_CTRL_CPUID_CLEAR                  (1ULL << 1)
 
+#ifndef MSR_MISC_FEATURES_ENABLES
 #define MSR_MISC_FEATURES_ENABLES            0x140
+#endif
 
 /* Intel Core Architecture and later: use only architected counters. */
 #define IA32_MSR_PERF_CAPABILITIES                   0x345
@@ -712,7 +715,11 @@ typedef unsigned char MTRRType;
 /*
  * MISC_FEATURES_ENABLES bits
  */
+#ifdef MSR_MISC_FEATURES_ENABLES_CPUID_FAULT
+#define MSR_MISC_FEATURES_ENABLES_CPUID_FAULTING MSR_MISC_FEATURES_ENABLES_CPUID_FAULT
+#else
 #define MSR_MISC_FEATURES_ENABLES_CPUID_FAULTING 1
+#endif
 
 
 
