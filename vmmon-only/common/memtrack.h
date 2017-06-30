@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -31,30 +31,22 @@
 #define INCLUDE_ALLOW_VMCORE
 #include "includeCheck.h"
 
-#if defined(VMX86_DEBUG)
-#define MEMTRACK_MPN_LOOKUP
-#endif
-
 struct MemTrack;
 
 typedef struct MemTrackEntry {
    VPN64                   vpn;
    MPN                     mpn;
    struct MemTrackEntry   *vpnChain;
-#if defined(MEMTRACK_MPN_LOOKUP)
    struct MemTrackEntry   *mpnChain;
-#endif
 } MemTrackEntry;
 
 typedef void (MemTrackCleanupCb)(void *cData, MemTrackEntry *entry);
 
-extern struct MemTrack *MemTrack_Init(void);
+extern struct MemTrack *MemTrack_Init(VMDriver *vm);
 extern unsigned MemTrack_Cleanup(struct MemTrack *mt, MemTrackCleanupCb *cb,
                                  void *cbData);
 extern MemTrackEntry *MemTrack_Add(struct MemTrack *mt, VPN64 vpn, MPN mpn);
 extern MemTrackEntry *MemTrack_LookupVPN(struct MemTrack *mt, VPN64 vpn);
-#if defined(MEMTRACK_MPN_LOOKUP)
 extern MemTrackEntry *MemTrack_LookupMPN(struct MemTrack *mt, MPN mpn);
-#endif
 
 #endif // _MEMTRACK_H_

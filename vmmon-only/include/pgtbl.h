@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2002,2014 VMware, Inc. All rights reserved.
+ * Copyright (C) 2002,2014-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -26,154 +26,14 @@
 #include "compat_spinlock.h"
 #include "compat_page.h"
 
-/*
- *-----------------------------------------------------------------------------
- *
- * PgtblPte2MPN --
- *
- *    Returns the page structure associated to a Page Table Entry.
- *
- *    This function is not allowed to schedule() because it can be called while
- *    holding a spinlock --hpreg
- *
- * Results:
- *    INVALID_MPN on failure
- *    mpn         on success
- *
- * Side effects:
- *    None
- *
- *-----------------------------------------------------------------------------
- */
-
-static INLINE MPN
-PgtblPte2MPN(pte_t *pte)   // IN
-{
-   MPN mpn;
-   if (pte_present(*pte) == 0) {
-      return INVALID_MPN;
-   }
-   mpn = pte_pfn(*pte);
-   if (mpn >= INVALID_MPN) {
-      return INVALID_MPN;
-   }
-   return mpn;
-}
-
-
-/*
- *-----------------------------------------------------------------------------
- *
- * PgtblPte2Page --
- *
- *    Returns the page structure associated to a Page Table Entry.
- *
- *    This function is not allowed to schedule() because it can be called while
- *    holding a spinlock --hpreg
- *
- * Results:
- *    The page structure if the page table entry points to a physical page
- *    NULL if the page table entry does not point to a physical page
- *
- * Side effects:
- *    None
- *
- *-----------------------------------------------------------------------------
- */
-
-static INLINE struct page *
-PgtblPte2Page(pte_t *pte) // IN
-{
-   if (pte_present(*pte) == 0) {
-      return NULL;
-   }
-
-   return compat_pte_page(*pte);
-}
-
-
-/*
- *-----------------------------------------------------------------------------
- *
- * PgtblPGD2PTELocked --
- *
- *    Walks through the hardware page tables to try to find the pte
- *    associated to a virtual address.
- *
- * Results:
- *    pte. Caller must call pte_unmap if valid pte returned.
- *
- * Side effects:
- *    None
- *
- *-----------------------------------------------------------------------------
- */
-
-static INLINE pte_t *
-PgtblPGD2PTELocked(compat_pgd_t *pgd,    // IN: PGD to start with
-                   VA addr)              // IN: Address in the virtual address
-                                         //     space of that process
-{
-   compat_pud_t *pud;
-   pmd_t *pmd;
-   pte_t *pte;
-
-   if (compat_pgd_present(*pgd) == 0) {
-      return NULL;
-   }
-
-   pud = compat_pud_offset(pgd, addr);
-   if (compat_pud_present(*pud) == 0) {
-      return NULL;
-   }
-
-   pmd = pmd_offset_map(pud, addr);
-   if (pmd_present(*pmd) == 0) {
-      pmd_unmap(pmd);
-      return NULL;
-   }
-
-   pte = pte_offset_map(pmd, addr);
-   pmd_unmap(pmd);
-   return pte;
-}
-
-
-/*
- *-----------------------------------------------------------------------------
- *
- * PgtblVa2PTELocked --
- *
- *    Walks through the hardware page tables to try to find the pte
- *    associated to a virtual address.
- *
- * Results:
- *    pte. Caller must call pte_unmap if valid pte returned.
- *
- * Side effects:
- *    None
- *
- *-----------------------------------------------------------------------------
- */
-
-static INLINE pte_t *
-PgtblVa2PTELocked(struct mm_struct *mm, // IN: Mm structure of a process
-                  VA addr)              // IN: Address in the virtual address
-                                        //     space of that process
-{
-   return PgtblPGD2PTELocked(compat_pgd_offset(mm, addr), addr);
-}
-
 
 /*
  *-----------------------------------------------------------------------------
  *
  * PgtblVa2MPNLocked --
  *
- *    Retrieve MPN for a given va.
- *
- *    Caller must call pte_unmap if valid pte returned. The mm->page_table_lock
- *    must be held, so this function is not allowed to schedule() --hpreg
+ *    Walks through the hardware page tables to try to find the pte
+ *    associated to a virtual address.  Then maps PTE to MPN.
  *
  * Results:
  *    INVALID_MPN on failure
@@ -188,89 +48,64 @@ PgtblVa2PTELocked(struct mm_struct *mm, // IN: Mm structure of a process
 static INLINE MPN
 PgtblVa2MPNLocked(struct mm_struct *mm, // IN: Mm structure of a process
                   VA addr)              // IN: Address in the virtual address
+                                        //     space of that process
 {
-   pte_t *pte;
+   pgd_t *pgd;
+   compat_p4d_t *p4d;
+   MPN mpn;
 
-   pte = PgtblVa2PTELocked(mm, addr);
-   if (pte != NULL) {
-      MPN mpn = PgtblPte2MPN(pte);
-      pte_unmap(pte);
-      return mpn;
+   pgd = pgd_offset(mm, addr);
+   if (pgd_present(*pgd) == 0) {
+      return INVALID_MPN;
    }
-   return INVALID_MPN;
-}
-
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 0)
-/*
- *-----------------------------------------------------------------------------
- *
- * PgtblKVa2MPNLocked --
- *
- *    Retrieve MPN for a given kernel va.
- *
- *    Caller must call pte_unmap if valid pte returned. The mm->page_table_lock
- *    must be held, so this function is not allowed to schedule() --hpreg
- *
- * Results:
- *    INVALID_MPN on failure
- *    mpn         on success
- *
- * Side effects:
- *    None
- *
- *-----------------------------------------------------------------------------
- */
-
-static INLINE MPN
-PgtblKVa2MPNLocked(struct mm_struct *mm, // IN: Mm structure of a caller
-                   VA addr)              // IN: Address in the virtual address
-{
-   pte_t *pte;
-
-   pte = PgtblPGD2PTELocked(compat_pgd_offset_k(mm, addr), addr);
-   if (pte != NULL) {
-      MPN mpn = PgtblPte2MPN(pte);
-      pte_unmap(pte);
-      return mpn;
+   if (pgd_large(*pgd)) {
+      /* Linux kernel does not support PGD huge pages. */
+      /* return pgd_pfn(*pgd) + ((addr & PGD_MASK) >> PAGE_SHIFT); */
+      return INVALID_MPN;
    }
-   return INVALID_MPN;
-}
-#endif
 
-
-/*
- *-----------------------------------------------------------------------------
- *
- * PgtblVa2PageLocked --
- *
- *    Return the "page" struct for a given va.
- *
- * Results:
- *    struct page or NULL.  The mm->page_table_lock must be held, so this 
- *    function is not allowed to schedule() --hpreg
- *
- * Side effects:
- *    None
- *
- *-----------------------------------------------------------------------------
- */
-
-static INLINE struct page *
-PgtblVa2PageLocked(struct mm_struct *mm, // IN: Mm structure of a process
-                   VA addr)              // IN: Address in the virtual address
-{
-   pte_t *pte;
-
-   pte = PgtblVa2PTELocked(mm, addr);
-   if (pte != NULL) {
-      struct page *page = PgtblPte2Page(pte);
-      pte_unmap(pte);
-      return page;
+   p4d = compat_p4d_offset(pgd, addr);
+   if (compat_p4d_present(*p4d) == 0) {
+      return INVALID_MPN;
+   }
+   if (compat_p4d_large(*p4d)) {
+      mpn = compat_p4d_pfn(*p4d) + ((addr & ~COMPAT_P4D_MASK) >> PAGE_SHIFT);
    } else {
-      return NULL;
+      pud_t *pud;
+
+      pud = pud_offset(p4d, addr);
+      if (pud_present(*pud) == 0) {
+         return INVALID_MPN;
+      }
+      if (pud_large(*pud)) {
+         mpn = pud_pfn(*pud) + ((addr & ~PUD_MASK) >> PAGE_SHIFT);
+      } else {
+         pmd_t *pmd;
+
+         pmd = pmd_offset(pud, addr);
+         if (pmd_present(*pmd) == 0) {
+            return INVALID_MPN;
+         }
+         if (pmd_large(*pmd)) {
+            mpn = pmd_pfn(*pmd) + ((addr & ~PMD_MASK) >> PAGE_SHIFT);
+         } else {
+            pte_t *pte;
+
+            pte = pte_offset_map(pmd, addr);
+            if (pte_present(*pte) == 0) {
+               pte_unmap(pte);
+               return INVALID_MPN;
+            }
+            mpn = pte_pfn(*pte);
+            pte_unmap(pte);
+         }
+      }
    }
-} 
+   if (mpn >= INVALID_MPN) {
+      mpn = INVALID_MPN;
+   }
+   return mpn;
+}
 
 
 /*
@@ -298,85 +133,10 @@ PgtblVa2MPN(VA addr)  // IN
 
    /* current->mm is NULL for kernel threads, so use active_mm. */
    mm = current->active_mm;
-   if (compat_get_page_table_lock(mm)) {
-      spin_lock(compat_get_page_table_lock(mm));
-   }
+   spin_lock(&mm->page_table_lock);
    mpn = PgtblVa2MPNLocked(mm, addr);
-   if (compat_get_page_table_lock(mm)) {
-      spin_unlock(compat_get_page_table_lock(mm));
-   }
+   spin_unlock(&mm->page_table_lock);
    return mpn;
 }
-
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 0)
-/*
- *-----------------------------------------------------------------------------
- *
- * PgtblKVa2MPN --
- *
- *    Walks through the hardware page tables of the current process to try to
- *    find the page structure associated to a virtual address.
- *
- * Results:
- *    Same as PgtblVa2MPNLocked()
- *
- * Side effects:
- *    None
- *
- *-----------------------------------------------------------------------------
- */
-
-static INLINE MPN
-PgtblKVa2MPN(VA addr)  // IN
-{
-   struct mm_struct *mm = current->active_mm;
-   MPN mpn;
-
-   if (compat_get_page_table_lock(mm)) {
-      spin_lock(compat_get_page_table_lock(mm));
-   }
-   mpn = PgtblKVa2MPNLocked(mm, addr);
-   if (compat_get_page_table_lock(mm)) {
-      spin_unlock(compat_get_page_table_lock(mm));
-   }
-   return mpn;
-}
-#endif
-
-
-/*
- *-----------------------------------------------------------------------------
- *
- * PgtblVa2Page --
- *
- *    Walks through the hardware page tables of the current process to try to
- *    find the page structure associated to a virtual address.
- *
- * Results:
- *    Same as PgtblVa2PageLocked()
- *
- * Side effects:
- *    None
- *
- *-----------------------------------------------------------------------------
- */
-
-static INLINE struct page *
-PgtblVa2Page(VA addr) // IN
-{
-   struct mm_struct *mm = current->active_mm;
-   struct page *page;
-
-   if (compat_get_page_table_lock(mm)) {
-      spin_lock(compat_get_page_table_lock(mm));
-   }
-   page = PgtblVa2PageLocked(mm, addr);
-   if (compat_get_page_table_lock(mm)) {
-      spin_unlock(compat_get_page_table_lock(mm));
-   }
-   return page;
-}
-
 
 #endif /* __PGTBL_H__ */

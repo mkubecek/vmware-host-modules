@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -88,6 +88,7 @@
 
 #include "vmware.h"
 #include "hostif.h"
+#include "vmx86.h"
 
 #include "memtrack.h"
 
@@ -146,12 +147,11 @@ typedef struct MemTrackHT {
 typedef uint64 MemTrackHTKey;
 
 typedef struct MemTrack {
+   VMDriver         *vm;            /* The VM instance. */
    unsigned          numPages;      /* Number of pages tracked. */
    MemTrackDir1      dir1;          /* First level directory. */
    MemTrackHT        vpnHashTable;  /* VPN to entry hashtable. */
-#if defined(MEMTRACK_MPN_LOOKUP)
    MemTrackHT        mpnHashTable;  /* MPN to entry hashtable. */
-#endif
 } MemTrack;
 
 /*
@@ -304,11 +304,9 @@ MemTrackCleanup(MemTrack *mt)    // IN
       if (mt->vpnHashTable.pages[idx] != NULL) {
          HostIF_FreePage(mt->vpnHashTable.pages[idx]);
       }
-#if defined(MEMTRACK_MPN_LOOKUP)
       if (mt->mpnHashTable.pages[idx] != NULL) {
          HostIF_FreePage(mt->mpnHashTable.pages[idx]);
       }
-#endif
    }
 
    HostIF_FreeKernelMem(mt);
@@ -332,7 +330,7 @@ MemTrackCleanup(MemTrack *mt)    // IN
  */
 
 MemTrack *
-MemTrack_Init(void)
+MemTrack_Init(VMDriver *vm) // IN:
 {
    MemTrack *mt;
    unsigned idx;
@@ -349,6 +347,7 @@ MemTrack_Init(void)
       goto error;
    }
    memset(mt, 0, sizeof *mt);
+   mt->vm = vm;
 
    for (idx = 0; idx < MEMTRACK_HT_PAGES; idx++) {
       MemTrackHTPage *htPage = MemTrackAllocPage();
@@ -360,7 +359,6 @@ MemTrack_Init(void)
       mt->vpnHashTable.pages[idx] = htPage;
    }
 
-#if defined(MEMTRACK_MPN_LOOKUP)
    for (idx = 0; idx < MEMTRACK_HT_PAGES; idx++) {
       MemTrackHTPage *htPage = MemTrackAllocPage();
 
@@ -370,7 +368,6 @@ MemTrack_Init(void)
       }
       mt->mpnHashTable.pages[idx] = htPage;
    }
-#endif
 
    return mt;
 
@@ -409,6 +406,8 @@ MemTrack_Add(MemTrack *mt,    // IN
    MemTrackDir3 *dir3;
    MEMTRACK_IDX2DIR(idx, p1, p2, p3);
 
+   ASSERT(HostIF_VMLockIsHeld(mt->vm));
+
    if (p1 >= MEMTRACK_DIR1_ENTRIES ||
        p2 >= MEMTRACK_DIR2_ENTRIES ||
        p3 >= MEMTRACK_DIR3_ENTRIES) {
@@ -430,9 +429,7 @@ MemTrack_Add(MemTrack *mt,    // IN
    ent->mpn = mpn;
 
    MemTrackHTInsert(&mt->vpnHashTable, ent, &ent->vpnChain, ent->vpn);
-#if defined(MEMTRACK_MPN_LOOKUP)
    MemTrackHTInsert(&mt->mpnHashTable, ent, &ent->mpnChain, ent->mpn);
-#endif
 
    mt->numPages++;
 
@@ -461,6 +458,7 @@ MemTrack_LookupVPN(MemTrack *mt, // IN
                    VPN64 vpn)    // IN
 {
    MemTrackEntry *next = *MemTrackHTLookup(&mt->vpnHashTable, vpn);
+   ASSERT(HostIF_VMLockIsHeld(mt->vm));
 
    while (next != NULL) {
       if (next->vpn == vpn) {
@@ -473,7 +471,6 @@ MemTrack_LookupVPN(MemTrack *mt, // IN
 }
 
 
-#if defined(MEMTRACK_MPN_LOOKUP)
 /*
  *----------------------------------------------------------------------
  *
@@ -493,7 +490,9 @@ MemTrackEntry *
 MemTrack_LookupMPN(MemTrack *mt, // IN
                    MPN mpn)      // IN
 {
-   MemTrackEntry *next = *MemTrackHTLookup(&mt->mpnHashTable, mpn);
+   MemTrackEntry *next;
+   ASSERT(HostIF_VMLockIsHeld(mt->vm));
+   next = *MemTrackHTLookup(&mt->mpnHashTable, mpn);
 
    while (next != NULL) {
       if (next->mpn == mpn) {
@@ -504,7 +503,6 @@ MemTrack_LookupMPN(MemTrack *mt, // IN
 
    return NULL;
 }
-#endif
 
 
 /*

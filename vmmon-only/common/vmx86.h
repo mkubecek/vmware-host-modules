@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2013,2015-2016 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -106,6 +106,7 @@ extern PseudoTSC pseudoTSC;
 #define MAX_LOCKED_PAGES (-1)
 
 extern VMDriver *Vmx86_CreateVM(void);
+extern int Vmx86_LookupUserMPN(VMDriver *vm, VA64 uAddr, MPN *mpn);
 extern int Vmx86_ReleaseVM(VMDriver *vm);
 extern int Vmx86_InitVM(VMDriver *vm, InitBlock *initParams);
 extern int Vmx86_LateInitVM(VMDriver *vm);

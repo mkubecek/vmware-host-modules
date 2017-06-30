@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2016 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -717,6 +717,35 @@ cleanup:
    Vmx86FreeAllVMResources(vm);
 
    return NULL;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Vmx86_LookupUserMPN --
+ *
+ *      Look up the MPN of a locked user page by user VA under the VM lock.
+ *
+ * Results:
+ *      A status code and the MPN on success.
+ *
+ * Side effects:
+ *      None
+ *
+ *----------------------------------------------------------------------
+ */
+
+int
+Vmx86_LookupUserMPN(VMDriver *vm, // IN: VMDriver
+                    VA64 uAddr,   // IN: user VA of the page
+                    MPN *mpn)     // OUT
+{
+   int ret;
+   HostIF_VMLock(vm, 38);
+   ret = HostIF_LookupUserMPN(vm, uAddr, mpn);
+   HostIF_VMUnlock(vm, 38);
+   return ret;
 }
 
 

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2015 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -205,11 +205,13 @@ skipTaskSwitch:;
          uint32 nPages = (uint32)crosspage->args[1];
          VA64   uAddr  = (VA64)VPN_2_VA(vpn);
          ASSERT(nPages <= MODULECALL_NUM_ARGS);
+         HostIF_VMLock(vm, 38);
          for (i = 0; i < nPages; i++) {
             MPN mpn;
             HostIF_LookupUserMPN(vm, uAddr + i * PAGE_SIZE, &mpn);
             crosspage->args[i] = mpn;
          }
+         HostIF_VMUnlock(vm, 38);
          break;
       }
 

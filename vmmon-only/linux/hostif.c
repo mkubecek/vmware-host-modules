@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -82,13 +82,13 @@
 #include "x86apic.h"
 #include "vm_asm.h"
 #include "modulecall.h"
+#include "driver.h"
 #include "memtrack.h"
 #include "phystrack.h"
 #include "cpuid.h"
 #include "cpuid_info.h"
 #include "hostif.h"
 #include "hostif_priv.h"
-#include "driver.h"
 #include "vmhost.h"
 #include "x86msr.h"
 #include "apic.h"
@@ -1009,7 +1009,7 @@ HostIF_FreeLockedPages(VMDriver *vm,	     // IN: VM instance pointer
 int
 HostIF_Init(VMDriver *vm)  // IN:
 {
-   vm->memtracker = MemTrack_Init();
+   vm->memtracker = MemTrack_Init(vm);
    if (vm->memtracker == NULL) {
       return -1;
    }
@@ -2001,15 +2001,15 @@ HostIF_MapCrossPage(VMDriver *vm, // IN
       return NULL;
    }
    vPgAddr = (VA) MapCrossPage(page);
-   HostIF_GlobalLock(16);
+   HostIF_VMLock(vm, 27);
    if (vm->vmhost->crosspagePagesCount >= MAX_INITBLOCK_CPUS) {
-      HostIF_GlobalUnlock(16);
+      HostIF_VMUnlock(vm, 27);
       UnmapCrossPage(page, (void*)vPgAddr);
 
       return NULL;
    }
    vm->vmhost->crosspagePages[vm->vmhost->crosspagePagesCount++] = page;
-   HostIF_GlobalUnlock(16);
+   HostIF_VMUnlock(vm, 27);
 
    ret = vPgAddr | (((VA)p) & (PAGE_SIZE - 1));
 
@@ -2818,12 +2818,74 @@ HostIF_CallOnEachCPU(void (*func)(void*), // IN: function to call
 
 
 /*
+ *-----------------------------------------------------------------------------
+ *
+ * HostIFCheckTrackedMPN --
+ *
+ *      Check if a given MPN is tracked for the specified VM.
+ *
+ * Result:
+ *      TRUE if the MPN is tracked in one of the trackers for the specified VM,
+ *      FALSE otherwise.
+ *
+ * Side effects:
+ *      None
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+Bool
+HostIFCheckTrackedMPN(VMDriver *vm, // IN: The VM instance
+                      MPN mpn)      // IN: The MPN
+{
+   VMHost * const vmh = vm->vmhost;
+
+   if (vmh == NULL) {
+      return FALSE;
+   }
+
+   HostIF_VMLock(vm, 32); // Debug version of PhysTrack wants VM's lock.
+   if (vmh->lockedPages) {
+      if (PhysTrack_Test(vmh->lockedPages, mpn)) {
+         HostIF_VMUnlock(vm, 32);
+         return TRUE;
+      }
+   }
+
+   if (vmh->AWEPages) {
+      if (PhysTrack_Test(vmh->AWEPages, mpn)) {
+         HostIF_VMUnlock(vm, 32);
+         return TRUE;
+      }
+   }
+
+   if (vm->memtracker) {
+      if (MemTrack_LookupMPN(vm->memtracker, mpn) != NULL) {
+         HostIF_VMUnlock(vm, 32);
+         return TRUE;
+      }
+   }
+   HostIF_VMUnlock(vm, 32);
+
+   if (vmx86_debug) {
+      /*
+       * The monitor may have old KSeg mappings to pages which it no longer
+       * owns.  Minimize customer noise by only logging this for developers.
+       */
+      Log("%s: MPN %" FMT64 "x not owned by this VM\n", __FUNCTION__, mpn);
+   }
+   return FALSE;
+}
+
+
+/*
  *----------------------------------------------------------------------
  *
  * HostIF_ReadPage --
  *
- *      puts the content of a machine page into a kernel or user mode 
- *      buffer. 
+ *      Reads one page of data from a machine page and returns it in the
+ *      specified kernel or user buffer.  The machine page must be owned by
+ *      the specified VM.
  *
  * Results:
  *      0 on success
@@ -2836,7 +2898,8 @@ HostIF_CallOnEachCPU(void (*func)(void*), // IN: function to call
  */
 
 int
-HostIF_ReadPage(MPN mpn,             // MPN of the page
+HostIF_ReadPage(VMDriver *vm,        // IN: The VM instance
+                MPN mpn,             // MPN of the page
                 VA64 addr,           // buffer for data
                 Bool kernelBuffer)   // is the buffer in kernel space?
 {
@@ -2846,6 +2909,9 @@ HostIF_ReadPage(MPN mpn,             // MPN of the page
    struct page* page;
 
    if (mpn == INVALID_MPN) {
+      return -EFAULT;
+   }
+   if (HostIFCheckTrackedMPN(vm, mpn) == FALSE) {
       return -EFAULT;
    }
 
@@ -2871,8 +2937,8 @@ HostIF_ReadPage(MPN mpn,             // MPN of the page
  *
  * HostIF_WritePage --
  *
- *      Put the content of a kernel or user mode buffer into a machine 
- *      page.
+ *      Writes one page of data from a kernel or user buffer onto the specified
+ *      machine page.  The machine page must be owned by the specified VM.
  *
  * Results:
  *      0 on success
@@ -2885,9 +2951,9 @@ HostIF_ReadPage(MPN mpn,             // MPN of the page
  */
 
 int
-HostIF_WritePage(MPN mpn,              // MPN of the page
-                 VA64 addr,            // data to write to the page
-                 Bool kernelBuffer)    // is the buffer in kernel space?
+HostIFWritePageWork(MPN mpn,              // MPN of the page
+                    VA64 addr,            // data to write to the page
+                    Bool kernelBuffer)    // is the buffer in kernel space?
 {
    void const *buf = VA64ToPtr(addr);
    int ret = 0;
@@ -2912,6 +2978,45 @@ HostIF_WritePage(MPN mpn,              // MPN of the page
    kunmap(page);
 
    return ret;
+}
+
+int
+HostIF_WritePage(VMDriver *vm,      // IN: The VM instance
+                 MPN mpn,              // MPN of the page
+                 VA64 addr,            // data to write to the page
+                 Bool kernelBuffer)    // is the buffer in kernel space?
+{
+   if (HostIFCheckTrackedMPN(vm, mpn) == FALSE) {
+      return -EFAULT;
+   }
+   return HostIFWritePageWork(mpn, addr, kernelBuffer);
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * HostIF_WriteMachinePage --
+ *
+ *      Puts the content of a machine page into a kernel or user mode
+ *      buffer.  This should only be used for host-global pages, not any
+ *      VM-owned pages.
+ *
+ * Results:
+ *      On success: 0
+ *      On failure: a negative error code
+ *
+ * Side effects:
+ *      None
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+int
+HostIF_WriteMachinePage(MPN mpn,   // IN: MPN of the page
+                        VA64 addr) // IN: data to write to the page
+{
+   return HostIFWritePageWork(mpn, addr, TRUE);
 }
 
 
