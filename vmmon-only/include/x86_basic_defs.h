@@ -35,6 +35,8 @@
 #define INCLUDE_ALLOW_VMCORE
 #include "includeCheck.h"
 
+#include <asm/processor-flags.h>
+
 #define X86_MAX_INSTR_LEN  15   /* Max byte length of an x86 instruction. */
 
 #define NUM_IDT_VECTORS 256
