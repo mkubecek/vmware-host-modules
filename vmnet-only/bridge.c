@@ -636,7 +636,7 @@ VNetBridgeReceiveFromVNet(VNetJack        *this, // IN: jack
 	 unsigned long flags;
 	 int i;
 
-	 atomic_inc(&clone->users);
+	 skb_get(clone);
 
 	 clone->dev = dev;
 	 clone->protocol = eth_type_trans(clone, dev);
