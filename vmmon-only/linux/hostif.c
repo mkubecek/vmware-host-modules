@@ -99,6 +99,37 @@
 #include "vmmonInt.h"
 #include "versioned_atomic.h"
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+#   define global_zone_page_state global_page_state
+#endif
+
+static unsigned long get_nr_slab_unreclaimable(void)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
+   return global_node_page_state(NR_SLAB_UNRECLAIMABLE);
+#else
+   return global_page_state(NR_SLAB_UNRECLAIMABLE);
+#endif
+}
+
+static unsigned long get_nr_unevictable(void)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0)
+   return global_node_page_state(NR_UNEVICTABLE);
+#else
+   return global_page_state(NR_UNEVICTABLE);
+#endif
+}
+
+static unsigned long get_nr_anon_mapped(void)
+{
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0)
+   return global_node_page_state(NR_ANON_MAPPED);
+ #else
+   return global_page_state(NR_ANON_PAGES);
+ #endif
+}
+
 /*
  * Determine if we can use high resolution timers.
  */
@@ -1594,16 +1625,11 @@ HostIF_EstimateLockedPageLimit(const VMDriver* vm,                // IN
    unsigned int reservedPages = MEMDEFAULTS_MIN_HOST_PAGES;
    unsigned int hugePages = (vm == NULL) ? 0 :
       BYTES_2_PAGES(vm->memInfo.hugePageBytes);
-   unsigned int lockedPages = global_page_state(NR_PAGETABLE) +
-                              global_page_state(NR_SLAB_UNRECLAIMABLE) +
-                              global_page_state(NR_UNEVICTABLE) +
+   unsigned int lockedPages = global_zone_page_state(NR_PAGETABLE) +
+                              get_nr_slab_unreclaimable() +
+                              get_nr_unevictable() +
                               hugePages + reservedPages;
-   unsigned int anonPages =
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0)
-      global_page_state(NR_ANON_MAPPED);
-#else
-      global_page_state(NR_ANON_PAGES);
-#endif
+   unsigned int anonPages = get_nr_anon_mapped();
    unsigned int swapPages = BYTES_2_PAGES(linuxState.swapSize);
 
    if (anonPages > swapPages) {
