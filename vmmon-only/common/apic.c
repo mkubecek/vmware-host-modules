@@ -165,7 +165,7 @@ APIC_ReadID(const APICDescriptor *desc) // IN
  *
  * APIC_Write --
  *
- *      Writes the given value to the given APIC register using the proper 
+ *      Writes the given value to the given APIC register using the proper
  *      interface.  Does not check to see if the register number is valid.
  *
  * Side effects:
@@ -195,7 +195,7 @@ APIC_Write(const APICDescriptor *desc, // IN
  *
  * APIC_ReadICR --
  *
- *      Reads the APIC ICR using the proper interface.  The semantics of the 
+ *      Reads the APIC ICR using the proper interface.  The semantics of the
  *      ICR are different in X2APIC mode so APIC_Read() should not be used.
  *
  * Side effects:
@@ -207,7 +207,7 @@ APIC_Write(const APICDescriptor *desc, // IN
  *----------------------------------------------------------------------
  */
 
-uint64 
+uint64
 APIC_ReadICR(const APICDescriptor *desc) // IN
 {
    if (desc->isX2) {
@@ -225,7 +225,7 @@ APIC_ReadICR(const APICDescriptor *desc) // IN
  *
  * APIC_WriteICR --
  *
- *      Writes the given value to the APIC ICR using the proper interface.  
+ *      Writes the given value to the APIC ICR using the proper interface.
  *      The semantics of the ICR are different in X2APIC mode so APIC_Write()
  *      should not be used.
  *

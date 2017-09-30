@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2006 VMware, Inc. All rights reserved.
+ * Copyright (C) 2006, 2016 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -40,7 +40,7 @@
 #include "vcpuid.h"
 
 
-#define MAX_INITBLOCK_CPUS     128
+#define MAX_INITBLOCK_CPUS     MAX_VCPUS
 
 
 typedef
@@ -49,9 +49,12 @@ struct InitBlock {
    uint32 magicNumber;     /* Magic number (INIT_BLOCK_MAGIC) */
    Vcpuid numVCPUs;
    VA64   crosspage[MAX_INITBLOCK_CPUS];
+   LPN64  monStartLPN;
+   LPN64  monEndLPN;
    uint32 vmInitFailurePeriod;
    LA64   crossGDTHKLA;
    MPN    crossGDTMPNs[5];  // CROSSGDT_NUMPAGES
+   uint16 numPTPPages;
 }
 #include "vmware_pack_end.h"
 InitBlock;

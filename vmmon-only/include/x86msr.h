@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2015 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -37,6 +37,11 @@
 
 #include "vm_basic_types.h"
 #include "community_source.h"
+
+#if defined __cplusplus
+extern "C" {
+#endif
+
 
 /*
  * Results of calling rdmsr(msrNum) on all logical processors.
@@ -92,6 +97,7 @@ MSRQuery;
 #define MSR_MCG_CAP           0x00000179
 #define MSR_MCG_STATUS        0x0000017a
 #define MSR_MCG_CTL           0x0000017b
+#define MSR_MCG_EXT_CTL       0x000004d0
 #define MSR_EVNTSEL0          0x00000186
 #define MSR_EVNTSEL1          0x00000187
 #define MSR_FLEX_RATIO        0x00000194 // Intel Nehalem Family
@@ -240,6 +246,133 @@ typedef enum {
 #define MSR_X2APIC_DIVIDER   0x0000083e
 #define MSR_X2APIC_SELFIPI   0x0000083f
 
+#define MSR_BNDCFGS          0x00000d90  // Sup. mode bounds configuration
+
+#define MSR_XSS              0x00000da0  // Extended Supervisor State Mask
+
+/* RTIT MSRs */
+#define MSR_RTIT_CTL              0x00000570
+#define MSR_RTIT_STATUS           0x00000571
+#define MSR_RTIT_OUTPUT_BASE      0x00000560
+#define MSR_RTIT_OUTPUT_MASK_PTRS 0x00000561
+#define MSR_RTIT_CR3_MATCH        0x00000572
+#define MSR_RTIT_ADDR0_A          0x00000580
+#define MSR_RTIT_ADDR0_B          0x00000581
+#define MSR_RTIT_ADDR1_A          0x00000582
+#define MSR_RTIT_ADDR1_B          0x00000583
+#define MSR_RTIT_ADDR2_A          0x00000584
+#define MSR_RTIT_ADDR2_B          0x00000585
+#define MSR_RTIT_ADDR3_A          0x00000586
+#define MSR_RTIT_ADDR3_B          0x00000587
+
+#define MSR_RTIT_NUM_OF_ADDR_REG  8
+
+/* RTIT control MSR bits */
+#define MSR_RTIT_CTL_TRACE_EN      (1LL<<0)  // Enable tracing
+#define MSR_RTIT_CTL_CYC_EN        (1LL<<1)  // Enable CYC Packet
+#define MSR_RTIT_CTL_OS            (1LL<<2)  // CPL0 filter
+#define MSR_RTIT_CTL_USER          (1LL<<3)  // CPL > 0 filter
+#define MSR_RTIT_CTL_FABRIC_EN     (1LL<<6)  // Trace output direction
+#define MSR_RTIT_CTL_CR3_FILTER_EN (1LL<<7)  // Enable CR3 filter
+#define MSR_RTIT_CTL_TOPA          (1LL<<8)  // Enable ToPA output scheme
+#define MSR_RTIT_CTL_MTC_EN        (1LL<<9)  // Enable MTC packet
+#define MSR_RTIT_CTL_TSC_EN        (1LL<<10) // Enable TSC packet
+#define MSR_RTIT_CTL_DIS_RETC      (1LL<<11) // Disable RET compression
+#define MSR_RTIT_CTL_BRANCH_EN     (1LL<<13) // Disable COFI-based packets
+#define MSR_RTIT_CTL_RSVD          CONST64U(0xffff0000f0841030) // Reserved bits
+
+#define MSR_RTIT_CTL_MTCFREQ_MASK CONST64U(0xf)
+#define MSR_RTIT_CTL_MTCFREQ_SHIFT 14
+#define MSR_RTIT_CTL_MTCFREQ(_msr)  \
+       (((_msr) >> MSR_RTIT_CTL_MTCFREQ_SHIFT) & MSR_RTIT_CTL_MTCFREQ_MASK)
+
+#define MSR_RTIT_CTL_CYCTHRESH_MASK CONST64U(0xf)
+#define MSR_RTIT_CTL_CYCTHRESH_SHIFT 19
+#define MSR_RTIT_CTL_CYCTHRESH(_msr)  \
+       (((_msr) >> MSR_RTIT_CTL_CYCTHRESH_SHIFT) & MSR_RTIT_CTL_CYCTHRESH_MASK)
+
+#define MSR_RTIT_CTL_PSBFREQ_MASK CONST64U(0xf)
+#define MSR_RTIT_CTL_PSBFREQ_SHIFT 24
+#define MSR_RTIT_CTL_PSBFREQ(_msr)  \
+       (((_msr) >> MSR_RTIT_CTL_PSBFREQ_SHIFT) & MSR_RTIT_CTL_PSBFREQ_MASK)
+
+#define MSR_RTIT_CTL_ADDR0_CFG_MASK  CONST64U(0xf)
+#define MSR_RTIT_CTL_ADDR0_CFG_SHIFT 32
+#define MSR_RTIT_CTL_ADDR0_CFG(_msr)  \
+       (((_msr) >> MSR_RTIT_CTL_ADDR0_CFG_SHIFT) & MSR_RTIT_CTL_ADDR0_CFG_MASK)
+
+#define MSR_RTIT_CTL_ADDR1_CFG_MASK  CONST64U(0xf)
+#define MSR_RTIT_CTL_ADDR1_CFG_SHIFT 36
+#define MSR_RTIT_CTL_ADDR1_CFG(_msr)  \
+       (((_msr) >> MSR_RTIT_CTL_ADDR1_CFG_SHIFT) & MSR_RTIT_CTL_ADDR1_CFG_MASK)
+
+#define MSR_RTIT_CTL_ADDR2_CFG_MASK  CONST64U(0xf)
+#define MSR_RTIT_CTL_ADDR2_CFG_SHIFT 40
+#define MSR_RTIT_CTL_ADDR2_CFG(_msr)  \
+       (((_msr) >> MSR_RTIT_CTL_ADDR2_CFG_SHIFT) & MSR_RTIT_CTL_ADDR2_CFG_MASK)
+
+#define MSR_RTIT_CTL_ADDR3_CFG_MASK  CONST64U(0xf)
+#define MSR_RTIT_CTL_ADDR3_CFG_SHIFT 44
+#define MSR_RTIT_CTL_ADDR3_CFG(_msr)  \
+       (((_msr) >> MSR_RTIT_CTL_ADDR3_CFG_SHIFT) & MSR_RTIT_CTL_ADDR3_CFG_MASK)
+
+/* RTIT status MSR bits */
+#define MSR_RTIT_STATUS_FILTER_EN    (1LL<<0)
+#define MSR_RTIT_STATUS_CONTEXT_EN   (1LL<<1)
+#define MSR_RTIT_STATUS_TRIGGER_EN   (1LL<<2)
+#define MSR_RTIT_STATUS_ERROR        (1LL<<4)
+#define MSR_RTIT_STATUS_STOPPED      (1LL<<5)
+#define MSR_RTIT_STATUS_RSVD         CONST64U(0xfffe0000ffffffc8)
+
+#define MSR_RTIT_STATUS_PKT_BYTES_CNT_MASK  CONST64U(0x1ffff)
+#define MSR_RTIT_STATUS_PKT_BYTES_CNT_SHIFT 32
+#define MSR_RTIT_STATUS_PKT_BYTES_CNT(_msr)  \
+        (((_msr) >> MSR_RTIT_STATUS_PKT_BYTES_CNT_SHIFT) & \
+             MSR_RTIT_STATUS_PKT_BYTES_CNT_MASK)
+
+/* RTIT CR3 MSR bits */
+#define MSR_RTIT_CR3_MATCH_MASK CONST64U(~0x1f)
+
+/* RTIT output base MSR bits */
+#define MSR_RTIT_OUTPUT_BASE_MASK CONST64U(~0x7f)
+#define MSR_RTIT_OUTPUT_BASE_RSVD CONST64U(0x7f)
+
+/* RTIT output mask ptrs MSR bits */
+#define MSR_RTIT_OUTPUT_MASK_LOWERMASK CONST64U(0x7f)
+
+/*
+ * Get the mask value for the single contiguous output region
+ * when MSR_RTIT_CTL.ToPA is masked
+ */
+#define MSR_RTIT_OUTPUT_MASK_MASK  CONST64U(0xffffffff)
+#define MSR_RTIT_OUTPUT_MASK(_msr) \
+        ((_msr) & MSR_RTIT_OUTPUT_MASK_MASK)
+
+/* Get the offset pointer of the ToPA table when MSR_RTIT_CTL.ToPA is set */
+#define MSR_RTIT_OUTPUT_TABLE_OFFSET_MASK  CONST64U(0x1ffffff)
+#define MSR_RTIT_OUTPUT_TABLE_OFFSET_SHIFT 7
+#define MSR_RTIT_OUTPUT_TABLE_OFFSET(_msr) \
+        ((((_msr) >> MSR_RTIT_OUTPUT_TABLE_OFFSET_SHIFT) & \
+              MSR_RTIT_OUTPUT_TABLE_OFFSET_MASK) << 3)
+#define MSR_RTIT_OUTPUT_TABLE_ENTRY(_msr) \
+        (((_msr) >> MSR_RTIT_OUTPUT_TABLE_OFFSET_SHIFT) & \
+              MSR_RTIT_OUTPUT_TABLE_OFFSET_MASK)
+
+#define MSR_RTIT_OUTPUT_OFFSET_MASK  CONST64U(0xffffffff)
+#define MSR_RTIT_OUTPUT_OFFSET_SHIFT 32
+#define MSR_RTIT_OUTPUT_OFFSET(_msr) \
+        (((_msr) >> MSR_RTIT_OUTPUT_OFFSET_SHIFT) & \
+             MSR_RTIT_OUTPUT_OFFSET_MASK)
+
+#define MSR_RTIT_CR3_MATCH_RSVD CONST64U(0x1f)
+
+/* SGX MSRs */
+#define MSR_SGX_SVN_STATUS               0x00000500
+
+/* SGX SVN status MSR fields */
+#define MSR_SGX_SVN_STATUS_LOCK          0x1
+#define MSR_SGX_SVN_STATUS_SINIT_SVN     CONST64U(0xff0000)
+#define MSR_SGX_SVN_STATUS_RSVD          CONST64U(0xffffffffff00fffe)
 
 /* MSR_CR_PAT power-on value */
 #define MSR_CR_PAT_DEFAULT   0x0007040600070406ULL
@@ -277,7 +410,10 @@ typedef enum {
 #define MSR_FEATCTL_LOCK     0x00000001
 #define MSR_FEATCTL_SMXE     0x00000002
 #define MSR_FEATCTL_VMXE     0x00000004
+#define MSR_FEATCTL_SENTERP  0x00007F00
+#define MSR_FEATCTL_SENTERE  0x00008000
 #define MSR_FEATCTL_SGXE     0x00040000
+#define MSR_FEATCTL_LMCE     0x00100000
 
 /* MSR_EFER bits. */
 #define MSR_EFER_SCE         0x0000000000000001ULL  /* Sys call ext'ns:  r/w */
@@ -423,6 +559,7 @@ typedef enum {
 
 #define MSR_HYPERV_HYPERCALL_EN                  1ULL
 #define MSR_HYPERV_REFERENCE_TSC_EN              1ULL
+#define MSR_HYPERV_VP_ASSIST_EN                  1ULL
 
 #define MSR_HYPERV_GUESTOSID_VENDOR_SHIFT        48
 #define MSR_HYPERV_GUESTOSID_VENDOR_MASK         0xfULL
@@ -481,6 +618,14 @@ typedef enum {
 
 
 
+/*
+ * Platform Quality of Service
+ */
+
+#define MSR_INTEL_QOS_EVTSEL    0xc8d
+#define MSR_INTEL_QOS_CTR       0xc8e
+#define MSR_INTEL_QOS_ASSOC     0xc8f
+
 static INLINE uint32
 X86MSR_SysCallEIP(uint64 star)
 {
@@ -501,5 +646,9 @@ X86MSR_SysRetCS(uint64 star)
    return (uint16)(star >> 48);
 }
 
+
+#if defined __cplusplus
+}
+#endif
 
 #endif /* _X86MSR_H_ */

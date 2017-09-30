@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998,2015 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -45,6 +45,7 @@
 #define X2APIC_VERSION_0x15       0x15
 #define APIC_MAXLVT_0x4           0x4
 #define XAPIC_MAXLVT_0x5          0x5
+#define XAPIC_MAXLVT_0x6          0x6 // Intel only: Nehalem (1A) and onward
 #define APIC_VERSION_MASK         0xff
 #define APIC_MAX_LVT_MASK         0xff
 #define APIC_MAX_LVT_SHIFT        16

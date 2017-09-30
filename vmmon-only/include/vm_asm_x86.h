@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014,2016 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -435,16 +435,13 @@ CLTS(void)
      __asm__ __volatile__("fs; invlpg %0": :"m" (*(char *) (_addr)):"memory"); \
 } while (0)
 
-#if ! defined(VMKBOOT)
 #define RESTORE_FLAGS _Set_flags
 #define ENABLE_INTERRUPTS() __asm__ __volatile__ ("sti": : :"memory")
 #define CLEAR_INTERRUPTS()  __asm__ __volatile__ ("cli": : :"memory")
-#endif
-
 #define RAISE_INTERRUPT(_x)  __asm__ __volatile__("int %0" :: "g" (_x))
 #define RETURN_FROM_INT()   __asm__ __volatile__("iret" :: )
 
-#if ! defined(VMKERNEL) && ! defined(VMKBOOT)
+#if ! defined(VMKERNEL)
 #define NO_INTERRUPTS_BEGIN()	do { \
                                    uintptr_t _flags; \
                                    SAVE_FLAGS(_flags); \
@@ -958,10 +955,12 @@ static INLINE uint64 GET_XCR0(void)
 
 static INLINE void SET_XCR0_IF_NEEDED(uint64 newVal, uint64 oldVal)
 {
+#ifndef VMM_BOOTSTRAP
    ASSERT(oldVal == GET_XCR0());
    if (newVal != oldVal) {
       SET_XCR0(newVal);
    }
+#endif
 }
 #endif
 

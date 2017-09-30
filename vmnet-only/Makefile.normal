@@ -46,10 +46,6 @@ INCLUDE := -I. -I$(HEADER_DIR)
 INCLUDE += $(shell $(CC) $(INCLUDE) -E geninclude.c \
 	   | sed -n -e 's!^APATH!-I$(HEADER_DIR)/asm!p')
 
-CC_OPTS += $(call vm_check_build, $(SRCROOT)/netdev_has_net.c,-DVMW_NETDEV_HAS_NET, )
-CC_OPTS += $(call vm_check_build, $(SRCROOT)/netdev_has_dev_net.c,-DVMW_NETDEV_HAS_DEV_NET, )
-CC_OPTS += $(call vm_check_build, $(SRCROOT)/skblin.c, -DVMW_SKB_LINEARIZE_2618, )
-
 CFLAGS := -O $(CC_WARNINGS) $(CC_OPTS) $(INCLUDE) $(GLOBAL_DEFS)
 
 OBJS := driver.o hub.o userif.o netif.o bridge.o procfs.o smac_compat.o \

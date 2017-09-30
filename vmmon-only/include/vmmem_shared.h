@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2000-2015 VMware, Inc. All rights reserved.
+ * Copyright (C) 2000-2015,2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -40,7 +40,7 @@
 #define VMMEM_FLAG_BIT(x) (1 << (x))
 
 #define VMMEM_ANON_LOW_MEM        VMMEM_FLAG_BIT(0)
-#define VMMEM_ANON_LARGE_PAGE     VMMEM_FLAG_BIT(1)
+#define VMMEM_ANON_CONTIG         VMMEM_FLAG_BIT(1)
 #define VMMEM_ANON_CAN_FAIL       VMMEM_FLAG_BIT(2)
 #define VMMEM_ANON_USE_PREALLOC   VMMEM_FLAG_BIT(3)
 #define VMMEM_ANON_IOABLE_PAGE    VMMEM_FLAG_BIT(4)
@@ -64,10 +64,14 @@
 #define VMMEM_PLATFORM_COW                VMMEM_FLAG_BIT(2)
 #define VMMEM_PLATFORM_EXPOSED_TO_VMM     VMMEM_FLAG_BIT(3)
 #define VMMEM_PLATFORM_P2M_UPDATE_PENDING VMMEM_FLAG_BIT(4)
-#define VMMEM_PLATFORM_TRY_COW_SUCCESS    VMMEM_FLAG_BIT(5)
-#define VMMEM_PLATFORM_DIRTY              VMMEM_FLAG_BIT(6)
-#define VMMEM_PLATFORM_BACKED_LARGE       VMMEM_FLAG_BIT(7)
+#define VMMEM_PLATFORM_DIRTY              VMMEM_FLAG_BIT(5)
+#define VMMEM_PLATFORM_IS_2M_PAGE         VMMEM_FLAG_BIT(6)
+#define VMMEM_PLATFORM_IS_1G_PAGE         VMMEM_FLAG_BIT(7)
 #define VMMEM_PLATFORM_LARGE_RETRY        VMMEM_FLAG_BIT(8)
+#define VMMEM_PLATFORM_TRY_COW_SUCCESS    VMMEM_FLAG_BIT(9)
+
+#define VMMEM_PLATFORM_BACKED_LARGE      (VMMEM_PLATFORM_IS_2M_PAGE |   \
+                                          VMMEM_PLATFORM_IS_1G_PAGE)
 
 
 #define MAX_PLATFORM_PAGE_INFO_PAGES  240

@@ -38,6 +38,7 @@
 #include "rateconv.h"
 #include "vmmem_shared.h"
 #include "apic.h"
+#include "bootstrap_vmm.h"
 
 typedef struct PseudoTSCOffsetInfo {
    uint32 inVMMCnt;                  /* Number of vcpus executing in the VMM. */
@@ -63,8 +64,12 @@ typedef struct VMDriver {
    Vcpuid                       numVCPUs;     /* Number of vcpus in VM. */
    struct VMHost               *vmhost;       /* Host-specific fields. */
 
+   BSVMM_HostParams             bsParams;
+   MPN                          ptRootMpns[MAX_VCPUS];
+
    /* Pointers to the crossover pages shared with the monitor. */
    struct VMCrossPage          *crosspage[MAX_INITBLOCK_CPUS];
+   struct MemTrack             *ptpTracker;
    volatile uint32              currentHostCpu[MAX_INITBLOCK_CPUS];
    VCPUSet                      crosscallWaitSet[MAX_INITBLOCK_CPUS];
    APICDescriptor               hostAPIC;
@@ -74,12 +79,16 @@ typedef struct VMDriver {
    struct PerfCounter          *perfCounter;
    VMMemMgmtInfo                memInfo;
    unsigned                     fastClockRate;/* Protected by FastClockLock. */
-   int                          fastSuspResFlag;
 
    volatile PseudoTSCOffsetInfo ptscOffsetInfo; /* Volatile per PR 699101#29. */
    Atomic_uint64                ptscLatest;
    int64                        ptscOffsets[MAX_INITBLOCK_CPUS];
 } VMDriver;
+
+typedef struct MonLoaderArgs {
+   VMDriver *vm;
+   VMSharedRegion *shRegions;
+} MonLoaderArgs;
 
 typedef struct VmTimeStart {
    uint64 count;
@@ -105,7 +114,14 @@ extern PseudoTSC pseudoTSC;
 
 #define MAX_LOCKED_PAGES (-1)
 
-extern VMDriver *Vmx86_CreateVM(void);
+extern VMDriver *Vmx86_CreateVM(VA64 bsBlob, uint32 bsBlobSize);
+extern Bool Vmx86_ProcessBootstrap(VMDriver *vm,
+                                   VA64 bsBlobAddr,
+                                   uint32 numBytes,
+                                   uint32 headerOffset,
+                                   uint16 numVCPUs,
+                                   UserVA64 *ptRootVAs,
+                                   VMSharedRegion *shRegions);
 extern int Vmx86_LookupUserMPN(VMDriver *vm, VA64 uAddr, MPN *mpn);
 extern int Vmx86_ReleaseVM(VMDriver *vm);
 extern int Vmx86_InitVM(VMDriver *vm, InitBlock *initParams);
@@ -126,13 +142,11 @@ extern int Vmx86_UnlockPageByMPN(VMDriver *vm, MPN mpn, VA64 uAddr);
 extern MPN Vmx86_GetRecycledPage(VMDriver *vm);
 extern int Vmx86_ReleaseAnonPage(VMDriver *vm, MPN mpn);
 extern int Vmx86_AllocLockedPages(VMDriver *vm, VA64 addr,
-				  unsigned numPages, Bool kernelMPNBuffer,
+                                  unsigned numPages, Bool kernelMPNBuffer,
                                   Bool ignoreLimits);
 extern int Vmx86_FreeLockedPages(VMDriver *vm, VA64 addr,
-				 unsigned numPages, Bool kernelMPNBuffer);
+                                 unsigned numPages, Bool kernelMPNBuffer);
 extern MPN Vmx86_GetNextAnonPage(VMDriver *vm, MPN mpn);
-extern int Vmx86_GetLockedPageList(VMDriver *vm, VA64 uAddr,
-				   unsigned int numPages);
 
 extern int32 Vmx86_GetNumVMs(void);
 extern int32 Vmx86_GetTotalMemUsage(void);
@@ -147,15 +161,12 @@ extern Bool Vmx86_Readmit(VMDriver *curVM, OvhdMem_Deltas *delta);
 extern void Vmx86_UpdateMemInfo(VMDriver *curVM,
                                 const VMMemMgmtInfoPatch *patch);
 extern void Vmx86_Add2MonPageTable(VMDriver *vm, VPN vpn, MPN mpn,
-				   Bool readOnly);
-extern Bool Vmx86_PAEEnabled(void);
-extern Bool Vmx86_VMXEnabled(void);
+                                   Bool readOnly);
 extern Bool Vmx86_GetAllMSRs(MSRQuery *query);
+extern void Vmx86_FlushVMCSAllCPUs(MA vmcs);
 extern void Vmx86_MonTimerIPI(void);
 extern void Vmx86_InitIDList(void);
-extern VMDriver *Vmx86_LookupVMByUserID(int userID);
-extern Bool Vmx86_FastSuspResSetOtherFlag(VMDriver *vm, int otherVmUserId);
-extern int  Vmx86_FastSuspResGetMyFlag(VMDriver *vm, Bool blockWait);
+extern Bool Vmx86_GetPageRoot(VMDriver *vm, Vcpuid vcpuid, MPN *mpn);
 extern void Vmx86_Open(void);
 extern void Vmx86_Close(void);
 
@@ -199,4 +210,4 @@ extern uint64 Vmx86_GetPseudoTSC(void);
 
 extern uint64 Vmx86_GetUnavailablePerfCtrs(void);
 
-#endif 
+#endif

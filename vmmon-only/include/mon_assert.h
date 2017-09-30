@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2007-2014 VMware, Inc. All rights reserved.
+ * Copyright (C) 2007-2015 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -169,8 +169,13 @@ extern const char __vmm_pathnames_start;
  * seen to hoist code into the failing arm of the assertion, where it
  * can then tell that, because of the assertion failure, the code ends
  * up accessing an array out of bounds.
+ *
+ * Assertion failures for the monitor's bootstrap are reduced to panics
+ * logging the current %rip.  As such, no .assert_info section is created
+ * and VMX merely processes the panic.
  */
 
+#ifndef VMM_BOOTSTRAP
 #define ASSERT_RECORDINFO(assembly, assertType, bugNr)                   \
    __asm__ __volatile__(".pushsection .assert_info;"                     \
                         ".quad 0f;"                                      \
@@ -182,6 +187,16 @@ extern const char __vmm_pathnames_start;
                         [file] "i" (__VMM__FILE__),                      \
                         [type] "i" (assertType),                         \
                         [bug]  "i" (bugNr))
+#else
+
+extern uint64 bsAssertRIP;
+#define ASSERT_RECORDINFO(assembly, assertType, bugNr)                   \
+   __asm__ __volatile__("lea 0(%%rip), %0\n\t"                           \
+                        : "=r"(bsAssertRIP));                            \
+   Panic("Bootstrap: %s failure at rip=0x%lx",                           \
+         assertType == AssertType_AssertVerify ? "VERIFY" : "ASSERT",    \
+         bsAssertRIP);
+#endif /* VMM_BOOTSTRAP */
 
 #define _ASSERT_PANIC(name)                                              \
    ({COMPILER_MEM_BARRIER();                                             \

@@ -226,7 +226,7 @@ PhysTrack_Alloc(VMDriver *vm)
    }
 
    return tracker;
-} 
+}
 
 
 /*
@@ -238,7 +238,7 @@ PhysTrack_Alloc(VMDriver *vm)
  *
  * Results:
  *      reallocates all structures, including 'tracker'
- *     
+ *
  * Side effects:
  *      tracker deallocated
  *
@@ -246,7 +246,7 @@ PhysTrack_Alloc(VMDriver *vm)
  */
 
 void
-PhysTrack_Free(PhysTracker *tracker) 
+PhysTrack_Free(PhysTracker *tracker)
 {
    unsigned int p1;
 

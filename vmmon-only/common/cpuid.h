@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998,2016 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998, 2016-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -36,11 +36,10 @@ extern uint32 cpuidFeatures;
 void CPUID_Init(void);
 CpuidVendor CPUID_GetVendor(void);
 uint32 CPUID_GetVersion(void);
-Bool CPUID_SyscallSupported(void);
-Bool CPUID_LongModeSupported(void);
 Bool CPUID_AddressSizeSupported(void);
+Bool CPUID_HostSupportsHV(void);
 
-static INLINE uint32 
+static INLINE uint32
 CPUID_GetFeatures(void)
 {
    return cpuidFeatures;
@@ -53,4 +52,3 @@ CPUID_SSE2Supported(void)
 }
 
 #endif
-

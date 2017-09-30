@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014,2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -26,7 +26,11 @@
 #include "includeCheck.h"
 #include "vm_basic_types.h"
 #include "vm_atomic.h"
-#include "monitorAction_exported.h"
+
+#if defined __cplusplus
+extern "C" {
+#endif
+
 
 #define VNET_PVN_ABI_ID_LEN    (256 / 8)  // bytes used on ioctl()
 #define VNET_PVN_ID_LEN        (160 / 8)  // actual length used
@@ -67,7 +71,7 @@ typedef struct VNet_Bind {
 #define SIOCGETAPIVERSION  0x99FC
 #define SIOCINJECTLINKSTATE 0x99FD
 
-#define VNET_NOTIFY_VERSION     5
+#define VNET_NOTIFY_VERSION     6
 #define VNET_LAST_CMD      0x99FD
 
 #if defined __linux__ || defined __APPLE__
@@ -121,7 +125,7 @@ enum VMNetSockOpt {
 };
 
 /*
- * This magic value is populated in VNet_Notify.actionID and VNet_Notify.pollMask
+ * This magic value is populated in VNet_Notify.pollMask
  * to request the driver to clear the Notify pollPtr if the receive queue is empty.
  */
 #define VNET_NOTIFY_CLR_MAGIC   0xDECAFBAD
@@ -155,7 +159,7 @@ typedef struct VNet_Read {
  * as well as new driver with old executable).
  */
 
-#ifdef linux
+#ifdef __linux__
 #define VNET_API_VERSION                (3 << 16 | 0)
 #elif defined __APPLE__
 #define VNET_API_VERSION                (6 << 16 | 0)
@@ -176,11 +180,11 @@ typedef struct VNet_SetMacAddrIOCTL {
 #pragma pack(push, 1)
 typedef struct VNet_Notify {
    uint32            version;
-   uint32            actionVersion;  /* Version of monitor action logic */
-   VA64              actPtr;         /* User VA of a MonitorActionIntr */
+   uint32            _unused0;
+   VA64              _unused1;
    VA64              pollPtr;        /* User VA of a volatile uint32 */
    VA64              recvClusterPtr; /* User VA of a uint32 */
-   MonitorIdemAction actionID;
+   uint32            _unused2;
    uint32            pollMask;
 } VNet_Notify;
 #pragma pack(pop)
@@ -447,4 +451,8 @@ exit_failure:
 
 #endif // __APPLE__ && ! KERNEL
 
+#if defined __cplusplus
+} // extern "C"
 #endif
+
+#endif // _VNET_H

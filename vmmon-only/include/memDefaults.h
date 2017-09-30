@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2012 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2016 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -24,11 +24,14 @@
 #define INCLUDE_ALLOW_VMMON
 #define INCLUDE_ALLOW_VMCORE
 #define INCLUDE_ALLOW_MODULE
-
 #include "includeCheck.h"
 
 #include "vm_basic_math.h"
 #include "vm_basic_defs.h"
+
+#if defined(__cplusplus)
+extern "C" {
+#endif
 
 #define MEMDEFAULTS_MIN_HOST_PAGES   MBYTES_2_PAGES(128)
 
@@ -150,5 +153,9 @@ MemDefaults_CalcMinReservedMBs(uint32 hostMem)  // IN:
 
 void MemDefaults_GetReservedMemory(uint32 *host, uint32 *min,
                                    uint32 *max, uint32 *recommended);
+
+#if defined(__cplusplus)
+}  // extern "C"
+#endif
 
 #endif

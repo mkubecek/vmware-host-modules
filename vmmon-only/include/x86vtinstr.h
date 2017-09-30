@@ -34,6 +34,11 @@
 #include "x86_basic_defs.h"
 #include "community_source.h"
 
+#if defined __cplusplus
+extern "C" {
+#endif
+
+
 #define INVALID_VMCS_ADDR    ~0ULL
 
 /*
@@ -67,23 +72,23 @@ VMXStatus_Valid(VMXStatus status)
 #if defined __GNUC__
 
 static INLINE VMXStatus
-VMXON_2_STATUS(MA* vmcs)
+VMXON_2_STATUS(MA* vmxonRegion)
 {
    VMXStatus status;
    __asm__ __volatile__("vmxon %1; lahf; movzbl %%ah, %0"
                         : "=a"(status)
-                        : "m"(*vmcs)
+                        : "m"(*vmxonRegion)
                         : "cc", "memory");
    ASSERT(VMXStatus_Valid(status));
    return status;
 }
 
 static INLINE void
-VMXON_UNCHECKED(MA *vmcs)
+VMXON_UNCHECKED(MA *vmxonRegion)
 {
    __asm__ __volatile__("vmxon %0"
                         :
-                        : "m"(*vmcs)
+                        : "m"(*vmxonRegion)
                         : "cc", "memory");
 }
 
@@ -127,18 +132,6 @@ VMCLEAR_UNCHECKED(MA* vmcs)
                         :
                         : "m"(*vmcs)
                         : "cc", "memory");
-}
-
-static INLINE void
-VMCLEAR(MA* vmcs)
-{
-   if (vmx86_debug) {
-      VMXStatus status;
-      status = VMCLEAR_2_STATUS(vmcs);
-      ASSERT(status == VMX_Success);
-   } else {
-      VMCLEAR_UNCHECKED(vmcs);
-   }
 }
 
 static INLINE VMXStatus
@@ -205,20 +198,6 @@ VMREAD_UNCHECKED(size_t encoding)
                         : "=rm"(retval)
                         : "r"(encoding)
                         : "cc", "memory");
-   return retval;
-}
-
-static INLINE size_t
-VMREAD(size_t encoding)
-{
-   size_t retval;
-   if (vmx86_debug) {
-      VMXStatus status;
-      status = VMREAD_2_STATUS(encoding, &retval);
-      ASSERT(status == VMX_Success);
-   } else {
-      retval = VMREAD_UNCHECKED(encoding);
-   }
    return retval;
 }
 
@@ -507,21 +486,21 @@ void          __vmx_vmptrst(unsigned __int64 *);
 
 
 static INLINE VMXStatus
-VMXON_2_STATUS(MA *vmcs)
+VMXON_2_STATUS(MA *vmxonRegion)
 {
    unsigned char mscStatus;
    static const VMXStatus MscToStatus[] =
       {VMX_Success, VMX_FailValid, VMX_FailInvalid};
 
-   mscStatus = __vmx_on((unsigned __int64 *)vmcs);
+   mscStatus = __vmx_on((unsigned __int64 *)vmxonRegion);
    ASSERT(mscStatus < ARRAYSIZE(MscToStatus));
    return MscToStatus[mscStatus];
 }
 
 static INLINE void
-VMXON_UNCHECKED(MA *vmcs)
+VMXON_UNCHECKED(MA *vmxonRegion)
 {
-   (void)__vmx_on((unsigned __int64 *)vmcs);
+   (void)__vmx_on((unsigned __int64 *)vmxonRegion);
 }
 
 static INLINE VMXStatus
@@ -536,6 +515,45 @@ VMXOFF_UNCHECKED(void)
 {
    (void)__vmx_off();
 }
+
+static INLINE void
+VMCLEAR_UNCHECKED(MA *vmcs)
+{
+   (void)__vmx_vmclear((unsigned __int64 *)vmcs);
+}
+
+static INLINE size_t
+VMREAD_UNCHECKED(size_t encoding)
+{
+   size_t retval;
+   (void)__vmx_vmread(encoding, &retval);
+   return retval;
+}
+
+static INLINE VMXStatus
+VMCLEAR_2_STATUS(MA *vmcs)
+{
+   unsigned char mscStatus;
+   static const VMXStatus MscToStatus[] =
+      {VMX_Success, VMX_FailValid, VMX_FailInvalid};
+
+   mscStatus = __vmx_vmclear((unsigned __int64 *)vmcs);
+   ASSERT(mscStatus < ARRAYSIZE(MscToStatus));
+   return MscToStatus[mscStatus];
+}
+ 
+static INLINE VMXStatus
+VMREAD_2_STATUS(size_t encoding, size_t *retval)
+{
+   unsigned char mscStatus;
+   static const VMXStatus MscToStatus[] =
+      {VMX_Success, VMX_FailValid, VMX_FailInvalid};
+ 
+   mscStatus = __vmx_vmread(encoding, retval);
+   ASSERT(mscStatus < ARRAYSIZE(MscToStatus));
+   return MscToStatus[mscStatus];
+}
+
 
 static INLINE VMXStatus
 VMPTRLD_2_STATUS(MA *vmcs)
@@ -573,14 +591,14 @@ VMPTRST_UNCHECKED(MA *vmcs)
 
 
 static INLINE void
-VMXON(MA *vmcs)
+VMXON(MA *vmxonRegion)
 {
    if (vmx86_debug) {
       VMXStatus status;
-      status = VMXON_2_STATUS(vmcs);
+      status = VMXON_2_STATUS(vmxonRegion);
       ASSERT(status == VMX_Success);
    } else {
-      VMXON_UNCHECKED(vmcs); 
+      VMXON_UNCHECKED(vmxonRegion); 
    }
 }
 
@@ -619,5 +637,37 @@ VMPTRST(MA *vmcs)
       VMPTRST_UNCHECKED(vmcs);
    }
 }
+
+
+static INLINE void
+VMCLEAR(MA* vmcs)
+{
+   if (vmx86_debug) {
+      VMXStatus status;
+      status = VMCLEAR_2_STATUS(vmcs);
+      ASSERT(status == VMX_Success);
+   } else {
+      VMCLEAR_UNCHECKED(vmcs);
+   }
+}
+
+static INLINE size_t
+VMREAD(size_t encoding)
+{
+   size_t retval;
+   if (vmx86_debug) {
+      VMXStatus status;
+      status = VMREAD_2_STATUS(encoding, &retval);
+      ASSERT(status == VMX_Success);
+   } else {
+      retval = VMREAD_UNCHECKED(encoding);
+   }
+   return retval;
+}
+
+
+#if defined __cplusplus
+}  // extern "C"
+#endif
 
 #endif /* _X86VTINSTR_H_ */

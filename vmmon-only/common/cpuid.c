@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998, 2016-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -31,6 +31,8 @@
 #include "hostif.h"
 #include "cpuid.h"
 #include "x86cpuid_asm.h"
+#include "x86svm.h"
+#include "x86vt.h"
 
 uint32 cpuidFeatures;
 static CpuidVendor vendor = CPUID_NUM_VENDORS;
@@ -111,65 +113,7 @@ CPUID_GetVendor(void)
 uint32
 CPUID_GetVersion(void)
 {
-   ASSERT(vendor != CPUID_NUM_VENDORS);
    return version;
-}
-
-
-/*
- *-----------------------------------------------------------------------------
- *
- * CPUID_SyscallSupported --
- *
- *     Determine whether processor supports syscall opcode and MSRs.
- *
- * Results:
- *     FALSE     if processor does not support syscall
- *     TRUE      if processor supports syscall
- *
- * Side effects:
- *     It determines value only on first call, caching it for future.
- *
- *-----------------------------------------------------------------------------
- */
-
-Bool
-CPUID_SyscallSupported(void)
-{
-   /*
-    * It is OK to use local static variables here as 'result' does not depend
-    * on any work done in CPUID_Init(). It purely depends on the CPU.
-    */
-   static Bool initialized = FALSE;
-   static Bool result;
-
-   if (UNLIKELY(!initialized)) {
-      result =    CPUIDExtendedSupported() >= 0x80000001
-               && (__GET_EDX_FROM_CPUID(0x80000001) & (1 << 11));
-      initialized = TRUE;
-   }
-
-   return result;
-}
-
-
-Bool
-CPUID_LongModeSupported(void)
-{
-   /*
-    * It is OK to use local static variables here as 'result' does not depend
-    * on any work done in CPUID_Init(). It purely depends on the CPU.
-    */
-   static Bool initialized = FALSE;
-   static Bool result;
-
-   if (UNLIKELY(!initialized)) {
-      result =       CPUIDExtendedSupported() >= 0x80000001
-                  && (__GET_EDX_FROM_CPUID(0x80000001) & (1 << 29));
-      initialized = TRUE;
-   }
-
-   return result;
 }
 
 
@@ -206,4 +150,29 @@ CPUID_AddressSizeSupported(void)
    }
 
    return result;
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * CPUID_HostSupportsHV --
+ *
+ *     Determine whether processor supports hardware virtualization.  Two
+ *     possibilities are valid: VMX on Intel or SVM on AMD.
+ *
+ * Results:
+ *     True iff the processor supports the required features.
+ *
+ * Side effects:
+ *     None.
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+Bool
+CPUID_HostSupportsHV(void)
+{
+   return (vendor == CPUID_VENDOR_AMD   && SVM_CapableCPU()) ||
+          (vendor == CPUID_VENDOR_INTEL && VT_CapableCPU());
 }

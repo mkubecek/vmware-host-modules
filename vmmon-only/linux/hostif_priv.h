@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2009-2014 VMware, Inc. All rights reserved.
+ * Copyright (C) 2009-2015 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -24,14 +24,6 @@
 
 #ifndef _HOSTIF_PRIV_H_
 #define _HOSTIF_PRIV_H_
-
-/* Functions for transferring data to/from userspace. */
-EXTERN int    HostIF_CopyFromUser(void *dst, const void *src, unsigned int len);
-EXTERN int    HostIF_CopyToUser(void *dst, const void *src, unsigned int len);
-
-/* Functions for dealing with the poll list lock. */
-EXTERN void   HostIF_PollListLock(int callerID);
-EXTERN void   HostIF_PollListUnlock(int callerID);
 
 /* Functions for mapping and unmapping userspace memory. */
 struct VMMappedUserMem;

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2013 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998,2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -36,9 +36,7 @@
 #include <linux/slab.h>
 #include <linux/version.h>
 #include <linux/wait.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 #include <linux/taskstats_kern.h>  // For <linux/sched/signal.h> without version dependency
-#endif
 
 #include <net/checksum.h>
 #include <net/sock.h>
@@ -50,7 +48,6 @@
 #include "vmnetInt.h"
 #include "vm_atomic.h"
 #include "vm_assert.h"
-#include "monitorAction_exported.h"
 
 typedef struct VNetUserIFStats {
    unsigned    read;
@@ -66,12 +63,9 @@ typedef struct VNetUserIF {
    VNetPort               port;
    struct sk_buff_head    packetQueue;
    Atomic_uint32         *pollPtr;
-   MonitorActionIntr     *actionIntr;
    uint32                 pollMask;
-   MonitorIdemAction      actionID;
    uint32*                recvClusterCount;
    wait_queue_head_t      waitQueue;
-   struct page*           actPage;
    struct page*           pollPage;
    struct page*           recvClusterPage;
    VNetUserIFStats        stats;
@@ -115,16 +109,7 @@ UserifLockPage(VA addr) // IN
    struct page *page = NULL;
    int retval;
 
-   down_read(&current->mm->mmap_sem);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
-   retval = get_user_pages(addr, 1, FOLL_WRITE, &page, NULL);
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
-   retval = get_user_pages(addr, 1, 1, 0, &page, NULL);
-#else
-   retval = get_user_pages(current, current->mm, addr,
-                           1, 1, 0, &page, NULL);
-#endif
-   up_read(&current->mm->mmap_sem);
+   retval = get_user_pages_fast(addr, 1, FOLL_WRITE, &page);
 
    if (retval != 1) {
       return NULL;
@@ -185,15 +170,15 @@ VNetUserIfMapUint32Ptr(VA uAddr,        // IN: pointer to user memory
  *
  * VNetUserIfSetupNotify --
  *
- *    Sets up notification by filling in pollPtr, actPtr, and recvClusterCount
+ *    Sets up notification by filling in pollPtr and recvClusterCount
  *    fields.
- * 
- * Results: 
+ *
+ * Results:
  *    0 on success
  *    < 0 on failure: the actual value determines the type of failure
  *
  * Side effects:
- *    Fields pollPtr, actPtr, recvClusterCount, pollPage, actPage, and 
+ *    Fields pollPtr, recvClusterCount, pollPage, and
  *    recvClusterPage are filled in VNetUserIf structure.
  *
  *-----------------------------------------------------------------------------
@@ -206,14 +191,12 @@ VNetUserIfSetupNotify(VNetUserIF *userIf, // IN
    unsigned long flags;
    struct sk_buff_head *q = &userIf->packetQueue;
    uint32 *pollPtr;
-   MonitorActionIntr *actionIntr;
    uint32 *recvClusterCount;
    struct page *pollPage = NULL;
-   struct page *actPage = NULL;
    struct page *recvClusterPage = NULL;
    int retval;
 
-   if (userIf->pollPtr || userIf->actionIntr || userIf->recvClusterCount) {
+   if (userIf->pollPtr || userIf->recvClusterCount) {
       LOG(0, (KERN_DEBUG "vmnet: Notification mechanism already active\n"));
       return -EBUSY;
    }
@@ -230,12 +213,6 @@ VNetUserIfSetupNotify(VNetUserIF *userIf, // IN
       goto error_free;
    }
 
-   if ((retval = VNetUserIfMapPtr((VA)vn->actPtr, sizeof *actionIntr,
-                                  &actPage,
-                                  (void **)&actionIntr)) < 0) {
-      goto error_free;
-   }
-
    if ((retval = VNetUserIfMapUint32Ptr((VA)vn->recvClusterPtr,
                                         &recvClusterPage,
                                         &recvClusterCount)) < 0) {
@@ -243,7 +220,7 @@ VNetUserIfSetupNotify(VNetUserIF *userIf, // IN
    }
 
    spin_lock_irqsave(&q->lock, flags);
-   if (userIf->pollPtr || userIf->actionIntr || userIf->recvClusterCount) {
+   if (userIf->pollPtr || userIf->recvClusterCount) {
       spin_unlock_irqrestore(&q->lock, flags);
       retval = -EBUSY;
       LOG(0, (KERN_DEBUG "vmnet: Notification mechanism already active\n"));
@@ -252,12 +229,9 @@ VNetUserIfSetupNotify(VNetUserIF *userIf, // IN
 
    userIf->pollPtr = (Atomic_uint32 *)pollPtr;
    userIf->pollPage = pollPage;
-   userIf->actionIntr = actionIntr;
-   userIf->actPage = actPage;
    userIf->recvClusterCount = recvClusterCount;
    userIf->recvClusterPage = recvClusterPage;
    userIf->pollMask = vn->pollMask;
-   userIf->actionID = vn->actionID;
    spin_unlock_irqrestore(&q->lock, flags);
    return 0;
 
@@ -265,10 +239,6 @@ VNetUserIfSetupNotify(VNetUserIF *userIf, // IN
    if (pollPage) {
       kunmap(pollPage);
       put_page(pollPage);
-   }
-   if (actPage) {
-      kunmap(actPage);
-      put_page(actPage);
    }
    if (recvClusterPage) {
       kunmap(recvClusterPage);
@@ -283,12 +253,12 @@ VNetUserIfSetupNotify(VNetUserIF *userIf, // IN
  * VNetUserIfUnsetupNotify --
  *
  *      Destroys permanent mapping for notify structure provided by user.
- * 
- * Results: 
+ *
+ * Results:
  *      None.
  *
  * Side effects:
- *      Fields pollPtr, actPtr, recvClusterCount, etc. in VNetUserIf
+ *      Fields pollPtr, recvClusterCount, etc. in VNetUserIf
  *      structure are cleared.
  *
  *----------------------------------------------------------------------
@@ -299,7 +269,6 @@ VNetUserIfUnsetupNotify(VNetUserIF *userIf) // IN
 {
    unsigned long flags;
    struct page *pollPage = userIf->pollPage;
-   struct page *actPage = userIf->actPage;
    struct page *recvClusterPage = userIf->recvClusterPage;
 
    struct sk_buff_head *q = &userIf->packetQueue;
@@ -307,22 +276,15 @@ VNetUserIfUnsetupNotify(VNetUserIF *userIf) // IN
    spin_lock_irqsave(&q->lock, flags);
    userIf->pollPtr = NULL;
    userIf->pollPage = NULL;
-   userIf->actionIntr = NULL;
-   userIf->actPage = NULL;
    userIf->recvClusterCount = NULL;
    userIf->recvClusterPage = NULL;
    userIf->pollMask = 0;
-   userIf->actionID = -1;
    spin_unlock_irqrestore(&q->lock, flags);
 
    /* Release */
    if (pollPage) {
       kunmap(pollPage);
       put_page(pollPage);
-   }
-   if (actPage) {
-      kunmap(actPage);
-      put_page(actPage);
    }
    if (recvClusterPage) {
       kunmap(recvClusterPage);
@@ -436,9 +398,12 @@ VNetUserIfReceive(VNetJack       *this, // IN
    __skb_queue_tail(&userIf->packetQueue, skb);
    if (userIf->pollPtr) {
       Atomic_Or(userIf->pollPtr, userIf->pollMask);
+#if 0
+      /* Potential optimization: avoid waking based on cluster size */
       if (skb_queue_len(&userIf->packetQueue) >= (*userIf->recvClusterCount)) {
-         MonitorAction_SetBits(userIf->actionIntr, userIf->actionID);
+         // TODO
       }
+#endif
    }
    spin_unlock_irqrestore(&userIf->packetQueue.lock, flags);
 
@@ -866,14 +831,6 @@ VNetUserIfIoctl(VNetPort      *port,  // IN
    case SIOCSETNOTIFY:
       return -EINVAL;
    case SIOCSETNOTIFY2:
-#ifdef VMX86_SERVER
-      /* 
-       * This ioctl always return failure on ESX since we cannot map pages into 
-       * the console os that are from the VMKernel address space which  was the
-       * only case we used this.
-       */
-      return -EINVAL;
-#else // VMX86_SERVER
    /*
     * ORs pollMask into the integer pointed to by ptr if pending packet. Is
     * cleared when all packets are drained.
@@ -886,11 +843,8 @@ VNetUserIfIoctl(VNetPort      *port,  // IN
          return -EFAULT;
       }
 
-      ASSERT_ON_COMPILE(VNET_NOTIFY_VERSION == 5);
-      ASSERT_ON_COMPILE(ACTION_EXPORTED_VERSION == 2);
-      if (vn.version != VNET_NOTIFY_VERSION ||
-          vn.actionVersion != ACTION_EXPORTED_VERSION ||
-          vn.actionID / ACTION_WORD_SIZE >= ACTION_NUM_WORDS) {
+      ASSERT_ON_COMPILE(VNET_NOTIFY_VERSION == 6);
+      if (vn.version != VNET_NOTIFY_VERSION) {
          return -ENOTTY;
       }
 
@@ -901,10 +855,8 @@ VNetUserIfIoctl(VNetPort      *port,  // IN
 
       break;
    }
-#endif // VMX86_SERVER
    case SIOCUNSETNOTIFY:
       if (!userIf->pollPtr) {
-	 /* This should always happen on ESX. */
          return -EINVAL;
       }
       VNetUserIfUnsetupNotify(userIf);
@@ -1110,13 +1062,10 @@ VNetUserIf_Create(VNetPort **ret) // OUT
    userIf->port.jack.portsChanged = NULL;
    userIf->port.jack.isBridged = NULL;
    userIf->pollPtr = NULL;
-   userIf->actionIntr = NULL;
    userIf->recvClusterCount = NULL;
    userIf->pollPage = NULL;
-   userIf->actPage = NULL;
    userIf->recvClusterPage = NULL;
    userIf->pollMask = 0;
-   userIf->actionID = -1;
    userIf->port.exactFilterLen = 0;
    userIf->eventSender = NULL;
 

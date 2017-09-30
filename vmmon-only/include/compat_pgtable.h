@@ -48,11 +48,6 @@ typedef p4d_t compat_p4d_t;
 #   define COMPAT_P4D_MASK                  0            /* Not used */
 typedef pgd_t compat_p4d_t;
 #endif
-/* p[gu]d_large did not exist before 2.6.25 */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 25)
-#   define pud_large(pud) 0
-#   define pgd_large(pgd) 0
-#endif
 /* pud_pfn did not exist before 3.8. */
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 8, 0)
 #   define pud_pfn(pud)  INVALID_MPN

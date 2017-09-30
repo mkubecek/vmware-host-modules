@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2003-2015 VMware, Inc. All rights reserved.
+ * Copyright (C) 2003-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -251,12 +251,16 @@ Max(int a, int b)
 #define PAGES_2_BYTES(_npages)  (((uint64)(_npages)) << PAGE_SHIFT)
 #endif
 
+#ifndef MBYTES_SHIFT
+#define MBYTES_SHIFT 20
+#endif
+
 #ifndef MBYTES_2_PAGES
-#define MBYTES_2_PAGES(_nbytes) ((_nbytes) << (20 - PAGE_SHIFT))
+#define MBYTES_2_PAGES(_nbytes) ((_nbytes) << (MBYTES_SHIFT - PAGE_SHIFT))
 #endif
 
 #ifndef PAGES_2_MBYTES
-#define PAGES_2_MBYTES(_npages) ((_npages) >> (20 - PAGE_SHIFT))
+#define PAGES_2_MBYTES(_npages) ((_npages) >> (MBYTES_SHIFT - PAGE_SHIFT))
 #endif
 
 #ifndef GBYTES_2_PAGES
@@ -268,11 +272,11 @@ Max(int a, int b)
 #endif
 
 #ifndef BYTES_2_MBYTES
-#define BYTES_2_MBYTES(_nbytes) ((_nbytes) >> 20)
+#define BYTES_2_MBYTES(_nbytes) ((_nbytes) >> MBYTES_SHIFT)
 #endif
 
 #ifndef MBYTES_2_BYTES
-#define MBYTES_2_BYTES(_nbytes) ((uint64)(_nbytes) << 20)
+#define MBYTES_2_BYTES(_nbytes) ((uint64)(_nbytes) << MBYTES_SHIFT)
 #endif
 
 #ifndef BYTES_2_GBYTES
@@ -297,6 +301,26 @@ Max(int a, int b)
 
 #ifndef VM_PAE_LARGE_2_SMALL_PAGES
 #define VM_PAE_LARGE_2_SMALL_PAGES (BYTES_2_PAGES(VM_PAE_LARGE_PAGE_SIZE))
+#endif
+
+#ifndef VM_PAE_LARGE_2_BYTES
+#define VM_PAE_LARGE_2_BYTES(_2mbytes) ((_2mbytes) << VM_PAE_LARGE_PAGE_SHIFT)
+#endif
+
+#ifndef VM_1GB_PAGE_SHIFT
+#define VM_1GB_PAGE_SHIFT 30
+#endif
+
+#ifndef VM_1GB_PAGE_SIZE
+#define VM_1GB_PAGE_SIZE (1 << VM_1GB_PAGE_SHIFT)
+#endif
+
+#ifndef VM_1GB_2_PAGES
+#define VM_1GB_2_PAGES (BYTES_2_PAGES(VM_1GB_PAGE_SIZE))
+#endif
+
+#ifndef VM_1GB_2_PDIRS
+#define VM_1GB_2_PDIRS (VM_1GB_PAGE_SIZE / VM_PAE_LARGE_PAGE_SIZE)
 #endif
 
 /*
@@ -394,9 +418,7 @@ void *_ReturnAddress(void);
  * guarantee.  Bummer.  --Jeremy.
  */
 
-#if defined(N_PLAT_NLM)
-/* We do not have YIELD() as we do not need it yet... */
-#elif defined(_WIN32)
+#if defined(_WIN32)
 #      define YIELD()		Sleep(0)
 #elif defined(VMKERNEL)
 /* We don't have a YIELD macro in the vmkernel */
@@ -412,7 +434,11 @@ void *_ReturnAddress(void);
 
 #ifdef _WIN32 // {
 
+/* Conflict with definition of Visual Studio 2015 */
+#if (_MSC_VER < 1900)
 #define snprintf  _snprintf
+#endif
+
 #define strtok_r  strtok_s
 
 #if (_MSC_VER < 1500)
@@ -652,14 +678,24 @@ typedef int pid_t;
 #define APPLE_ONLY(x) x
 #else
 #define vmx86_apple 0
-#define APPLE_ONLY(x) 
+#define APPLE_ONLY(x)
+#endif
+
+#if defined(__APPLE__) && defined(VMW_APPLE_SANDBOX)
+#define vmw_apple_sandbox 1
+#else
+#define vmw_apple_sandbox 0
 #endif
 
 #ifdef VMM
 #define VMM_ONLY(x) x
-#define USER_ONLY(x)
 #else
 #define VMM_ONLY(x)
+#endif
+
+#if defined(VMM) || defined(VMKERNEL)
+#define USER_ONLY(x)
+#else
 #define USER_ONLY(x) x
 #endif
 
@@ -781,6 +817,22 @@ typedef int pid_t;
 #define SIZE_80BIT  10
 #define SIZE_128BIT 16
 #define SIZE_256BIT 32
+#define SIZE_512BIT 64
 
+/*
+ * Allocate a variable of type _type, aligned to _align bytes, returning a
+ * pointer to the variable in _var.  Potentially _align - 1 bytes may be
+ * wasted.  On x86, GCC 6.3.0 behaves sub-optimally when variables are declared
+ * on the stack using the aligned attribute, so this pattern is preferred.
+ * See PRs 1795155, 1819963.
+ */
+#define WITH_PTR_TO_ALIGNED_VAR(_type, _align, _var)                     \
+   do {                                                                  \
+      uint8 _buf_##_var[sizeof(_type) + (_align) - 1];                   \
+      _type *_var = (_type *) ((uintptr_t)(_buf_##_var + (_align) - 1) & \
+                               ~((uintptr_t) ((_align) - 1)));
+
+#define END_PTR_TO_ALIGNED_VAR \
+   } while (0)
 
 #endif // ifndef _VM_BASIC_DEFS_H_

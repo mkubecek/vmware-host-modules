@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2015 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -40,7 +40,8 @@
 
 /* STRICT ANSI means the Xserver build and X defines Bool differently. */
 #if !defined(_XTYPEDEF_BOOL) && \
-    (!defined(__STRICT_ANSI__) || defined(__FreeBSD__) || defined(__MINGW32__))
+    (!defined(__STRICT_ANSI__) || defined(__FreeBSD__) || \
+      defined(__MINGW32__) || defined(__APPLE__))
 #define _XTYPEDEF_BOOL
 typedef char           Bool;
 #endif
@@ -53,8 +54,7 @@ typedef char           Bool;
 #define TRUE           1
 #endif
 
-#define IsBool(x)      (((x) & ~1) == 0)
-#define IsBool2(x, y)  ((((x) | (y)) & ~1) == 0)
+#define IS_BOOL(x)     (((x) & ~1) == 0)
 
 /*
  * Macros __i386__ and __ia64 are intrinsically defined by GCC
@@ -312,6 +312,19 @@ typedef uint32    uintptr_t;
 #endif
 
 
+#if defined(__GNUC__) && defined(__SIZEOF_INT128__)
+
+typedef unsigned __int128 uint128;
+typedef          __int128  int128;
+
+#define MIN_INT128   ((int128)1 << 127)
+#define MAX_INT128   (~MIN_INT128)
+#define MIN_UINT128  ((uint128)0)
+#define MAX_UINT128  (~MIN_UINT128)
+
+#endif
+
+
 /*
  * Time
  * XXX These should be cleaned up.  -- edward
@@ -353,14 +366,7 @@ typedef int64 VmTimeVirtualClock;  /* Virtual Clock kept in CPU cycles */
    #define FMTH ""
 #elif __GNUC__
    #define FMTH ""
-   #if defined(N_PLAT_NLM) || defined(sun) || \
-       (defined(__FreeBSD__) && (__FreeBSD__ + 0) && ((__FreeBSD__ + 0) < 5))
-      /*
-       * Why (__FreeBSD__ + 0)?  See bug 141008.
-       * Yes, we really need to test both (__FreeBSD__ + 0) and
-       * ((__FreeBSD__ + 0) < 5).  No, we can't remove "+ 0" from
-       * ((__FreeBSD__ + 0) < 5).
-       */
+   #if defined(sun)
       #if defined(VM_X86_64) || defined(VM_ARM_64)
          #define FMTSZ  "l"
          #define FMTPD  "l"
@@ -368,7 +374,8 @@ typedef int64 VmTimeVirtualClock;  /* Virtual Clock kept in CPU cycles */
          #define FMTSZ  ""
          #define FMTPD  ""
       #endif
-   #elif defined(__linux__) \
+   #elif defined(__linux__) || \
+        (defined(__FreeBSD__) && (__FreeBSD__ + 0))\
       || (defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L) \
       || (defined(_POSIX_VERSION) && _POSIX_VERSION >= 200112L) \
       || (defined(_POSIX2_VERSION) && _POSIX2_VERSION >= 200112L)
@@ -543,6 +550,11 @@ typedef uint16  UReg16;
 typedef uint32  UReg32;
 typedef uint64  UReg64;
 
+#if defined(__GNUC__) && defined(__SIZEOF_INT128__)
+typedef  int128  Reg128;
+typedef uint128 UReg128;
+#endif
+
 #if defined(VMM) || defined(COREQUERY) || defined(EXTDECODER) ||  \
     defined (VMKERNEL) || defined (VMKBOOT)
 typedef  Reg64  Reg;
@@ -673,10 +685,17 @@ typedef void * UserVA;
 #endif
 #define CONST         const
 
-
 #ifndef INLINE
 #   ifdef _MSC_VER
-#      define INLINE        __inline
+       /*
+        * On UWP(Universal Windows Platform),
+        * Only X86 32bit support '__inline'
+        */
+#      if defined(VM_WIN_UWP) && !defined(VM_X86_32)
+#            define INLINE
+#      else
+#            define INLINE        __inline
+#      endif
 #   else
 #      define INLINE        inline
 #   endif
@@ -887,6 +906,8 @@ typedef void * UserVA;
 #ifndef UNUSED_PARAM
 # if defined(__GNUC__)
 #  define UNUSED_PARAM(_parm) _parm  __attribute__((__unused__))
+# elif defined _MSC_VER
+#  define UNUSED_PARAM(_parm) __pragma(warning(suppress:4100)) _parm
 # else
 #  define UNUSED_PARAM(_parm) _parm
 # endif
@@ -920,6 +941,21 @@ typedef void * UserVA;
 #else
 #define ALIGNED(n)
 #endif
+
+
+/*
+ * Encapsulate the syntactic differences between gcc and msvc alignment control.
+ * BOUNDARY must match in the prefix and suffix.
+ */
+
+#ifdef _WIN32
+#define ALIGN_PREFIX(BOUNDRY) __declspec(align(BOUNDRY))
+#define ALIGN_SUFFIX(BOUNDRY)
+#else
+#define ALIGN_PREFIX(BOUNDRY)
+#define ALIGN_SUFFIX(BOUNDRY) __attribute__((__aligned__(BOUNDRY)))
+#endif
+
 
 /*
  * Once upon a time, this was used to silence compiler warnings that
@@ -1101,16 +1137,6 @@ typedef void * UserVA;
 #   endif
 #endif
 
-
-/*
- * Define MXSemaHandle here so both vmmon and vmx see this definition.
- */
-
-#ifdef _WIN32
-typedef uintptr_t MXSemaHandle;
-#else
-typedef int MXSemaHandle;
-#endif
 
 /*
  * Define type for poll device handles.

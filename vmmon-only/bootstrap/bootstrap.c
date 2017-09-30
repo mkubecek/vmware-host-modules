@@ -17,16 +17,37 @@
  *********************************************************/
 
 /*
- * Detect if tsc_khz is available.
+ * bootstrap.c --
+ *
+ *    Implements the early VMM bootstraping code that is executed
+ *    by the host (vmmon/VMKernel) to create the VMM context.
  */
 
-#include "compat_version.h"
-#include "compat_autoconf.h"
+#include "vm_basic_types.h"
+#include "vm_basic_defs.h"
+#include "bootstrap_vmm.h"
 
-#include <linux/cpu.h>
-
-int
-vmw_tsc_khz(void)
+/*
+ *---------------------------------------------------------------------
+ *
+ * BSVMM_Validate --
+ *
+ *    Validates the VMM bootstrap blob. For now, we do it by checking
+ *    the magic number. Returns the bootstrap parameter table if
+ *    successful, NULL otherwise.
+ *
+ *---------------------------------------------------------------------
+ */
+BSVMM_HostParams *
+BSVMM_Validate(void *buf, uint32 nbytes)
 {
-    return tsc_khz;
+   BSVMM_HostParams *bsParams = buf;
+
+   if (nbytes < sizeof *bsParams) {
+      return NULL;
+   }
+   if (bsParams->magic != BOOTSTRAP_MAGIC) {
+      return NULL;
+   }
+   return bsParams;
 }

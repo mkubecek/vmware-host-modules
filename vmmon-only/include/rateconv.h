@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2003 VMware, Inc. All rights reserved.
+ * Copyright (C) 2003-2016 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -31,7 +31,6 @@
 #define _VM_RATECONV_H_
 
 #define INCLUDE_ALLOW_USERLEVEL
-
 #define INCLUDE_ALLOW_MODULE
 #define INCLUDE_ALLOW_VMKERNEL
 #define INCLUDE_ALLOW_VMK_MODULE
@@ -44,6 +43,12 @@
 #include "vm_basic_asm.h"
 #include "vm_assert.h"
 #include "vm_atomic.h"
+#include "versioned_atomic.h"
+
+#if defined __cplusplus
+extern "C" {
+#endif
+
 
 /* RateConv_Params is part of vmx<->vmmon interface (INIT_PSEUDO_TSC ioctl) */
 typedef struct RateConv_Params {
@@ -54,8 +59,7 @@ typedef struct RateConv_Params {
 
 typedef struct RateConv_ParamsVolatile {
    RateConv_Params p;
-   Bool            changed;
-   uint8           pad[7];
+   VersionedAtomic vers;
 } RateConv_ParamsVolatile;
 
 typedef struct RateConv_Ratio {
@@ -114,5 +118,9 @@ RateConv_Signed(const RateConv_Params *conv, int64 x)
    return Muls64x32s64(x, conv->mult, conv->shift) + conv->add;
 }
 
+
+#if defined __cplusplus
+} // extern "C"
+#endif
 
 #endif // _VM_RATECONV_H_

@@ -42,7 +42,4 @@
 
 #define VMM_PANIC_MSG_SIZE     256
 
-#define VMM_CPL0_STACK 1
-#define VMM_CPL1_STACK 2
-
 #endif

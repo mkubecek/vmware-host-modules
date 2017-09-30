@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998,2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -20,7 +20,7 @@
  * memtrack.h --
  *
  *    Utility module for tracking pinned memory, which allows later
- *    lookup by VPN.
+ *    lookup by VPN and optionally by MPN.
  */
 
 

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2010-2014 VMware, Inc. All rights reserved.
+ * Copyright (C) 2010-2014,2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -36,6 +36,11 @@
 #include "vm_assert.h"
 #include "vmcore_types.h"
 
+#if defined __cplusplus
+extern "C" {
+#endif
+
+
 /*
  * Sets of pages are passed between the monitor and the platform to be 
  * shared, invalidated, remapped, or swapped.
@@ -53,13 +58,11 @@ typedef struct PageListEntry {
 
 #define PAGELIST_MAX     (PAGE_SIZE / sizeof(PageListEntry))
 
-static INLINE PageListEntry
-PageList_CreateEntry(BPN bpn)
+static INLINE void
+PageList_SetEntry(PageListEntry *ple, BPN bpn)
 {
-   PageListEntry ple;
-   CompressedBPN_Write(&ple.cbpn, bpn);
-   ple.voided = FALSE;
-   return ple;
+   CompressedBPN_Write(&ple->cbpn, bpn);
+   ple->voided = FALSE;
 }   
 
 static INLINE BPN
@@ -98,4 +101,9 @@ PageList_IsBPNDup(const PageListEntry *pageList, unsigned i, BPN bpn)
    return FALSE;
 }
 
+
+#if defined __cplusplus
+} // extern "C"
 #endif
+
+#endif // _PAGELIST_H

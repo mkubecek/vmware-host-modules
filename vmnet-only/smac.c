@@ -2908,17 +2908,16 @@ SMAC_CheckPacketToHost(SMACState *state,     // IN: pointer to state
 		   arpHeaderWord2));
       return PacketStatusDropPacket;
    } else { // if EAPOL packet: typeClass == EthClassEAPOL
-
-      /*
-       * Allow outgoing EAPOL packets to proceed unmolested provided the
-       * source address matches the hardware address.
-       */
-
-      if (!MAC_EQ(state->macAddress, eh->srcAddr)) {
-         VNETKdPrint((MODULE_NAME "ToHostEAPOL: outgoing request using "
-                      "non-wireless-hardware-addr eth source MAC, dropping\n"));
+      if (!ClonePacket(packets)) {
+         VNETKdPrint((MODULE_NAME "  ToHostEapol: couldn't clone packet\n"));
          return PacketStatusDropPacket;
       }
+
+      /* For wireless, send EAPOL packets to host side. */
+      CopyDataToClonedPacket(packets, state->macAddress,
+                             ETH_ALEN /* offset for source MAC */,
+                             ETH_ALEN /* length */);
+
       return PacketStatusForwardPacket;
    }
 }

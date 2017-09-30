@@ -44,6 +44,7 @@
 #define PSHARE_P2M_BUFFER_MPNS_MAX      (16)
 #define PSHARE_P2M_BUFFER_MPNS_DEFAULT  (4)
 #define PSHARE_P2M_BUFFER_SLOTS_PER_MPN (PAGE_SIZE / sizeof(PShare_P2MUpdate))
+#define PSHARE_P2M_BUFFER_SLOTS_MIN     (2)
 
 #define PSHARE_POISON_MARKER            (CONST64U(0xAAAAAAAAAAAAAAAA))
 
@@ -57,8 +58,16 @@ MY_ASSERTS(PSHARE_EXT,
  * types
  */
 
+typedef union {
+   MPN mpn;
+   uint64 vpmemRef;
+} PShare_P2MUpdateReference;
+
+#define PSHARE_SET_INVALID_P2MUPDATE_REFERENCE(ref) ((ref).vpmemRef = CONST64U(-1))
+#define PSHARE_IS_INVALID_P2MUPDATE_REFERENCE(ref) ((ref).vpmemRef == CONST64U(-1))
+
 typedef struct PShare_P2MUpdate {
-   BPN     bpn;
-   MPN     mpn;
+   BPN bpn;
+   PShare_P2MUpdateReference reference;
 } PShare_P2MUpdate;
 #endif

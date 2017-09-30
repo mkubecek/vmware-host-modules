@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2002-2014 VMware, Inc. All rights reserved.
+ * Copyright (C) 2002-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -417,13 +417,13 @@ VCPUSet_PackCareful(unsigned numVCPUs, const VCPUSet *vcs, void *ptr)
  *
  * VCPUSet_UnpackCareful --
  *      
- *      Unpack a VCPUSet from the bytes at "src".
+ *      Unpack a VCPUSet from the bytes at "ptr".
  *
  *----------------------------------------------------------------------
  */
 
 static INLINE void
-VCPUSet_UnpackCareful(unsigned numVCPUs, VCPUSet *vcs, void *ptr)
+VCPUSet_UnpackCareful(unsigned numVCPUs, VCPUSet *vcs, const void *ptr)
 {
    memcpy(vcs->subset, ptr, (numVCPUs + 7) / 8);
 }

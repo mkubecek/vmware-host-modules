@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014, 2016 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -38,15 +38,19 @@
 
 #include "vm_basic_types.h"
 
+#if defined __cplusplus
+extern "C" {
+#endif
 
-typedef uint32 Vcpuid;			// VCPU number
 
-#define VCPUID_INVALID	(~0U)
+typedef uint32 Vcpuid;                 // VCPU number
+
+#define VCPUID_INVALID  (~0U)
 
 #define BOOT_VCPU_ID     0
 #define IS_BOOT_VCPUID(vcpuid)  ((vcpuid) == BOOT_VCPU_ID)
 
-#define MAX_VCPUS      128
+#define MAX_VCPUS      192
 
 #define MAX_CORES_PER_SOCKET   64
 
@@ -61,5 +65,9 @@ extern const VCPUSet     curVcpuidSet;
 #define IS_BOOT_VCPU()      IS_BOOT_VCPUID(CurVcpuid())
 
 #endif  /* VMM */
+
+#if defined __cplusplus
+} // extern "C"
+#endif
 
 #endif // ifndef _VCPUID_H_

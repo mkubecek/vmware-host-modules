@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998,2005-2012,2014-2015 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998,2005-2012,2014-2016 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -74,8 +74,18 @@
 #define PCI_DEVICE_ID_VMWARE_PVSCSI             0x07C0
 #define PCI_DEVICE_ID_VMWARE_82574              0x07D0
 #define PCI_DEVICE_ID_VMWARE_AHCI               0x07E0
+#define PCI_DEVICE_ID_VMWARE_NVME               0x07F0
 #define PCI_DEVICE_ID_VMWARE_HDAUDIO_CODEC      0x1975
 #define PCI_DEVICE_ID_VMWARE_HDAUDIO_CONTROLLER 0x1977
+
+/*
+ * TXT vendor, device and revision ID. We are keeping vendor
+ * as Intel since tboot code does not like anything other
+ * than Intel in the SINIT ACM header.
+ */
+#define TXT_VENDOR_ID                           0x8086
+#define TXT_DEVICE_ID                           0xB002
+#define TXT_REVISION_ID                         0x01
 
 /* The hypervisor device might grow.  Please leave room
  * for 7 more subfunctions.
@@ -90,8 +100,8 @@
 
 #define PCI_DEVICE_ID_VMWARE_DUMMY      0x0809
 
-#define PCI_DEVICE_ID_VMWARE_NVDIMM     0x0810
 #define PCI_DEVICE_ID_VMWARE_VRDMA      0x0820
+#define PCI_DEVICE_ID_VMWARE_VTPM       0x0830
 
 /*
  * VMware Virtual Device Test Infrastructure (VDTI) devices
@@ -136,10 +146,30 @@
 #define PCI_DEVICE_ID_INTEL_HECI        0x2a74
 #define PCI_DEVICE_ID_INTEL_PANTHERPOINT_XHCI 0x1e31
 
-/* From drivers/usb/host/xhci-pci.c:
+/*
+ *  From drivers/usb/host/xhci-pci.c:
  *    Intel XHCI (Lynx Point / Intel 8 Series)
  */
 #define PCI_DEVICE_ID_INTEL_LYNXPOINT_XHCI 0x8c31
+
+/*
+ * Intel Quickassist (QAT) devices:
+ * - Gen 1: Cave Creek (CVC) and Coleto Creek (CLC)
+ * - Gen 2: Lewisburg (LBG)
+ */
+#define PCI_DEVICE_ID_INTEL_QAT_CVC     0x0434
+#define PCI_DEVICE_ID_INTEL_QAT_CLC     0x0435
+#define PCI_DEVICE_ID_INTEL_QAT_LBG     0x37c8
+#define PCI_DEVICE_ID_INTEL_QAT_CVC_VF  0x0442
+#define PCI_DEVICE_ID_INTEL_QAT_CLC_VF  0x0443
+#define PCI_DEVICE_ID_INTEL_QAT_LBG_VF  0x37c9
+
+/*
+ * Intel FPGAs
+ */
+
+#define PCI_DEVICE_ID_INTEL_FPGA_SKL_PF 0xbcc0
+#define PCI_DEVICE_ID_INTEL_FPGA_SKL_VF 0xbcc1
 
 #define E1000E_PCI_DEVICE_ID_CONFIG_STR "e1000e.pci.deviceID"
 #define E1000E_PCI_SUB_VENDOR_ID_CONFIG_STR "e1000e.pci.subVendorID"
@@ -198,6 +228,13 @@
 #define SCSI_CDROM_VENDOR_NAME COMPANY_NAME
 #define SCSI_CDROM_REV_LEVEL "1.0"
 
+/************* NVME implementation limits ********************************/
+#define NVME_MAX_CONTROLLERS   4
+#define NVME_MIN_NAMESPACES    1
+#define NVME_MAX_NAMESPACES    15 /* We support only 15 namespaces same
+                                   * as SCSI devices.
+                                   */
+
 /************* SCSI implementation limits ********************************/
 #define SCSI_MAX_CONTROLLERS	 4	  // Need more than 1 for MSCS clustering
 #define	SCSI_MAX_DEVICES	 16	  // BT-958 emulates only 16
@@ -218,6 +255,7 @@
 #define MAX_NUM_DISKS \
    ((SATA_MAX_CONTROLLERS * SATA_MAX_DEVICES) + \
     (SCSI_MAX_CONTROLLERS * SCSI_MAX_DEVICES) + \
+    (NVME_MAX_CONTROLLERS * NVME_MAX_NAMESPACES) + \
     (IDE_NUM_INTERFACES * IDE_DRIVES_PER_IF))
 
 /*
@@ -228,7 +266,17 @@
 #define SCSI_IDE_CHANNEL         SCSI_MAX_CONTROLLERS
 #define SCSI_IDE_HOSTED_CHANNEL  (SCSI_MAX_CONTROLLERS + 1)
 #define SCSI_SATA_CHANNEL_FIRST  (SCSI_IDE_HOSTED_CHANNEL + 1)
-#define SCSI_MAX_CHANNELS        (SCSI_SATA_CHANNEL_FIRST + SATA_MAX_CONTROLLERS)
+#define SCSI_NVME_CHANNEL_FIRST  (SCSI_SATA_CHANNEL_FIRST + \
+                                  SATA_MAX_CONTROLLERS)
+#define SCSI_MAX_CHANNELS        (SCSI_NVME_CHANNEL_FIRST + \
+                                  NVME_MAX_CONTROLLERS)
+
+/************* SCSI-NVME channel IDs *******************************/
+#define NVME_ID_TO_SCSI_ID(nvmeId)    \
+   (SCSI_NVME_CHANNEL_FIRST + (nvmeId))
+
+#define SCSI_ID_TO_NVME_ID(scsiId)    \
+   ((scsiId) - SCSI_NVME_CHANNEL_FIRST)
 
 /************* SCSI-SATA channel IDs********************************/
 #define SATA_ID_TO_SCSI_ID(sataId)    \
@@ -264,10 +312,14 @@
 #define MAX_USB_DEVICES_PER_HOST_CONTROLLER 127
 
 /************* NVDIMM implementation limits ********************************/
+#define NVDIMM_MAX_CONTROLLERS   1
 #define MAX_NVDIMM 64
 
 /************* vRDMA implementation limits ******************************/
-#define MAX_VRDMA_DEVICES 2
+#define MAX_VRDMA_DEVICES 1
+
+/************* QAT implementation limits ********************/
+#define MAX_QAT_PCI_DEVICES 4
 
 /************* Strings for Host USB Driver *******************************/
 
@@ -305,5 +357,14 @@ DEFINE_GUID(GUID_CLASS_VMWARE_USB_DEVICES,
 #define USB_PNP_DRIVER_NAME "vmusb"
 #endif
 #endif
+
+/*
+ * Our JEDEC 2 Manufacturer ID number is 2 in bank 10.  Our number is nine
+ * bytes of continuation code (with an odd parity bit in bit 7) followed by the
+ * number itself.
+ *
+ */
+#define JEDEC_VENDOR_ID_VMWARE          0x289
+#define JEDEC_DEVICE_ID_VMWARE_NVDIMM   0x0
 
 #endif /* VM_DEVICE_VERSION_H */
