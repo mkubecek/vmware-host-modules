@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2004-2015 VMware, Inc. All rights reserved.
+ * Copyright (C) 2004-2016 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -90,6 +90,8 @@
    (CONST64U(1) << MSR_VMX_MISC_ACTSTATE_SHUTDOWN_SHIFT)
 #define MSR_VMX_MISC_ACTSTATE_SIPI              \
    (CONST64U(1) << MSR_VMX_MISC_ACTSTATE_SIPI_SHIFT)
+#define MSR_VMX_MISC_PROCESSOR_TRACE_IN_VMX     \
+   (CONST64U(1) << MSR_VMX_MISC_PROCESSOR_TRACE_IN_VMX_SHIFT)
 #define MSR_VMX_MISC_RDMSR_SMBASE_IN_SMM        \
    (CONST64U(1) << MSR_VMX_MISC_RDMSR_SMBASE_IN_SMM_SHIFT)
 #define MSR_VMX_MISC_ALLOW_ALL_VMWRITES         \
@@ -128,6 +130,8 @@
    (CONST64U(1) << MSR_VMX_EPT_VPID_INVVPID_ALL_CTX_SHIFT)
 #define MSR_VMX_EPT_VPID_INVVPID_VPID_CTX_LOCAL \
    (CONST64U(1) << MSR_VMX_EPT_VPID_INVVPID_VPID_CTX_LOCAL_SHIFT)
+#define MSR_VMX_EPT_VPID_ADV_EXIT_INFO          \
+   (CONST64U(1) << MSR_VMX_EPT_VPID_ADV_EXIT_INFO_SHIFT)
 
 #define VT_VMCS_STANDARD_TAG           0x00000000
 #define VT_VMCS_SHADOW_TAG             0x80000000
@@ -154,8 +158,14 @@
 #define VT_ENCODING_NUM_SIZES                   4
 #define VT_ENCODING_RSVD               0xffff9000
 
+/*
+ * The highest index of any currently defined field is 25, for
+ * TSC_MULTIPLIER.
+ */
+#define VT_ENCODING_MAX_INDEX                  25
+
 enum {
-#define VMCS_FIELD(name, encoding, vvt) VT_VMCS_##name = encoding,
+#define VMCS_FIELD(_name, _val, ...) VT_VMCS_##_name = _val,
 #include "x86vt-vmcs-fields.h"
 #undef VMCS_FIELD
 };
@@ -278,8 +288,12 @@ enum {
    VMX_CPU2(VMCS_SHADOW,        14)                      \
    VMX_CPU2(ENCL,               15)                      \
    VMX_CPU2(RDSEED,             16)                      \
+   VMX_CPU2(PML,                17)                      \
    VMX_CPU2(EPT_VIOL_VE,        18)                      \
-   VMX_CPU2(XSAVES,             20)
+   VMX_CPU2(PT_SUPPRESS_NR_BIT, 19)                      \
+   VMX_CPU2(XSAVES,             20)                      \
+   VMX_CPU2(EPT_MBX,            22)                      \
+   VMX_CPU2(TSC_SCALING,        25)
 
 #define VMX_PROCBASED_CTLS2_CAP                          \
         VMX_PROCBASED_CTLS2_CAP_NDA                      \
@@ -292,15 +306,17 @@ enum {
    VMXCTL(_EXIT_CTLS, _field, _pos)
 #define VMX_EXIT_CTLS_CAP_NDA
 #define VMX_EXIT_CTLS_CAP_PUB                            \
-   VMX_EXIT(SAVE_DEBUGCTL,       2)                      \
-   VMX_EXIT(LONGMODE,            9)                      \
-   VMX_EXIT(LOAD_PGC,           12)                      \
-   VMX_EXIT(INTRACK,            15)                      \
-   VMX_EXIT(SAVE_PAT,           18)                      \
-   VMX_EXIT(LOAD_PAT,           19)                      \
-   VMX_EXIT(SAVE_EFER,          20)                      \
-   VMX_EXIT(LOAD_EFER,          21)                      \
-   VMX_EXIT(SAVE_TIMER,         22)
+   VMX_EXIT(SAVE_DEBUGCTL,        2)                     \
+   VMX_EXIT(LONGMODE,             9)                     \
+   VMX_EXIT(LOAD_PGC,            12)                     \
+   VMX_EXIT(INTRACK,             15)                     \
+   VMX_EXIT(SAVE_PAT,            18)                     \
+   VMX_EXIT(LOAD_PAT,            19)                     \
+   VMX_EXIT(SAVE_EFER,           20)                     \
+   VMX_EXIT(LOAD_EFER,           21)                     \
+   VMX_EXIT(SAVE_TIMER,          22)                     \
+   VMX_EXIT(CLEAR_BNDCFGS,       23)                     \
+   VMX_EXIT(PT_SUPPRESS_VMX_PKT, 24)
 
 #define VMX_EXIT_CTLS_CAP                                \
         VMX_EXIT_CTLS_CAP_NDA                            \
@@ -313,13 +329,15 @@ enum {
    VMXCTL(_ENTRY_CTLS, _field, _pos)
 #define VMX_ENTRY_CTLS_CAP_NDA
 #define VMX_ENTRY_CTLS_CAP_PUB                           \
-   VMX_ENTRY(LOAD_DEBUGCTL,      2)                      \
-   VMX_ENTRY(LONGMODE,           9)                      \
-   VMX_ENTRY(ENTRY_TO_SMM,      10)                      \
-   VMX_ENTRY(SMM_TEARDOWN,      11)                      \
-   VMX_ENTRY(LOAD_PGC,          13)                      \
-   VMX_ENTRY(LOAD_PAT,          14)                      \
-   VMX_ENTRY(LOAD_EFER,         15)
+   VMX_ENTRY(LOAD_DEBUGCTL,        2)                    \
+   VMX_ENTRY(LONGMODE,             9)                    \
+   VMX_ENTRY(ENTRY_TO_SMM,        10)                    \
+   VMX_ENTRY(SMM_TEARDOWN,        11)                    \
+   VMX_ENTRY(LOAD_PGC,            13)                    \
+   VMX_ENTRY(LOAD_PAT,            14)                    \
+   VMX_ENTRY(LOAD_EFER,           15)                    \
+   VMX_ENTRY(LOAD_BNDCFGS,        16)                    \
+   VMX_ENTRY(PT_SUPPRESS_VMX_PKT, 17)
 
 #define VMX_ENTRY_CTLS_CAP                               \
         VMX_ENTRY_CTLS_CAP_NDA                           \
@@ -332,17 +350,18 @@ enum {
    VMXCAP(_MISC, _field, _pos, _len)
 #define VMX_MISC_CAP_NDA
 #define VMX_MISC_CAP_PUB                                 \
-   VMX_MISC(TMR_RATIO,              0,  5)               \
-   VMX_MISC(VMEXIT_SAVES_LMA,       5,  1)               \
-   VMX_MISC(ACTSTATE_HLT,           6,  1)               \
-   VMX_MISC(ACTSTATE_SHUTDOWN,      7,  1)               \
-   VMX_MISC(ACTSTATE_SIPI,          8,  1)               \
-   VMX_MISC(RDMSR_SMBASE_IN_SMM,   15,  1)               \
-   VMX_MISC(CR3_TARGETS,           16,  9)               \
-   VMX_MISC(MAX_MSRS,              25,  3)               \
-   VMX_MISC(ALLOW_ALL_VMWRITES,    29,  1)               \
-   VMX_MISC(ZERO_VMENTRY_INSTLEN,  30,  1)               \
-   VMX_MISC(MSEG_ID,               32, 32)               \
+   VMX_MISC(TMR_RATIO,               0,  5)              \
+   VMX_MISC(VMEXIT_SAVES_LMA,        5,  1)              \
+   VMX_MISC(ACTSTATE_HLT,            6,  1)              \
+   VMX_MISC(ACTSTATE_SHUTDOWN,       7,  1)              \
+   VMX_MISC(ACTSTATE_SIPI,           8,  1)              \
+   VMX_MISC(PROCESSOR_TRACE_IN_VMX, 14,  1)              \
+   VMX_MISC(RDMSR_SMBASE_IN_SMM,    15,  1)              \
+   VMX_MISC(CR3_TARGETS,            16,  9)              \
+   VMX_MISC(MAX_MSRS,               25,  3)              \
+   VMX_MISC(ALLOW_ALL_VMWRITES,     29,  1)              \
+   VMX_MISC(ZERO_VMENTRY_INSTLEN,   30,  1)              \
+   VMX_MISC(MSEG_ID,                32, 32)              \
 
 #define VMX_MISC_CAP                                     \
         VMX_MISC_CAP_NDA                                 \
@@ -427,6 +446,7 @@ enum {
    VMX_EPT(SP_1GB,                 17,  1)              \
    VMX_EPT(INVEPT,                 20,  1)              \
    VMX_EPT(ACCESS_DIRTY,           21,  1)              \
+   VMX_EPT(ADV_EXIT_INFO,          22,  1)              \
    VMX_EPT(INVEPT_EPT_CTX,         25,  1)              \
    VMX_EPT(INVEPT_GLOBAL,          26,  1)              \
    VMX_EPT(INVVPID,                32,  1)              \
@@ -532,68 +552,14 @@ enum {
 /* Exception error must-be-zero bits for VMEntry */
 #define VT_XCP_ERR_MBZ             0xffff8000
 
+
 /* Exit reasons. */
-#define VT_EXITREASON_EXC_OR_NMI            0
-#define VT_EXITREASON_EXTINT                1
-#define VT_EXITREASON_TRIPLEFAULT           2
-#define VT_EXITREASON_INIT                  3
-#define VT_EXITREASON_SIPI                  4
-#define VT_EXITREASON_IOSMI                 5
-#define VT_EXITREASON_OTHERSMI              6
-#define VT_EXITREASON_VINTR_WINDOW          7
-#define VT_EXITREASON_VNMI_WINDOW           8
-#define VT_EXITREASON_TS                    9
-#define VT_EXITREASON_CPUID                10
-#define VT_EXITREASON_GETSEC               11
-#define VT_EXITREASON_HLT                  12
-#define VT_EXITREASON_INVD                 13
-#define VT_EXITREASON_INVLPG               14
-#define VT_EXITREASON_RDPMC                15
-#define VT_EXITREASON_RDTSC                16
-#define VT_EXITREASON_RSM                  17
-#define VT_EXITREASON_VMCALL               18
-#define VT_EXITREASON_VMCLEAR              19
-#define VT_EXITREASON_VMLAUNCH             20
-#define VT_EXITREASON_VMPTRLD              21
-#define VT_EXITREASON_VMPTRST              22
-#define VT_EXITREASON_VMREAD               23
-#define VT_EXITREASON_VMRESUME             24
-#define VT_EXITREASON_VMWRITE              25
-#define VT_EXITREASON_VMXOFF               26
-#define VT_EXITREASON_VMXON                27
-#define VT_EXITREASON_CR                   28
-#define VT_EXITREASON_DR                   29
-#define VT_EXITREASON_IO                   30
-#define VT_EXITREASON_RDMSR                31
-#define VT_EXITREASON_WRMSR                32
-#define VT_EXITREASON_VMENTRYFAIL_GUEST   (33 | VT_EXITREASON_VMENTRYFAIL)
-#define VT_EXITREASON_VMENTRYFAIL_MSR     (34 | VT_EXITREASON_VMENTRYFAIL)
-#define VT_EXITREASON_MWAIT                36
-#define VT_EXITREASON_MTF                  37
-#define VT_EXITREASON_MONITOR              39
-#define VT_EXITREASON_PAUSE                40
-#define VT_EXITREASON_VMENTRYFAIL_MC      (41 | VT_EXITREASON_VMENTRYFAIL)
-#define VT_EXITREASON_TPR                  43
-#define VT_EXITREASON_APIC                 44
-#define VT_EXITREASON_EOI                  45
-#define VT_EXITREASON_GDTR_IDTR            46
-#define VT_EXITREASON_LDTR_TR              47
-#define VT_EXITREASON_EPT_VIOLATION        48
-#define VT_EXITREASON_EPT_MISCONFIG        49
-#define VT_EXITREASON_INVEPT               50
-#define VT_EXITREASON_RDTSCP               51
-#define VT_EXITREASON_TIMER                52
-#define VT_EXITREASON_INVVPID              53
-#define VT_EXITREASON_WBINVD               54
-#define VT_EXITREASON_XSETBV               55
-#define VT_EXITREASON_APIC_WRITE           56
-#define VT_EXITREASON_RDRAND               57
-#define VT_EXITREASON_INVPCID              58
-#define VT_EXITREASON_VMFUNC               59
-#define VT_EXITREASON_ENCLS                60
-#define VT_EXITREASON_RDSEED               61
-#define VT_EXITREASON_XSAVES               63
-#define VT_EXITREASON_XRSTORS              64
+enum {
+#define VT_EXIT(_name, _val) VT_EXITREASON_##_name = _val,
+#include "x86vt-exit-reasons.h"
+#undef VT_EXIT
+};
+
 
 /*
  * VT synthesized exit reasons:
@@ -618,7 +584,6 @@ enum {
         (VT_EXITREASON_SYNTH_EXC_BASE + gatenum) /* 0-31 */
 
 #define VT_EXITREASON_INSIDE_ENCLAVE        (1U << 27)
-#define VT_EXITREASON_VMENTRYFAIL           (1U << 31)
 
 /* Instruction error codes. */
 #define VT_ERROR_VMCALL_VMX_ROOT            1
@@ -690,12 +655,18 @@ enum {
 #define VT_EPT_QUAL_ACCESS_W           (1 << 1)
 #define VT_EPT_QUAL_ACCESS_X           (1 << 2)
 #define VT_EPT_QUAL_PROT_SHIFT         3
-#define VT_EPT_QUAL_PROT_MASK          (0x7 << VT_EPT_QUAL_PROT_SHIFT)
+#define VT_EPT_QUAL_PROT_MASK(_mbx)    (((_mbx) ? 0xf : 0x7) << \
+                                                  VT_EPT_QUAL_PROT_SHIFT)
 #define VT_EPT_QUAL_PROT_R             (1 << 3)
 #define VT_EPT_QUAL_PROT_W             (1 << 4)
 #define VT_EPT_QUAL_PROT_X             (1 << 5)
+#define VT_EPT_QUAL_PROT_XS            (1 << 5)
+#define VT_EPT_QUAL_PROT_XU            (1 << 6)
 #define VT_EPT_QUAL_LA_VALID           (1 << 7)
 #define VT_EPT_QUAL_FINAL_ADDR         (1 << 8)
+#define VT_EPT_QUAL_GUEST_US           (1 << 9)
+#define VT_EPT_QUAL_GUEST_RW           (1 << 10)
+#define VT_EPT_QUAL_GUEST_NX           (1 << 11)
 #define VT_EPT_QUAL_NMIUNMASK          (1 << 12)
 
 
@@ -772,12 +743,120 @@ enum {
     MSR_VMX_EPT_VPID_INVVPID_ALL_CTX)
 
 #define VT_REQUIRED_EPT_SUPPORT                        \
-   (MSR_VMX_EPT_VPID_EPTE_X                          | \
-    MSR_VMX_EPT_VPID_GAW_48                          | \
+   (MSR_VMX_EPT_VPID_GAW_48                          | \
     MSR_VMX_EPT_VPID_ETMT_WB                         | \
     MSR_VMX_EPT_VPID_SP_2MB                          | \
-    MSR_VMX_EPT_VPID_INVEPT                          | \
-    MSR_VMX_EPT_VPID_INVEPT_EPT_CTX)
+    MSR_VMX_EPT_VPID_INVEPT)
+
+#define VT_TSQUAL_CALL  0
+#define VT_TSQUAL_IRET  1
+#define VT_TSQUAL_JMP   2
+#define VT_TSQUAL_GATE  3
+
+typedef union {
+   struct {
+      unsigned selVal:16;
+      unsigned rsvd0:14;
+      unsigned source:2;
+   } bits;
+   uint32 flat;
+} VTTSQualifier;
+
+#define VT_CRQUAL_WR    0
+#define VT_CRQUAL_RD    1
+#define VT_CRQUAL_CLTS  2
+#define VT_CRQUAL_LMSW  3
+
+/* Control register intercept qualifier */
+typedef union {
+   struct {
+      unsigned num:4;   // For MOV-CR
+      unsigned op:2;
+      unsigned mem:1;   // For LMSW
+      unsigned rsvd0:1;
+      unsigned gpr:4;   // For MOV-CR
+      unsigned rsvd1:4;
+      unsigned data:16; // For LMSW
+   } bits;
+   uint32 flat;
+} VTCRQualifier;
+
+#define VT_DRQUAL_WR    0
+#define VT_DRQUAL_RD    1
+
+/* Debug register intercept qualifier */
+typedef union {
+   struct {
+      unsigned num:3;
+      unsigned rsvd0:1;
+      unsigned op:1;
+      unsigned rsvd1:3;
+      unsigned gpr:4;
+      unsigned rsvd2:20;
+   } bits;
+   uint32 flat;
+} VTDRQualifier;
+
+#define VT_IOQUAL_SZ8     0
+#define VT_IOQUAL_SZ16    1
+#define VT_IOQUAL_SZ32    3
+
+/* I/O intercept qualifier */
+typedef union {
+   struct {
+      unsigned opSize:3; // 0 = 1-byte; 1 = 2-byte; 3 = 4-byte
+      unsigned in:1;
+      unsigned string:1;
+      unsigned rep:1;
+      unsigned imm:1;
+      unsigned rsvd0:9;
+      unsigned port:16;
+   } bits;
+   uint32 flat;
+} VTIOQualifier;
+
+#define VT_IINFO_SCALE1    0
+#define VT_IINFO_SCALE2    1
+#define VT_IINFO_SCALE4    2
+#define VT_IINFO_SCALE8    3
+
+#define VT_IINFO_SZ16      0
+#define VT_IINFO_SZ32      1
+#define VT_IINFO_SZ64      2
+
+#define VT_IINFO_SGDT      0
+#define VT_IINFO_SIDT      1
+#define VT_IINFO_LGDT      2
+#define VT_IINFO_LIDT      3
+
+#define VT_IINFO_SLDT      0
+#define VT_IINFO_STR       1
+#define VT_IINFO_LLDT      2
+#define VT_IINFO_LTR       3
+
+/* VM-Exit Instruction-Information */
+typedef union {
+   struct {
+      unsigned scale:2;    // Bits  1:0
+      unsigned rsvd0:1;    // Bit   2
+      unsigned reg1:4;     // Bits  6:3
+      unsigned aSize:3;    // Bits  9:7
+      unsigned modrmReg:1; // Bit  10
+      unsigned oSize:2;    // Bits 12:11
+      unsigned rsvd1:2;    // Bit  14:13
+      unsigned seg:3;      // Bits 17:15
+      unsigned indexReg:5; // Bits 22:18
+      unsigned baseReg:5;  // Bits 27:23
+      unsigned misc:4;     // Bits 31:28
+   } bits;
+   uint32 flat;
+} VTInstrInfo;
+
+typedef struct VTMSREntry {
+   uint32       index;
+   uint32       reserved;
+   uint64       data;
+} VTMSREntry;
 
 typedef uint64 VTConfig[NUM_VMX_MSRS];
 
@@ -938,6 +1017,25 @@ static INLINE Bool
 VT_RealModeSupportedFromFeatures(uint64 secondary)
 {
    return (HIDWORD(secondary) & VT_VMCS_2ND_VMEXEC_CTL_UNRESTRICTED) != 0;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * VT_MBXSupportedFromFeatures --
+ *
+ *   Returns TRUE if the given VMX features provide support for
+ *   mode-based execute control for EPT.
+ *
+ *   Assumes that VT is supported.
+ *
+ *----------------------------------------------------------------------
+ */
+static INLINE Bool
+VT_MBXSupportedFromFeatures(uint64 secondary)
+{
+   return (HIDWORD(secondary) & VT_VMCS_2ND_VMEXEC_CTL_EPT_MBX) != 0;
 }
 
 

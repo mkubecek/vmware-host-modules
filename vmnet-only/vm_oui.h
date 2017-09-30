@@ -26,6 +26,10 @@
 
 #include "vm_basic_asm.h"
 
+#if defined __cplusplus
+extern "C" {
+#endif
+
 /*
  * Our own OUIs given by IEEE.
  */
@@ -203,5 +207,9 @@ VMX86_GENERATE_LEGACY_MAC(uint8 mac[6],  //OUT:
    mac[4] = (suffix >> 8) & 0xff;
    mac[5] = (suffix) & 0xff;
 }
+
+#if defined __cplusplus
+} // extern "C"
+#endif
 
 #endif

@@ -3,11 +3,11 @@ portion of the VMware Virtual Machine Monitor.  In order to build, make
 certain the Makefile is correct, especially in whether or not your system
 is multi-processor and then just type
 
-	make
+        make
 
 from this directory.  A copy of the module will be left in
 
-	driver-<kernel version>/vmmon.o
+        driver-<kernel version>/vmmon.o
 
 (e.g. driver-up-2.0.32/vmmon.o).
 

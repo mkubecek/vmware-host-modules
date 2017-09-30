@@ -35,6 +35,11 @@
 #define INCLUDE_ALLOW_VMCORE
 #include "includeCheck.h"
 
+#if defined __cplusplus
+extern "C" {
+#endif
+
+
 #define SELECTOR_GDT             0
 #define SELECTOR_LDT             1
 #define SELECTOR_RPL_SHIFT       0
@@ -63,5 +68,10 @@ MAKE_SELECTOR(unsigned index, unsigned ti, unsigned rpl)
           rpl   <= (SELECTOR_RPL_MASK >> SELECTOR_RPL_SHIFT));
    return MAKE_SELECTOR_UNCHECKED(index, ti, rpl);
 }
+
+
+#if defined __cplusplus
+} // extern "C"
+#endif
 
 #endif /* !defined _X86SEL_H_ */

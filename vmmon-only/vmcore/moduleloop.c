@@ -41,6 +41,7 @@
 #include "memtrack.h"
 #include "driver_vmcore.h"
 #include "usercalldefs.h"
+#include "cpuid.h"
 
 /*
  *----------------------------------------------------------------------
@@ -74,7 +75,7 @@ Vmx86_RunVM(VMDriver *vm,   // IN:
    VMCrossPageData *crosspage = &vm->crosspage[vcpuid]->crosspageData;
    int              bailValue = 0;
 
-   ASSERT(crosspage);
+   ASSERT(crosspage && CPUID_HostSupportsHV());
 
    /*
     * Check if we were interrupted by signal.
@@ -172,15 +173,13 @@ skipTaskSwitch:;
       }
 
       case MODULECALL_SEMAFORCEWAKEUP: {
-         ASSERT_ON_COMPILE(sizeof(VCPUSet) <= sizeof(crosspage->args));
-         HostIF_SemaphoreForceWakeup(vm, (VCPUSet *) &crosspage->args[0]);
+         HostIF_SemaphoreForceWakeup(vm, &crosspage->vcpuSet);
          break;
       }
 
       case MODULECALL_IPI: {
          HostIFIPIMode mode;
-         ASSERT_ON_COMPILE(sizeof(VCPUSet) <= sizeof(crosspage->args));
-         mode = HostIF_IPI(vm, (VCPUSet *) &crosspage->args[0]);
+         mode = HostIF_IPI(vm, &crosspage->vcpuSet);
          retval = (mode != IPI_NONE);
          break;
       }
@@ -225,11 +224,9 @@ skipTaskSwitch:;
       }
 
       case MODULECALL_COSCHED: {
-         uint32 spinUS = (uint32)crosspage->args[2];
-         ASSERT_ON_COMPILE(sizeof(VCPUSet) + sizeof(uint32) <=
-                           sizeof(crosspage->args));
-         Vmx86_YieldToSet(vm, vcpuid, (VCPUSet *) &crosspage->args[0],
-                          spinUS, FALSE);
+         uint32 spinUS = (uint32)crosspage->args[0];
+         ASSERT_ON_COMPILE(sizeof(uint32) <= sizeof(crosspage->args));
+         Vmx86_YieldToSet(vm, vcpuid, &crosspage->vcpuSet, spinUS, FALSE);
          break;
       }
 
@@ -249,6 +246,18 @@ skipTaskSwitch:;
          }
 
          retval = crosspage->retval;
+      } break;
+
+      case MODULECALL_VMCLEAR_VMCS_ALL_CPUS: {
+         MA vmcs = (MA)crosspage->args[0];
+         Vmx86_FlushVMCSAllCPUs(vmcs);
+      } break;
+
+      case MODULECALL_GET_PAGE_ROOT: {
+         MPN mpn;
+         Vcpuid targetVcpuid = (Vcpuid)crosspage->args[0];
+         retval = Vmx86_GetPageRoot(vm, targetVcpuid, &mpn);
+         crosspage->args[0] = mpn;
       } break;
 
       default:

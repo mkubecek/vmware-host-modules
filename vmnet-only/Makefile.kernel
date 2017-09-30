@@ -20,10 +20,6 @@
 INCLUDE := -I$(SRCROOT)
 
 EXTRA_CFLAGS := $(CC_OPTS) $(INCLUDE)
-EXTRA_CFLAGS += $(call vm_check_build, $(SRCROOT)/netdev_has_net.c,-DVMW_NETDEV_HAS_NET, )
-EXTRA_CFLAGS += $(call vm_check_build, $(SRCROOT)/netdev_has_dev_net.c,-DVMW_NETDEV_HAS_DEV_NET, )
-EXTRA_CFLAGS += $(call vm_check_build, $(SRCROOT)/nfhook_uses_skb.c,-DVMW_NFHOOK_USES_SKB, )
-EXTRA_CFLAGS += $(call vm_check_build, $(SRCROOT)/skblin.c,  -DVMW_SKB_LINEARIZE_2618, )
 
 obj-m += $(DRIVER).o
 

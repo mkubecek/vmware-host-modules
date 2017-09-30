@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2012,2014-2015 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2012,2014-2016 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -39,7 +39,7 @@
 #define PERFCTR_PENTIUM4_NUM_COUNTERS            18
 #define PERFCTR_PENTIUM4_NUM_COUNTERS_WITH_L3    26
 #define PERFCTR_AMD_NUM_COUNTERS                 4 
-#define PERFCTR_BD_NUM_COUNTERS                  6
+#define PERFCTR_AMD_EXT_NUM_COUNTERS             6
 #define PERFCTR_P6_NUM_COUNTERS                  2
 #define PERFCTR_NEHALEM_NUM_GEN_COUNTERS         4
 #define PERFCTR_NEHALEM_NUM_FIXED_COUNTERS       3
@@ -109,10 +109,10 @@
 /* AMD Performance Counter MSR Definitions */
 #define PERFCTR_AMD_PERFEVTSEL0_ADDR             0xC0010000
 #define PERFCTR_AMD_PERFCTR0_ADDR                0xC0010004
-#define PERFCTR_BD_BASE_ADDR                     0xC0010200
-#define PERFCTR_BD_EVENTSEL                      0
-#define PERFCTR_BD_CTR                           1
-#define PERFCTR_BD_MSR_STRIDE                    2
+#define PERFCTR_AMD_EXT_BASE_ADDR                0xC0010200
+#define PERFCTR_AMD_EXT_EVENTSEL                 0
+#define PERFCTR_AMD_EXT_CTR                      1
+#define PERFCTR_AMD_EXT_MSR_STRIDE               2
 
 /* AMD Clocks */
 #define PERFCTR_AMD_CPU_CLK_UNHALTED                           0x76
@@ -143,10 +143,6 @@
 #define PERFCTR_AMD_REQUESTS_TO_L2                             0x7d
 #define PERFCTR_AMD_L2_MISS                                    0x7e
 #define PERFCTR_AMD_L2_FILL_WRITEBACK                          0x7f
-
-/* AMD L3 Cache */
-#define PERFCTR_AMD_REQUESTS_TO_L3                             (0x4e0 | 0xf000)
-#define PERFCTR_AMD_L3_MISS                                    (0x4e1 | 0xf000)
 
 /* AMD Instruction Cache Events */
 
@@ -395,7 +391,7 @@
  *    Use CPUID 0xa to get perf capabilities.  Some (7) events are
  *    architectural; most are version-specific.
  *
- *    V1: Yonah, V2: Merom, V2+: Penryn
+ *    V1: Yonah, V2: Merom, V2+: Penryn, V3: Nehalem, V4: Skylake
  *
  *    V1 is similar to P6, with some additions:
  *       - Global control MSR
@@ -404,6 +400,14 @@
  *       - Ability to freeze a counter before PMI delivery.
  *       - Freeze during SMI (Penryn+ only)
  *       - VMCS global enable (Penryn+ only)
+ *    V3 introduces:
+ *       - (nothing we virtualize)
+ *    V4 introduces:
+ *       - Global unavailable (in-use) MSR
+ *       - Freeze on PMI bit
+ *       - ASCI bit
+ *       - Global status set MSR
+ *       - Global status reset MSR (previously called Ovf ctrl)
  *
  * ----------------------------------------------------------------------
  */
@@ -443,6 +447,7 @@
 #define PERFCTR_CORE_PMI_UNAVAILABLE_IN_USE         (CONST64U(1) << 63)
 // XXX serebrin/dhecht: 1-10-11: Make ANYTHREAD depend on number of fixed PMCs
 
+#define PERFCTR_CORE_GLOBAL_STATUS_TOPA_PMI      (1ULL << 55)
 #define PERFCTR_CORE_GLOBAL_STATUS_CTR_FRZ       (1ULL << 59)
 #define PERFCTR_CORE_GLOBAL_STATUS_ASCI          (1ULL << 60)
 #define PERFCTR_CORE_GLOBAL_STATUS_OVFBUFFER     (1ULL << 62)
@@ -632,7 +637,7 @@
  *      escrAddr:     MSR # of the Perf Event Selector (0xc0010000 + index).
  *      escrVal:      Value placed in PerfEvtSel MSR; what to measure.
  *
- *      On AMD BD:
+ *      On AMD with PerfCtrExtCore support:
  *      index:        Which perf ctr, 0 to 5.  RDPMC argument
  *      addr:         MSR of raw perf ctr              (0xc0010201 + 2 * index).
  *                                  aliased PMCs 0 - 3 (0xc0010004 + index).
@@ -731,13 +736,17 @@ PerfCtr_PgcToOvfValidBits(uint64 pgcValBits)
 static INLINE uint64
 PerfCtr_PgcToStsRstValidBits(uint64 pgcValBits)
 {
-   return pgcValBits | (1ULL << 55) | MASKRANGE64(63, 58);
+   return pgcValBits |
+          PERFCTR_CORE_GLOBAL_STATUS_TOPA_PMI |
+          MASKRANGE64(63, 58);
 }
 
 static INLINE uint64
 PerfCtr_PgcToGssValidBits(uint64 pgcValBits)
 {
-   return pgcValBits | (1ULL << 55) | MASKRANGE64(62, 58);
+   return pgcValBits |
+          PERFCTR_CORE_GLOBAL_STATUS_TOPA_PMI |
+          MASKRANGE64(62, 58);
 }
 
 /*
@@ -813,6 +822,34 @@ PerfCtr_PEBSAvailable(void)
                                 CPUID_HYPERV_HYPERVISOR_VENDOR_STRING);
    }
    return FALSE; 
+}
+
+/*
+ *----------------------------------------------------------------------
+ *
+ *  PerfCtr_PTAvailable --
+ *
+ *      Checks if this CPU is capable of PT(Intel processor trace).
+ *
+ * Results:
+ *      TRUE if PT is supported, FALSE otherwise.
+ *
+ * Side effects:
+ *      None
+ *
+ *----------------------------------------------------------------------
+ */
+
+static INLINE Bool
+PerfCtr_PTAvailable(void)
+{
+   CPUIDRegs regs;
+   __GET_CPUID(0, &regs);
+   if (CPUID_IsVendorIntel(&regs)) {
+      __GET_CPUID2(7, 0, &regs);
+      return (regs.ecx & CPUID_INTERNAL_MASK_PT) != 0;
+   }
+   return FALSE;
 }
 
 /* The following are taken from the Intel Architecture Manual,

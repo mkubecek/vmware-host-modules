@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2003-2015 VMware, Inc. All rights reserved.
+ * Copyright (C) 2003-2016 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -39,16 +39,7 @@
 #include "vm_basic_defs.h"
 #include "address_defs.h"
 #include "x86segdescrs.h"
-
-/*
- * Types used for PL4 page table in x86_64 and arm64
- */
-
-typedef uint64 VM_L4E;
-typedef uint64 VM_L3E;
-typedef uint64 VM_L2E;
-typedef uint64 VM_L1E;
-
+#include "vm_pagetable.h"
 
 /*
  * Page table

@@ -41,6 +41,7 @@
 #include <linux/file.h>
 #include <linux/ip.h>
 #include <linux/tcp.h>
+#include <linux/if_arp.h>
 #include <net/tcp.h>
 #include <net/ipv6.h>
 
@@ -77,7 +78,6 @@ struct VNetBridge {
    struct sock             *sk;             // socket associated with skb's
    struct packet_type       pt;             // used to add packet handler
    Bool                     enabledPromisc; // track if promisc enabled
-   Bool                     warnPromisc;    // tracks if warning has been logged
    Bool                     forceSmac;      // whether to use smac unconditionally
    struct sk_buff          *history[VNET_BRIDGE_HISTORY];  // avoid duplicate packets
    spinlock_t		    historyLock;    // protects 'history'
@@ -146,7 +146,6 @@ VNetBridgeStartPromisc(VNetBridge *bridge,      // IN:
    if (!bridge->enabledPromisc && !bridge->wirelessAdapter) {
       dev_set_promiscuity(dev, 1);
       bridge->enabledPromisc = TRUE;
-      bridge->warnPromisc = FALSE;
       LOG(0, (KERN_NOTICE "bridge-%s: enabled promiscuous mode\n",
 	      bridge->name));
    }
@@ -213,11 +212,9 @@ static INLINE_SINGLE_CALLER int
 VNetBridgeDevCompatible(VNetBridge *bridge,      // IN: Bridge
                         struct net_device *net)  // IN: Network device
 {
-#ifdef VMW_NETDEV_HAS_NET
-   if (compat_dev_net(net) != &init_net) {
+   if (dev_net(net) != &init_net) {
       return 0;
    }
-#endif
    return strcmp(net->name, bridge->name) == 0;
 }
 
@@ -636,7 +633,7 @@ VNetBridgeReceiveFromVNet(VNetJack        *this, // IN: jack
 	 unsigned long flags;
 	 int i;
 
-	 atomic_inc(&clone->users);
+	 clone = skb_get(clone);
 
 	 clone->dev = dev;
 	 clone->protocol = eth_type_trans(clone, dev);
@@ -811,22 +808,10 @@ VNetBridgeIsBridged(VNetJack *this) // IN: jack
 static Bool
 VNetBridgeIsDeviceWireless(struct net_device *dev) //IN: sock
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 22)
-#  if defined(CONFIG_WIRELESS_EXT)
+#if defined(CONFIG_WIRELESS_EXT)
    return dev->ieee80211_ptr != NULL || dev->wireless_handlers != NULL;
-#  else
-   return dev->ieee80211_ptr != NULL;
-#  endif
-#elif defined(CONFIG_WIRELESS_EXT)
-   return dev->wireless_handlers != NULL;
-#elif !defined(CONFIG_NET_RADIO)
-   return FALSE;
-#elif defined WIRELESS_EXT && WIRELESS_EXT > 19
-   return dev->wireless_handlers != NULL;
-#elif defined WIRELESS_EXT && WIRELESS_EXT > 12
-   return dev->wireless_handlers != NULL || dev->get_wireless_stats != NULL;
 #else
-   return dev->get_wireless_stats != NULL;
+   return dev->ieee80211_ptr != NULL;
 #endif
 }
 
@@ -911,7 +896,7 @@ VNetBridgeUp(VNetBridge *bridge, // IN: bridge struct
     */
 
    dev_lock_list();
-   bridge->dev = DEV_GET(bridge);
+   bridge->dev = __dev_get_by_name(&init_net, bridge->name);
    LOG(2, (KERN_DEBUG "bridge-%s: got dev %p\n",
 	   bridge->name, bridge->dev));
    if (bridge->dev == NULL) {
@@ -926,17 +911,10 @@ VNetBridgeUp(VNetBridge *bridge, // IN: bridge struct
       retval = -ENODEV;
       goto out;
    }
-
-   /*
-    * At a minimum, the header size should be the same as ours.
-    *
-    * XXX we should either do header translation or ensure this
-    * is an Ethernet.
-    */
-
-   if (bridge->dev->hard_header_len != ETH_HLEN) {
-      LOG(1, (KERN_DEBUG "bridge-%s: can't bridge with %s, bad header length %d\n",
-	      bridge->name, bridge->dev->name, bridge->dev->hard_header_len));
+   if (bridge->dev->type != ARPHRD_ETHER) {
+      LOG(1, (KERN_DEBUG "bridge-%s: can't bridge with %s (header length %d, "
+              "type %d).\n", bridge->name, bridge->dev->name,
+              bridge->dev->hard_header_len, bridge->dev->type));
       dev_unlock_list();
       retval = -EINVAL;
       goto out;
@@ -990,7 +968,6 @@ VNetBridgeUp(VNetBridge *bridge, // IN: bridge struct
 
    bridge->pt.af_packet_priv = bridge->sk;
    bridge->enabledPromisc = FALSE;
-   bridge->warnPromisc = FALSE;
    dev_add_pack(&bridge->pt);
    dev_unlock_list();
 
@@ -1407,154 +1384,6 @@ VNetBridgeComputeHeaderPos(struct sk_buff *skb) // IN: buffer to examine
 
 
 /*
- * We deal with three types of kernels:
- * New kernels: skb_shinfo() has gso_size member, and there is
- *              skb_gso_segment() helper to split GSO skb into flat ones.
- * Older kernels: skb_shinfo() has tso_size member, and there is
- *                no helper.
- * Oldest kernels: without any segmentation offload support.
- */
-#if defined(NETIF_F_GSO) || LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 18)
-#define VNetBridgeIsGSO(skb) skb_shinfo(skb)->gso_size
-#define VNetBridgeGSOSegment(skb) skb_gso_segment(skb, 0)
-#elif defined(NETIF_F_TSO)
-#define VNetBridgeIsGSO(skb) skb_shinfo(skb)->tso_size
-
-
-/*
- *----------------------------------------------------------------------
- *
- * VNetBridgeGSOSegment --
- *
- *	Split a large TCP/IPv4 sk_buff into multiple sk_buffs of
- *	size skb_shinfo(skb)->tso_size
- *	Called from VNetBridgeSendLargePacket().
- *
- * Results:
- *	List of skbs created.
- *
- * Side effects:
- *	The incoming packet is split into multiple packets.
- *
- *----------------------------------------------------------------------
- */
-
-static struct sk_buff *
-VNetBridgeGSOSegment(struct sk_buff *skb)        // IN: packet to split
-{
-   struct sk_buff *segs = NULL;
-   struct sk_buff **next = &segs;
-   int bytesPerPacket, bytesLeft;
-   int macHdrLen, ipHdrLen, tcpHdrLen, allHdrLen;
-   int curByteOffset;
-   uint16 ipID;
-   uint32 seqNo;
-
-   if (((struct ethhdr *)compat_skb_mac_header(skb))->h_proto != htons(ETH_P_IP)) {
-      return ERR_PTR(-EPFNOSUPPORT);
-   }
-
-   if (compat_skb_ip_header(skb)->protocol != IPPROTO_TCP) {
-      return ERR_PTR(-EPROTONOSUPPORT);
-   }
-
-   macHdrLen = compat_skb_network_header(skb) - compat_skb_mac_header(skb);
-   ipHdrLen = compat_skb_ip_header(skb)->ihl << 2;
-   tcpHdrLen = compat_skb_tcp_header(skb)->doff << 2;
-   allHdrLen = macHdrLen + ipHdrLen + tcpHdrLen;
-
-   ipID = ntohs(compat_skb_ip_header(skb)->id);
-   seqNo = ntohl(compat_skb_tcp_header(skb)->seq);
-
-   /* Host TCP stack populated this (MSS) for the host NIC driver */
-   bytesPerPacket = skb_shinfo(skb)->tso_size;
-
-   bytesLeft = skb->len - allHdrLen;
-   curByteOffset = allHdrLen;
-
-   while (bytesLeft) {
-      struct sk_buff *newSkb;
-      int payloadSize = (bytesLeft < bytesPerPacket) ? bytesLeft : bytesPerPacket;
-
-      newSkb = dev_alloc_skb(payloadSize + allHdrLen + NET_IP_ALIGN);
-      if (!newSkb) {
-         while (segs) {
-            newSkb = segs;
-            segs = segs->next;
-            newSkb->next = NULL;
-            dev_kfree_skb(newSkb);
-         }
-         return ERR_PTR(-ENOMEM);
-      }
-      skb_reserve(newSkb, NET_IP_ALIGN);
-      newSkb->dev = skb->dev;
-      newSkb->protocol = skb->protocol;
-      newSkb->pkt_type = skb->pkt_type;
-      newSkb->ip_summed = VM_TX_CHECKSUM_PARTIAL;
-
-      /*
-       * MAC+IP+TCP copy
-       * This implies that ALL fields in the IP and TCP headers are copied from
-       * the original skb. This is convenient: we'll only fix up fields that
-       * need to be changed below
-       */
-      memcpy(skb_put(newSkb, allHdrLen), skb->data, allHdrLen);
-
-      /* Fix up pointers to different layers */
-      compat_skb_reset_mac_header(newSkb);
-      compat_skb_set_network_header(newSkb, macHdrLen);
-      compat_skb_set_transport_header(newSkb, macHdrLen + ipHdrLen);
-
-      /* Payload copy */
-      skb_copy_bits(skb, curByteOffset, compat_skb_tail_pointer(newSkb), payloadSize);
-      skb_put(newSkb, payloadSize);
-
-      curByteOffset+=payloadSize;
-      bytesLeft -= payloadSize;
-
-      /* Fix up IP hdr */
-      compat_skb_ip_header(newSkb)->tot_len = htons(payloadSize + tcpHdrLen + ipHdrLen);
-      compat_skb_ip_header(newSkb)->id = htons(ipID);
-      compat_skb_ip_header(newSkb)->check = 0;
-      /* Recompute new IP checksum */
-      compat_skb_ip_header(newSkb)->check =
-              ip_fast_csum(compat_skb_network_header(newSkb),
-                           compat_skb_ip_header(newSkb)->ihl);
-
-      /* Fix up TCP hdr */
-      compat_skb_tcp_header(newSkb)->seq = htonl(seqNo);
-      /* Clear FIN/PSH if not last packet */
-      if (bytesLeft > 0) {
-         compat_skb_tcp_header(newSkb)->fin = 0;
-         compat_skb_tcp_header(newSkb)->psh = 0;
-      }
-      /* Recompute partial TCP checksum */
-      compat_skb_tcp_header(newSkb)->check =
-         ~csum_tcpudp_magic(compat_skb_ip_header(newSkb)->saddr,
-                            compat_skb_ip_header(newSkb)->daddr,
-                            payloadSize+tcpHdrLen, IPPROTO_TCP, 0);
-
-      /* Offset of field */
-      newSkb->csum = offsetof(struct tcphdr, check);
-
-      /* Join packet to the list of segments */
-      *next = newSkb;
-      next = &newSkb->next;
-
-      /* Bump up our counters */
-      ipID++;
-      seqNo += payloadSize;
-
-   }
-   return segs;
-}
-#else
-#define VNetBridgeIsGSO(skb) (0)
-#define VNetBridgeGSOSegment(skb) ERR_PTR(-ENOSYS)
-#endif
-
-
-/*
  *----------------------------------------------------------------------
  *
  * VNetBridgeSendLargePacket --
@@ -1582,7 +1411,7 @@ VNetBridgeSendLargePacket(struct sk_buff *skb,        // IN: packet to split
 {
    struct sk_buff *segs;
 
-   segs = VNetBridgeGSOSegment(skb);
+   segs = skb_gso_segment(skb, 0);
    dev_kfree_skb(skb);
    if (IS_ERR(segs)) {
       LOG(1, (KERN_DEBUG "bridge-%s: cannot segment packet: error %ld\n",
@@ -1713,7 +1542,7 @@ VNetBridgeReceiveFromDev(struct sk_buff *skb,         // IN: packet to receive
    /*
     * If this is a large packet, chop chop chop (if supported)...
     */
-   if (VNetBridgeIsGSO(skb)) {
+   if (skb_shinfo(skb)->gso_size) {
       VNetBridgeSendLargePacket(skb, bridge);
    } else {
       VNetSend(&bridge->port.jack, skb);

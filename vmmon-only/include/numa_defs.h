@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2006 VMware, Inc. All rights reserved.
+ * Copyright (C) 2006,2009-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -39,15 +39,16 @@
 
 /* Machine NUMA nodes */
 typedef uint32 NUMA_Node;
-typedef uint32 NUMA_NodeMask;
+typedef uint32 NUMA_PxmID;
+typedef uint64 NUMA_NodeMask;
 typedef uint8  NUMA_MemRangeID;
 
 /*
  * Constants
  */
-#define NUMA_MAX_NODES              32
+#define NUMA_MAX_NODES              64
 #define NUMA_MAX_CPUS_PER_NODE      (vmx86_server ? MAX_PCPUS : 32)
-#define NUMA_MAX_MEM_RANGES         64
+#define NUMA_MAX_MEM_RANGES         (vm_arm_64 ? 128 : 64)
 #define INVALID_NUMANODE            ((NUMA_Node)-1)
 #define NUMA_NODE_MASK_ANY          ((NUMA_NodeMask)-1)
 #define NUMA_NODE_MASK_NONE         ((NUMA_NodeMask)0)
@@ -59,7 +60,7 @@ typedef uint8  NUMA_MemRangeID;
 typedef struct {
    MPN          startMPN;
    MPN          endMPN;
-   NUMA_Node    id;
+   NUMA_PxmID   id;
    Bool         isReliable;
    Bool         isVolatile;
 } NUMA_MemRange;

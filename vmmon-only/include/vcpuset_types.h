@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2002-2013 VMware, Inc. All rights reserved.
+ * Copyright (C) 2002-2013, 2016 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -19,7 +19,7 @@
 /*
  * vcpuset_types.h --
  *
- *	ADT for a set of VCPUs.  Implemented as an array of bitmasks.
+ *    ADT for a set of VCPUs.  Implemented as an array of bitmasks.
  *
  */
 
@@ -35,14 +35,14 @@
 #define INCLUDE_ALLOW_VMCORE
 #include "includeCheck.h"
 
-#include "vm_basic_asm.h"
-#include "vm_atomic.h"
 #include "vcpuid.h"
+#include "vm_assert.h"
 
 #define VCS_SUBSET_WIDTH                                                   64
 #define VCS_SUBSET_SHIFT                                                    6
 #define VCS_SUBSET_MASK               ((CONST64U(1) << VCS_SUBSET_SHIFT) - 1)
-#define VCS_SUBSET_COUNT                                                    2
+#define VCS_SUBSET_COUNT                                                    4
+
 
 #define VCS_VCPUID_SUBSET_IDX(v)                    ((v) >> VCS_SUBSET_SHIFT)
 #define VCS_VCPUID_SUBSET_BIT(v)     (CONST64U(1) << ((v) & VCS_SUBSET_MASK))
@@ -55,4 +55,16 @@ typedef struct VCPUSet {
    uint64 subset[VCS_SUBSET_COUNT];
 } VCPUSet;
 
+MY_ASSERTS(VCPUSET_ASSERTS,
+           /*
+            * Catch changes in VCPUSet which need to be reflected in
+            * bora/public/iocontrolsMacosTable.h.
+            */
+           ASSERT_ON_COMPILE(VCS_SUBSET_COUNT == 4);
+           /*
+            * There is code that depends on sizeof(VCPUSet) being a power of
+            * 2 in at least vcpuHotPlug.c and possible other places.
+            */
+            ASSERT_ON_COMPILE((sizeof(VCPUSet) & (sizeof(VCPUSet) - 1)) == 0);
+)
 #endif

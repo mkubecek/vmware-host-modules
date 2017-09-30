@@ -61,6 +61,9 @@
 #include <asm/timex.h>
 #endif
 #include "x86perfctr.h"
+#include "x86vtinstr.h"
+#include "bootstrap_vmm.h"
+#include "monLoader.h"
 
 
 PseudoTSC pseudoTSC;
@@ -104,6 +107,12 @@ static int vmIDsUnused;
 
 /* Max rate requested for fast clock by any virtual machine. */
 static unsigned globalFastClockRate;
+
+typedef struct {
+   Atomic_uint32 index;
+   MSRQuery *query;
+} Vmx86GetMSRData;
+
 
 /*
  *----------------------------------------------------------------------
@@ -198,7 +207,7 @@ Vmx86LockedPageLimit(const VMDriver* vm)  // IN:
 
 static INLINE Bool
 Vmx86HasFreePages(VMDriver *vm,
-		  unsigned int numPages,
+                  unsigned int numPages,
                   Bool checkVM)
 {
    /*
@@ -218,11 +227,11 @@ Vmx86HasFreePages(VMDriver *vm,
 
       ASSERT(HostIF_VMLockIsHeld(vm));
       if (vm->memInfo.admitted) {
-	 if (vm->memInfo.maxAllocation <= vm->memInfo.locked) {
-	    return FALSE;
-	 } else if (vm->memInfo.maxAllocation - vm->memInfo.locked < numPages) {
-	    return FALSE;
-	 }
+         if (vm->memInfo.maxAllocation <= vm->memInfo.locked) {
+            return FALSE;
+         } else if (vm->memInfo.maxAllocation - vm->memInfo.locked < numPages) {
+            return FALSE;
+         }
       }
    } else {
       /*
@@ -232,9 +241,9 @@ Vmx86HasFreePages(VMDriver *vm,
       unsigned limit = Vmx86LockedPageLimit(vm);
 
       if (limit <= numLockedPages) {
-	 return FALSE;
+         return FALSE;
       } else if (limit - numLockedPages < numPages) {
-	 return FALSE;
+         return FALSE;
       }
    }
 
@@ -415,7 +424,7 @@ Vmx86AllocVMID(void)
  *
  * Side effects:
  *      Add VM to linked list.
- *	Increment count of VMs.
+ *      Increment count of VMs.
  *
  *----------------------------------------------------------------
  */
@@ -458,7 +467,7 @@ Vmx86RegisterVMOnList(VMDriver *vm) // IN
  *
  * Side effects:
  *      Remove VM from linked list.
- *	Decrement count of VMs.
+ *      Decrement count of VMs.
  *
  *----------------------------------------------------------------
  */
@@ -520,6 +529,10 @@ Vmx86FreeAllVMResources(VMDriver *vm)
 
       Vmx86_SetHostClockRate(vm, 0);
 
+      if (vm->ptpTracker) {
+         Task_SwitchPTPPageCleanup(vm);
+      }
+
       HostIF_FreeAllResources(vm);
 
       HostIF_FreeKernelMem(vm);
@@ -539,9 +552,9 @@ Vmx86FreeAllVMResources(VMDriver *vm)
  *
  *       If ignoreLimits is TRUE then additional pages may be reserved even
  *       if limits are violated. The request to ignore limits may come in
- *       cases of anonymous page allocations. Swapping is not always possible 
+ *       cases of anonymous page allocations. Swapping is not always possible
  *       at those points but a swap target will have been posted so that the
- *       vmm will release memory shortly allowing the excessive reservation 
+ *       vmm will release memory shortly allowing the excessive reservation
  *       to be reduced.
  *
  * Results:
@@ -555,7 +568,7 @@ Vmx86FreeAllVMResources(VMDriver *vm)
 
 static Bool
 Vmx86ReserveFreePages(VMDriver *vm,
-		      unsigned int numPages,
+                      unsigned int numPages,
                       Bool ignoreLimits)
 {
    Bool retval = FALSE;
@@ -572,26 +585,26 @@ Vmx86ReserveFreePages(VMDriver *vm,
       if (!retval) {
          HostIF_VMUnlock(vm, 0);
          HostIF_GlobalUnlock(17);
-	 break;
+         break;
       } else {
-	 // Wait to satisfy the global limit.
-	 retval = Vmx86HasFreePages(vm, numPages, FALSE);
-	 if (retval) {
-	    numLockedPages += numPages;
-	    vm->memInfo.locked += numPages;
+         // Wait to satisfy the global limit.
+         retval = Vmx86HasFreePages(vm, numPages, FALSE);
+         if (retval) {
+            numLockedPages += numPages;
+            vm->memInfo.locked += numPages;
             HostIF_VMUnlock(vm, 0);
-	    HostIF_GlobalUnlock(17);
-	    break;
-	 } else {
+            HostIF_GlobalUnlock(17);
+            break;
+         } else {
             /*
              * There are not enough pages -- drop the locks and wait for
              * the host and/or other VMs to produce free pages.
-	     */
+             */
 
             HostIF_VMUnlock(vm, 0);
-	    HostIF_GlobalUnlock(17);
-	    HostIF_WaitForFreePages(10);
-	 }
+            HostIF_GlobalUnlock(17);
+            HostIF_WaitForFreePages(10);
+         }
       }
    }
 
@@ -628,7 +641,7 @@ Vmx86ReserveFreePages(VMDriver *vm,
 
 static void
 Vmx86UnreserveFreePages(VMDriver *vm,
-			unsigned int numPages)
+                        unsigned int numPages)
 {
    ASSERT(vm);
 
@@ -663,10 +676,17 @@ Vmx86UnreserveFreePages(VMDriver *vm,
  */
 
 VMDriver *
-Vmx86_CreateVM(void)
+Vmx86_CreateVM(VA64 bsBlob, uint32 bsBlobSize)
 {
    VMDriver *vm;
    Vcpuid v;
+   void *bsBuf = NULL;
+   BSVMM_HostParams *bsParams;
+
+   /* Disallow VM creation if HV is not available, as the VM cannot be run. */
+   if (!CPUID_HostSupportsHV()) {
+      return NULL;
+   }
 
    vm = HostIF_AllocKernelMem(sizeof *vm, TRUE);
    if (vm == NULL) {
@@ -676,12 +696,34 @@ Vmx86_CreateVM(void)
 
    vm->userID = 0;
    vm->memInfo.admitted = FALSE;
-   vm->fastSuspResFlag = 0;
    for (v = 0; v < MAX_INITBLOCK_CPUS; v++) {
       vm->currentHostCpu[v] = INVALID_PCPU;
    }
-
+   for (v = 0; v < MAX_VCPUS; v++) {
+      vm->ptRootMpns[v] = INVALID_MPN;
+   }
    if (HostIF_Init(vm)) {
+      goto cleanup;
+   }
+   bsBuf = HostIF_AllocKernelMem(bsBlobSize, FALSE);
+   if (bsBuf == NULL) {
+      goto cleanup;
+   }
+   if (HostIF_CopyFromUser(bsBuf, bsBlob, bsBlobSize) != 0) {
+      goto cleanup;
+   }
+   bsParams = BSVMM_Validate(bsBuf, bsBlobSize);
+   if (bsParams == NULL) {
+      Warning("Could not validate the VMM bootstrap blob");
+      goto cleanup;
+   }
+   memcpy(&vm->bsParams, bsParams, sizeof *bsParams);
+
+   if (!Task_CreateCrossGDT(&bsParams->gdtInit)) {
+      goto cleanup;
+   }
+   vm->ptpTracker = MemTrack_Init(vm);
+   if (vm->ptpTracker == NULL) {
       goto cleanup;
    }
 
@@ -702,9 +744,13 @@ Vmx86_CreateVM(void)
 
    HostIF_GlobalUnlock(0);
 
+   HostIF_FreeKernelMem(bsBuf);
    return vm;
 
 cleanup:
+   if (bsBuf != NULL) {
+      HostIF_FreeKernelMem(bsBuf);
+   }
    /*
     * The VM is not on a list, "vmCount" has not been incremented,
     * "vm->cowID" is INVALID_VMID, and either the VM's mutex hasn't
@@ -717,6 +763,47 @@ cleanup:
    Vmx86FreeAllVMResources(vm);
 
    return NULL;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Vmx86SetPageTableRoots  --
+ *
+ *      Translates the user VA corresponding to the root page tables
+ *      for all VCPUs into MPNs and stores them in VMDriver.
+ *
+ * Results:
+ *      TRUE if successful, FALSE otherwise.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static Bool
+Vmx86SetPageTableRoots(VMDriver *vm, UserVA64 *ptRootVAs, uint16 numVCPUs)
+{
+   uint16 vcpu;
+
+   ASSERT_ON_COMPILE(MAX_VCPUS == MAX_INITBLOCK_CPUS);
+
+   if (numVCPUs > vm->numVCPUs) {
+      return FALSE;
+   }
+   for (vcpu = 0; vcpu < numVCPUs; vcpu++) {
+      if ((ptRootVAs[vcpu] & (PAGE_SIZE - 1)) != 0) {
+         Warning("Error: page table VA %"FMT64"x is not page-aligned\n",
+                 ptRootVAs[vcpu]);
+         return FALSE;
+      }
+      ASSERT(vm->ptRootMpns[vcpu] == INVALID_MPN);
+      if (HostIF_LookupUserMPN(vm, ptRootVAs[vcpu], &vm->ptRootMpns[vcpu]) !=
+          PAGE_LOOKUP_SUCCESS) {
+         Warning("Failure looking up page table root MPN for VCPU %d\n", vcpu);
+         return FALSE;
+      }
+   }
+   return TRUE;
 }
 
 
@@ -746,6 +833,87 @@ Vmx86_LookupUserMPN(VMDriver *vm, // IN: VMDriver
    ret = HostIF_LookupUserMPN(vm, uAddr, mpn);
    HostIF_VMUnlock(vm, 38);
    return ret;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Vmx86_ProcessBootstrap  --
+ *
+ *     Copies the VMM bootstrap blob header and processes it by invoking
+ *     MonLoader.
+ *
+ * Results:
+ *      TRUE if successful, FALSE otherwise.
+ *
+ *----------------------------------------------------------------------
+ */
+
+Bool
+Vmx86_ProcessBootstrap(VMDriver *vm,
+                       VA64 bsBlobAddr,
+                       uint32 numBytes,
+                       uint32 headerOffset,
+                       uint16 numVCPUs,
+                       UserVA64 *ptRootVAs,
+                       VMSharedRegion *shRegions)
+{
+   void *blobHdr = NULL;
+   unsigned errLine;
+   Vcpuid errVcpu;
+   MonLoaderError ret;
+   MonLoaderHeader *header;
+   Bool res = FALSE;
+   MonLoaderArgs args;
+
+   /*
+    * Only the beginning of the blob may be passed in: the header at
+    * offset 0, which must fit on one page.
+    */
+   if (numBytes > PAGE_SIZE || headerOffset != 0 ||
+       MonLoader_GetFixedHeaderSize() > numBytes) {
+      Warning("Invalid arguments for processing bootstrap. "
+              "Header offset: %d, Fixed header size: %zd bytes, "
+              "Blob size: %d bytes\n",
+              headerOffset, MonLoader_GetFixedHeaderSize(), numBytes);
+      goto cleanup;
+   }
+   blobHdr = HostIF_AllocKernelMem(numBytes, FALSE);
+   if (blobHdr == NULL) {
+      Warning("Failure allocating kernel buffer for bootstrap blob\n");
+      goto cleanup;
+   }
+   if (HostIF_CopyFromUser(blobHdr, bsBlobAddr, numBytes) != 0) {
+      Warning("Failure copying bootstrap blob from userspace\n");
+      goto cleanup;
+   }
+   ASSERT(headerOffset == 0);
+   header = (MonLoaderHeader *)blobHdr;
+   if (MonLoader_GetFullHeaderSize(header) > numBytes) {
+      Warning("Invalid arguments for processing bootstrap. "
+              "Full header size: %zd bytes, Blob size: %d bytes\n",
+              MonLoader_GetFullHeaderSize(header), numBytes);
+      goto cleanup;
+   }
+   if (!Vmx86SetPageTableRoots(vm, ptRootVAs, numVCPUs)) {
+      goto cleanup;
+   }
+   args.vm = vm;
+   args.shRegions = shRegions;
+   ret = MonLoader_Process(header, numVCPUs, &args, &errLine, &errVcpu);
+   if (ret != ML_OK) {
+      Warning("Error processing bootstrap: error %d at line %u, vcpu %u\n",
+               ret, errLine, errVcpu);
+      goto cleanup;
+   }
+   res = TRUE;
+
+cleanup:
+   if (blobHdr != NULL) {
+      HostIF_FreeKernelMem(blobHdr);
+   }
+   return res;
 }
 
 
@@ -790,7 +958,7 @@ Vmx86_ReleaseVM(VMDriver *vm)  // IN:
  *      None.
  *
  * Side effects:
- *	Bumps fdCount.
+ *      Bumps fdCount.
  *
  *----------------------------------------------------------------------
  */
@@ -819,7 +987,7 @@ Vmx86_Open(void)
  *
  * Side effects:
  *      Decrements fdCount
- *	May de-initialize ptsc.
+ *      May de-initialize ptsc.
  *
  *----------------------------------------------------------------------
  */
@@ -890,8 +1058,6 @@ Vmx86_InitVM(VMDriver *vm,          // IN
    }
    vm->numVCPUs = initParams->numVCPUs;
 
-   HostIF_InitFP(vm);
-
    /*
     * Initialize the driver's part of the cross-over page used to
     * talk to the monitor
@@ -946,7 +1112,7 @@ Vmx86_InitVM(VMDriver *vm,          // IN
  */
 
 void
-Vmx86_ReadTSCAndUptime(VmTimeStart *st)	// OUT: return value
+Vmx86_ReadTSCAndUptime(VmTimeStart *st)  // OUT: return value
 {
    uintptr_t flags;
 
@@ -994,7 +1160,7 @@ Vmx86_ComputekHz(uint64 cycles, uint64 uptime)
       cycles >>= 1;
       uptime >>= 1;
    }
- 
+
    if (uptime == 0) {
       return 0;
    }
@@ -1065,7 +1231,7 @@ Vmx86GetBusyKHzEstimate(void)
  */
 
 static INLINE_SINGLE_CALLER uint32
-Vmx86GetkHzEstimate(VmTimeStart *st)	// IN: start time
+Vmx86GetkHzEstimate(VmTimeStart *st)   // IN: start time
 {
    uint64 cDiff, tDiff;
    uintptr_t flags;
@@ -1102,7 +1268,7 @@ Vmx86GetkHzEstimate(VmTimeStart *st)	// IN: start time
  */
 
 uint32
-Vmx86_GetkHzEstimate(VmTimeStart *st)	// IN: start time
+Vmx86_GetkHzEstimate(VmTimeStart *st)   // IN: start time
 {
    static uint32 kHz;
 
@@ -1328,7 +1494,7 @@ Vmx86MinAllocationFunc(unsigned nonpaged,
  *      memory.
  *
  * Results:
- *	The minAllocation for this vm.
+ *      The minAllocation for this vm.
  *
  *
  * Side effects:
@@ -1357,7 +1523,7 @@ Vmx86MinAllocation(VMDriver *vm,
  *      percentage of guest memory must fit within host RAM.
  *
  * Results:
- *	Number of pages that must fit within host ram for a given overcommit
+ *      Number of pages that must fit within host ram for a given overcommit
  *      level.
  *
  *
@@ -1610,7 +1776,7 @@ Vmx86_UnlockPageByMPN(VMDriver *vm, // IN: VMDriver
  *      allocated MPNs. MPNs of the allocated pages are copied to the
  *      caller's buffer at 'addr'.
  *
- *	Negative system specific error code on error (NTSTATUS on Windows,
+ *      Negative system specific error code on error (NTSTATUS on Windows,
  *      etc.)
  *
  * Side effects:
@@ -1620,11 +1786,11 @@ Vmx86_UnlockPageByMPN(VMDriver *vm, // IN: VMDriver
  */
 
 int
-Vmx86_AllocLockedPages(VMDriver *vm,	     // IN: VMDriver
-		       VA64 addr,	     // OUT: VA of an array for
+Vmx86_AllocLockedPages(VMDriver *vm,         // IN: VMDriver
+                       VA64 addr,            // OUT: VA of an array for
                                              //      allocated MPNs.
-		       unsigned numPages,    // IN: number of pages to allocate
-		       Bool kernelMPNBuffer, // IN: is the MPN buffer in kernel
+                       unsigned numPages,    // IN: number of pages to allocate
+                       Bool kernelMPNBuffer, // IN: is the MPN buffer in kernel
                                              //     or user address space?
                        Bool ignoreLimits)    // IN: should limits be ignored?
 {
@@ -1659,8 +1825,8 @@ Vmx86_AllocLockedPages(VMDriver *vm,	     // IN: VMDriver
  *      by Vmx86_AllocLockedPages().
  *
  * Results:
- *	0 on success,
- *	non-0 system specific error code on error (NTSTATUS on Windows, etc.)
+ *      0 on success,
+ *      non-0 system specific error code on error (NTSTATUS on Windows, etc.)
  *
  * Side effects:
  *      Number of global and per-VM locked pages is decreased.
@@ -1669,10 +1835,10 @@ Vmx86_AllocLockedPages(VMDriver *vm,	     // IN: VMDriver
  */
 
 int
-Vmx86_FreeLockedPages(VMDriver *vm,	    // IN: VM instance pointer
-		      VA64 addr,            // IN: user or kernel array of MPNs to free
-		      unsigned numPages,    // IN: number of pages to free
-		      Bool kernelMPNBuffer) // IN: is the MPN buffer in kernel or user address space?
+Vmx86_FreeLockedPages(VMDriver *vm,         // IN: VM instance pointer
+                      VA64 addr,            // IN: user or kernel array of MPNs to free
+                      unsigned numPages,    // IN: number of pages to free
+                      Bool kernelMPNBuffer) // IN: is the MPN buffer in kernel or user address space?
 {
    int ret;
 
@@ -1693,11 +1859,11 @@ Vmx86_FreeLockedPages(VMDriver *vm,	    // IN: VM instance pointer
  *
  * Vmx86_GetNextAnonPage --
  *
- *      Queries the driver to retrieve the list of anonymous pages. 
+ *      Queries the driver to retrieve the list of anonymous pages.
  *      A supplied value of INVALID_MPN will start the query from
  *      the head of the list. Callers supply the previously received
  *      mpn to retrieve the next in the chain. Note: There is no
- *      guarantee of coherency. 
+ *      guarantee of coherency.
  *
  * Results:
  *      A valid mpn or INVALID_MPN if the list has been exhausted.
@@ -1725,52 +1891,19 @@ Vmx86_GetNextAnonPage(VMDriver *vm,       // IN: VM instance pointer
 /*
  *----------------------------------------------------------------------
  *
- * Vmx86_GetLockedPageList --
- *
- *      puts MPNs of pages that were allocated by HostIF_AllocLockedPages()
- *      into user mode buffer.
- *
- * Results:
- *	non-negative number of the MPNs in the buffer on success.
- *	negative error code on error.
- *
- * Side effects:
- *      none
- *
- *----------------------------------------------------------------------
- */
-
-int
-Vmx86_GetLockedPageList(VMDriver *vm,          // IN: VM instance pointer
-                        VA64 uAddr,            // OUT: user mode buffer for MPNs
-		        unsigned int numPages) // IN: size of the buffer in MPNs
-{
-   int ret;
-
-   HostIF_VMLock(vm, 9);
-   ret = HostIF_GetLockedPageList(vm, uAddr, numPages);
-   HostIF_VMUnlock(vm, 9);
-
-   return ret;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
  * Vmx86_GetMemInfo --
  *
- *      Return the info about all VMs. 
+ *      Return the info about all VMs.
  *
  * Results:
  *      TRUE if all info was successfully copied.
  *
  * Side effects:
- *      VMGetMemInfoArgs is filled in. If the supplied curVM is null 
+ *      VMGetMemInfoArgs is filled in. If the supplied curVM is null
  *      then only the baseline information will be returned. Calling
- *      with a null curVM may return results for maxLockedPages 
- *      that differ from those  when the vm is passed if huge pages 
- *      are in use. 
+ *      with a null curVM may return results for maxLockedPages
+ *      that differ from those  when the vm is passed if huge pages
+ *      are in use.
  *
  *----------------------------------------------------------------------
  */
@@ -1846,7 +1979,7 @@ Vmx86_GetMemInfo(VMDriver *curVM,
  *
  * Vmx86SetMemoryUsage --
  *
- *      Updates the paged, nonpaged, and anonymous memory reserved memory 
+ *      Updates the paged, nonpaged, and anonymous memory reserved memory
  *      values for the vm.
  *
  * Results:
@@ -1968,8 +2101,8 @@ Vmx86_Admit(VMDriver *curVM,     // IN
       while (allocatedPages < nonpaged) {
          pages = Vmx86_AllocLockedPages(curVM,
                                         PtrToVA64(mpns + allocatedPages),
-	                                MIN(ALLOCATE_CHUNK_SIZE, nonpaged - allocatedPages),
-	                                TRUE,
+                                        MIN(ALLOCATE_CHUNK_SIZE, nonpaged - allocatedPages),
+                                        TRUE,
                                         FALSE);
          if (pages <= 0) {
             break;
@@ -2078,34 +2211,7 @@ Vmx86_UpdateMemInfo(VMDriver *curVM,
 /*
  *----------------------------------------------------------------------
  *
- * Vmx86_PAEEnabled --
- *
- *      Is PAE enabled?
- *
- * Results:
- *      TRUE if PAE enabled.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-Bool
-Vmx86_PAEEnabled(void)
-{
-   uintptr_t cr4;
-
-   GET_CR4(cr4);
-
-   return (cr4 & CR4_PAE) != 0;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Vmx86_VMXEnabled --
+ * Vmx86VMXEnabled --
  *
  *      Test the VMXE bit as an easy proxy for whether VMX operation
  *      is enabled.
@@ -2119,8 +2225,8 @@ Vmx86_PAEEnabled(void)
  *----------------------------------------------------------------------
  */
 
-Bool
-Vmx86_VMXEnabled(void)
+static Bool
+Vmx86VMXEnabled(void)
 {
    if (VT_CapableCPU()) {
       uintptr_t cr4;
@@ -2131,154 +2237,6 @@ Vmx86_VMXEnabled(void)
    } else {
       return FALSE;
    }
-}
-
-
-/*
- *-----------------------------------------------------------------------------
- *
- * Vmx86LookupVMByUserIDLocked --
- *
- *      Lookup a VM by userID. The caller must hold the global lock.
- *
- * Returns:
- *      On success: Pointer to the driver's VM instance.
- *      On failure: NULL (not found).
- *
- * Side effects:
- *      None
- *
- *-----------------------------------------------------------------------------
- */
-
-static VMDriver *
-Vmx86LookupVMByUserIDLocked(int userID) // IN
-{
-   VMDriver *vm;
-
-   ASSERT(HostIF_GlobalLockIsHeld());
-
-   for (vm = vmDriverList; vm != NULL; vm = vm->nextDriver) {
-      if (vm->userID == userID) {
-         return vm;
-      }
-   }
-
-   return NULL;
-}
-
-
-/*
- *-----------------------------------------------------------------------------
- *
- * Vmx86_LookupVMByUserID --
- *
- *      Lookup a VM by userID.
- *
- * Returns:
- *      On success: Pointer to the driver's VM instance.
- *      On failure: NULL (not found).
- *
- * Side effects:
- *      None
- *
- *-----------------------------------------------------------------------------
- */
-
-VMDriver *
-Vmx86_LookupVMByUserID(int userID) // IN
-{
-   VMDriver *vm;
-
-   HostIF_GlobalLock(10);
-   vm = Vmx86LookupVMByUserIDLocked(userID);
-   HostIF_GlobalUnlock(10);
-
-   return vm;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Vmx86_FastSuspResSetOtherFlag --
- *
- *      Sets the value of other VM's fastSuspResFlag.
- *
- * Returns:
- *      TRUE if VM was found and flag was set successfully.
- *      FALSE if VM was not found.
- *
- * Side effects:
- *      The value we set the flag to is this VM's userID.
- *
- *----------------------------------------------------------------------
- */
-
-Bool
-Vmx86_FastSuspResSetOtherFlag(VMDriver *vm,      // IN
-                              int otherVmUserId) // IN
-{
-   VMDriver *otherVM;
-
-   HostIF_GlobalLock(35);
-   otherVM = Vmx86LookupVMByUserIDLocked(otherVmUserId);
-   if (otherVM != NULL) {
-      ASSERT(otherVM->fastSuspResFlag == 0);
-      otherVM->fastSuspResFlag = vm->userID;
-   } else {
-      Warning("otherVmUserId (%d) is invalid", otherVmUserId);
-   }
-   HostIF_GlobalUnlock(35);
-
-   return otherVM != NULL;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Vmx86_FastSuspResGetMyFlag --
- *
- *      Gets the value of fastSuspResFlag. If blockWait is true, this
- *      function will not return until the flag is non-zero, or until
- *      timeout.
- *
- * Returns:
- *      The value of the flag which, if non-zero, should be the userID of
- *      the vm that set it.
- *
- * Side effects:
- *      The flag is reset to zero once read.
- *
- *----------------------------------------------------------------------
- */
-
-int
-Vmx86_FastSuspResGetMyFlag(VMDriver *vm,   // IN
-                           Bool blockWait) // IN
-{
-   int retval = 0;
-   int ntries = 1;
-   const int waitInterval = 10;     /* Wait 10ms at a time. */
-   const int maxWaitTime  = 100000; /* Wait maximum of 100 seconds. */
-
-   if (blockWait) {
-      ntries = maxWaitTime / waitInterval;
-   }
-
-   while (ntries--) {
-      HostIF_GlobalLock(6);
-      retval = vm->fastSuspResFlag;
-      vm->fastSuspResFlag = 0;
-      HostIF_GlobalUnlock(6);
-      if (retval || !ntries) {
-         break;
-      }
-      HostIF_Wait(waitInterval);
-   }
-
-   return retval;
 }
 
 
@@ -2301,7 +2259,7 @@ Vmx86_FastSuspResGetMyFlag(VMDriver *vm,   // IN
 static void
 Vmx86EnableHVOnCPU(void)
 {
-   if (SVM_CapableCPU()) {
+   if (CPUID_GetVendor() == CPUID_VENDOR_AMD) {
       uint64 vmCR = __GET_MSR(MSR_VM_CR);
       if (!SVM_LockedFromFeatures(vmCR)) {
          CPUIDRegs regs;
@@ -2311,12 +2269,13 @@ Vmx86EnableHVOnCPU(void)
                                   MSR_VM_CR_SVM_LOCK);
          }
       }
-   }
-   if (VT_CapableCPU()) {
+   } else if (CPUID_GetVendor() == CPUID_VENDOR_INTEL) {
       uint64 featCtl = __GET_MSR(MSR_FEATCTL);
       if (!VT_LockedFromFeatures(featCtl)) {
          __SET_MSR(MSR_FEATCTL, featCtl | MSR_FEATCTL_LOCK | MSR_FEATCTL_VMXE);
       }
+   } else {
+      NOT_REACHED();
    }
 }
 
@@ -2334,7 +2293,7 @@ Vmx86EnableHVOnCPU(void)
 static INLINE uint64
 Vmx86RefClockInCycles(uint64 uptime)
 {
-   return Mul64x3264(uptime, 
+   return Mul64x3264(uptime,
                      pseudoTSC.refClockToPTSC.ratio.mult,
                      pseudoTSC.refClockToPTSC.ratio.shift);
 }
@@ -2353,7 +2312,7 @@ Vmx86RefClockInCycles(uint64 uptime)
 static INLINE uint64
 Vmx86RefClockToPTSC(uint64 uptime)
 {
-   return Vmx86RefClockInCycles(uptime) + 
+   return Vmx86RefClockInCycles(uptime) +
       Atomic_Read64(&pseudoTSC.refClockToPTSC.add);
 }
 
@@ -2411,7 +2370,7 @@ Vmx86_InitPseudoTSC(PTSCInitParams *params) // IN/OUT
 
       pseudoTSC.initialized = TRUE;
    }
-   /* 
+   /*
     * Allow the calling vmx to respect ptsc.noTSC=TRUE config option
     * even if another vmx is already running (pseudoTSC was already
     * initialized).  Useful for testing.
@@ -2533,12 +2492,6 @@ Vmx86_CheckPseudoTSC(uint64 *lastTSC, // IN/OUT: last/current value of the TSC
 }
 
 
-typedef struct {
-   Atomic_uint32 index;
-   MSRQuery *query;
-} Vmx86GetMSRData;
-
-
 /*
  *-----------------------------------------------------------------------------
  *
@@ -2546,7 +2499,7 @@ typedef struct {
  *
  *      Collect MSR value on the current logical CPU.
  *
- *	Function must not block (it is invoked from interrupt context).
+ *      Function must not block (it is invoked from interrupt context).
  *      Only VT MSRs are supported on VT-capable processors.
  *
  * Results:
@@ -2654,6 +2607,143 @@ Vmx86_GetAllMSRs(MSRQuery *query) // IN/OUT
 
 
 /*
+ *-----------------------------------------------------------------------------
+ *
+ * Vmx86CheckVMXStatus --
+ *
+ *      Checks the status of the given operation and issues a warning if it was
+ *      not successful. If it is a valid failure, the error code will be read
+ *      and logged.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      None.
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+static void
+Vmx86CheckVMXStatus(const char *operation, // IN: Operation string
+                    VMXStatus status)      // IN: Status to check
+{
+   if (status != VMX_Success) {
+      Warning("%s failed with status %s.\n", operation,
+              status == VMX_FailValid ? "VMX_FailValid" :
+              status == VMX_FailInvalid ? "VMX_FailInvalid" : "UNKNOWN");
+/*
+ * We use a broken in-house version of binutils (2.16.1-vt) with gcc 4.3 which
+ * doesn't handle VMREAD/VMWRITE operands properly.
+ */
+#ifdef __GNUC__
+#if __GNUC__== 4 && __GNUC_MINOR__ > 3
+      if (status == VMX_FailValid) {
+         uint64 errorCode;
+         VMREAD_2_STATUS(VT_VMCS_VMINSTR_ERR, &errorCode);
+         Log("VM-instruction error: Error %"FMT64"d\n", errorCode);
+      }
+#endif
+#endif
+   }
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * Vmx86FlushVMCSPage --
+ *
+ *      VMCLEAR the given VMCS page on the current logical CPU. We first enable
+ *      HV if necessary, and execute a VMXON using the given VMXON region MPN.
+ *      If HV was already enabled, it will remain enabled. If we enabled HV or
+ *      executed a VMXON in non-root operation, we will restore the state of
+ *      each respectively after the VMCLEAR.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      The hardware VMCS cache will be flushed.
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+static void
+Vmx86FlushVMCSPage(void *clientData) // IN: The MA of the VMCS to VMCLEAR
+{
+   MA vmxonRegion;
+   Bool hvWasEnabled;
+   MA vmcs = (MA)clientData;
+   Bool vmxWasInRootOperation = FALSE;
+   VMXStatus vmxonStatus, vmclearStatus, vmxoffStatus;
+
+   ASSERT(vmcs);
+
+   /* Enable HV if it isn't already enabled. */
+   hvWasEnabled = Vmx86VMXEnabled();
+   if (!hvWasEnabled) {
+      uintptr_t cr4reg;
+      ASSERT(VT_CapableCPU());
+      Vmx86EnableHVOnCPU();
+      GET_CR4(cr4reg);
+      SET_CR4(cr4reg | CR4_VMXE);
+   }
+
+   /* VMXON using this CPUs's VMXON region. */
+   vmxonRegion = MPN_2_MA(Task_GetHVRootPageForPCPU(HostIF_GetCurrentPCPU()));
+   vmxonStatus = VMXON_2_STATUS(&vmxonRegion);
+   if (vmxonStatus != VMX_Success) {
+      /* VMXON failed, we must already be in VMX root operation. */
+      vmxWasInRootOperation = TRUE;
+   }
+
+   /* VMCLEAR the given VMCS page. */
+   vmclearStatus = VMCLEAR_2_STATUS(&vmcs);
+   Vmx86CheckVMXStatus("VMCLEAR", vmclearStatus);
+
+   /* VMXOFF if we were initially in VMX non-root operation. */
+   if (!vmxWasInRootOperation) {
+      vmxoffStatus = VMXOFF_2_STATUS();
+      Vmx86CheckVMXStatus("VMXOFF", vmxoffStatus);
+   }
+
+   /* Disable HV if it was initially disabled. */
+   if (!hvWasEnabled) {
+      uintptr_t cr4reg;
+      GET_CR4(cr4reg);
+      SET_CR4(cr4reg & ~CR4_VMXE);
+   }
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * Vmx86_FlushVMCSAllCPUs --
+ *
+ *      Enable HV (if necessary) and VMCLEAR a VMCS page on all logical CPUs.
+ *      This will prevent stale data from surfacing out of the VMCS cache when
+ *      executing VMREADs.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      HV will be enabled and hardware VMCS caches will be flushed across all
+ *      CPUs.
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+void
+Vmx86_FlushVMCSAllCPUs(MA vmcs) // IN: The MA of the VMCS to VMCLEAR
+{
+   HostIF_CallOnEachCPU(Vmx86FlushVMCSPage, (void *)vmcs);
+}
+
+
+/*
  *----------------------------------------------------------------------
  *
  * Vmx86_YieldToSet --
@@ -2662,7 +2752,7 @@ Vmx86_GetAllMSRs(MSRQuery *query) // IN/OUT
  *
  *      usecs is the total spin time in monitor.  Very low numbers
  *      indicate we detected there was a vCPU thread that was not
- *      in the monitor, so we didn't spin.  In that case, simply 
+ *      in the monitor, so we didn't spin.  In that case, simply
  *      nudge the threads we want and return.
  *
  * Results:
@@ -2838,7 +2928,7 @@ Vmx86PerfCtrInUse(Bool isGen, unsigned pmcNum, unsigned ctrlMSR,
  * Vmx86GetUnavailPerfCtrsOnCPU --
  *
  *      Determine which performance counters are already in use by the
- *      host on the current PCPU. 
+ *      host on the current PCPU.
  *
  * Results:
  *      A bitset representing unavailable performance counter.
@@ -2879,10 +2969,11 @@ Vmx86GetUnavailPerfCtrsOnCPU(void *data)
       selBase = PERFCTR_CORE_PERFEVTSEL0_ADDR;
       ctrBase = PERFCTR_CORE_PERFCTR0_ADDR;
    } else if (CPUID_GetVendor() == CPUID_VENDOR_AMD) {
-      if (CPUID_FAMILY_IS_BULLDOZER(__GET_EAX_FROM_CPUID(1))) {
+     if(CPUID_ISSET(0x80000001, ECX, PERFCORE,
+        __GET_ECX_FROM_CPUID(0x80000001))) {
          numGen  = 6;
-         selBase = PERFCTR_BD_BASE_ADDR + PERFCTR_BD_EVENTSEL;
-         ctrBase = PERFCTR_BD_BASE_ADDR + PERFCTR_BD_CTR;
+         selBase = PERFCTR_AMD_EXT_BASE_ADDR + PERFCTR_AMD_EXT_EVENTSEL;
+         ctrBase = PERFCTR_AMD_EXT_BASE_ADDR + PERFCTR_AMD_EXT_CTR;
          stride  = 2;
       } else {
          numGen  = 4;
@@ -2947,3 +3038,79 @@ Vmx86_GetUnavailablePerfCtrs(void)
    return Atomic_Read64(&unavailCtrs);
 }
 
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Vmx86_GetPageRoot --
+ *
+ *      Get the page root MPN for the specified VCPU.
+ *
+ * Results:
+ *      TRUE and an MPN on success, FALSE on failure.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+Bool
+Vmx86_GetPageRoot(VMDriver *vm,  // IN:
+                  Vcpuid vcpuid, // IN:
+                  MPN *mpn)      // OUT:
+{
+   if (vcpuid >= vm->numVCPUs) {
+      return FALSE;
+   }
+   *mpn = vm->ptRootMpns[vcpuid];
+   return TRUE;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Vmx86_MapPage --
+ *
+ *      Maps the specified MPN into the host kernel address space.
+ *      returns the VPN of the mapping.
+ *
+ * Results:
+ *      The VPN in the kernel address space of the new mapping, or 0 if
+ *      the mapping failed.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+VPN
+Vmx86_MapPage(MPN mpn) // IN:
+{
+   return HostIF_MapPage(mpn);
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Vmx86_UnmapPage --
+ *
+ *      Unmaps the specified VPN from the host kernel address space.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+void
+Vmx86_UnmapPage(VPN vpn) // IN:
+{
+   HostIF_UnmapPage(vpn);
+}

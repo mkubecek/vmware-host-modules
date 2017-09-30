@@ -23,7 +23,7 @@
 #define INCLUDE_ALLOW_VMCORE
 #include "includeCheck.h"
 
-#include "compat_semaphore.h"
+#include <linux/semaphore.h>
 
 
 #ifdef VMX86_DEBUG
@@ -73,7 +73,7 @@ typedef struct Mutex {
  */
 
 typedef struct VMHost {
-   /* 
+   /*
     * Used for shared modifications to VM's VMDriver data, mostly page locking.
     * It has higher rank than the global mutex.
     */
@@ -84,15 +84,15 @@ typedef struct VMHost {
    struct task_struct *vcpuSemaTask[MAX_INITBLOCK_CPUS];
    /*
     * Pages that were allocated/mapped by VMX and locked by the driver and
-    * don't have a particular VA. 
+    * don't have a particular VA.
     */
    struct PhysTracker *lockedPages;
    /*
-    * Locked pages that were allocated by the driver and don't have 
+    * Locked pages that were allocated by the driver and don't have
     * a particular VA. They are used as monitor anonymous pages or
     * as pages for "AWE" guest memory.
     */
-   struct PhysTracker *AWEPages; 
+   struct PhysTracker *AWEPages;
    /* Is VMDriver.hostAPIC mapped or is from __fix_to_virt(FIX_APIC_BASE)? */
    Bool               hostAPICIsMapped;
 } VMHost;

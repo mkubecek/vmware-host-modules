@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2005-2014 VMware, Inc. All rights reserved.
+ * Copyright (C) 2005-2014,2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -46,10 +46,6 @@
 #include "vm_asm.h"
 #endif
 #include "x86cpuid_asm.h"
-
-#ifdef VMM
-#include "cpuidMonitor.h"
-#endif
 
 #define SVM_VMCB_IO_BITMAP_SIZE    (3 * PAGE_SIZE)
 #define SVM_VMCB_MSR_BITMAP_SIZE   (2 * PAGE_SIZE)

@@ -1682,11 +1682,7 @@ VNetSnprintf(char *str,          // OUT: resulting string
 
    va_start(args, format);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 4, 8)
    length = vsnprintf(str, size, format, args);
-#else
-   length = vsprintf(str, format, args);
-#endif
 
    va_end(args);
 

@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 ##########################################################
-# Copyright (C) 1998-2015 VMware, Inc. All rights reserved.
+# Copyright (C) 1998-2016 VMware, Inc. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify it
 # under the terms of the GNU General Public License as published by the
@@ -84,8 +84,6 @@ endif
 
 ifneq ($(VM_KBUILD), no)
 
-VMCCVER := $(shell $(CC) -dumpversion)
-
 # If there is no version defined, we are in toplevel pass, not yet in kernel makefiles...
 ifeq ($(VERSION),)
 
@@ -99,14 +97,6 @@ auto-build: $(DRIVER_KO)
 # $(DRIVER_KO) is a phony target, so compare file times explicitly
 $(DRIVER): $(DRIVER_KO)
 	if [ $< -nt $@ ] || [ ! -e $@ ] ; then cp -f $< $@; fi
-
-# Pass gcc version down the chain, so we can detect if kernel attempts to use unapproved compiler
-VM_CCVER := $(VMCCVER)
-export VM_CCVER
-VM_CC := $(CC)
-export VM_CC
-
-MAKEOVERRIDES := $(filter-out CC=%,$(MAKEOVERRIDES))
 
 #
 # Define a setup target that gets built before the actual driver.

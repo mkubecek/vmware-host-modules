@@ -170,7 +170,6 @@ int64 PTSC_CyclesToUS(VmRelativeTS ts);
 /*
  * ESX with userworld VMX
  */
-#include "x86types.h"
 #include "user_layout.h"
 
 #ifdef VM_ARM_64

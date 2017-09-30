@@ -151,7 +151,7 @@ typedef struct MemTrack {
    unsigned          numPages;      /* Number of pages tracked. */
    MemTrackDir1      dir1;          /* First level directory. */
    MemTrackHT        vpnHashTable;  /* VPN to entry hashtable. */
-   MemTrackHT        mpnHashTable;  /* MPN to entry hashtable. */
+   MemTrackHT       *mpnHashTable;  /* MPN to entry hashtable. */
 } MemTrack;
 
 /*
@@ -276,6 +276,7 @@ MemTrackCleanup(MemTrack *mt)    // IN
    unsigned idx;
    unsigned p1;
    MemTrackDir1 *dir1;
+   Bool freeBackMap = mt != NULL && mt->mpnHashTable != NULL;
 
    if (mt == NULL) {
       return;
@@ -304,9 +305,14 @@ MemTrackCleanup(MemTrack *mt)    // IN
       if (mt->vpnHashTable.pages[idx] != NULL) {
          HostIF_FreePage(mt->vpnHashTable.pages[idx]);
       }
-      if (mt->mpnHashTable.pages[idx] != NULL) {
-         HostIF_FreePage(mt->mpnHashTable.pages[idx]);
+      if (freeBackMap) {
+         if (mt->mpnHashTable->pages[idx] != NULL) {
+            HostIF_FreePage(mt->mpnHashTable->pages[idx]);
+         }
       }
+   }
+   if (freeBackMap) {
+      HostIF_FreeKernelMem(mt->mpnHashTable);
    }
 
    HostIF_FreeKernelMem(mt);
@@ -359,14 +365,19 @@ MemTrack_Init(VMDriver *vm) // IN:
       mt->vpnHashTable.pages[idx] = htPage;
    }
 
+   mt->mpnHashTable = HostIF_AllocKernelMem(sizeof *mt->mpnHashTable, FALSE);
+   if (mt->mpnHashTable == NULL) {
+      Warning("MemTrack failed to allocate MPN hash table.\n");
+      goto error;
+   }
+   memset(mt->mpnHashTable, 0, sizeof *mt->mpnHashTable);
    for (idx = 0; idx < MEMTRACK_HT_PAGES; idx++) {
       MemTrackHTPage *htPage = MemTrackAllocPage();
-
       if (htPage == NULL) {
          Warning("MemTrack failed to allocate MPN hash table (%d).\n", idx);
          goto error;
       }
-      mt->mpnHashTable.pages[idx] = htPage;
+      mt->mpnHashTable->pages[idx] = htPage;
    }
 
    return mt;
@@ -406,6 +417,7 @@ MemTrack_Add(MemTrack *mt,    // IN
    MemTrackDir3 *dir3;
    MEMTRACK_IDX2DIR(idx, p1, p2, p3);
 
+
    ASSERT(HostIF_VMLockIsHeld(mt->vm));
 
    if (p1 >= MEMTRACK_DIR1_ENTRIES ||
@@ -429,7 +441,7 @@ MemTrack_Add(MemTrack *mt,    // IN
    ent->mpn = mpn;
 
    MemTrackHTInsert(&mt->vpnHashTable, ent, &ent->vpnChain, ent->vpn);
-   MemTrackHTInsert(&mt->mpnHashTable, ent, &ent->mpnChain, ent->mpn);
+   MemTrackHTInsert(mt->mpnHashTable, ent, &ent->mpnChain, ent->mpn);
 
    mt->numPages++;
 
@@ -492,7 +504,7 @@ MemTrack_LookupMPN(MemTrack *mt, // IN
 {
    MemTrackEntry *next;
    ASSERT(HostIF_VMLockIsHeld(mt->vm));
-   next = *MemTrackHTLookup(&mt->mpnHashTable, mpn);
+   next = *MemTrackHTLookup(mt->mpnHashTable, mpn);
 
    while (next != NULL) {
       if (next->mpn == mpn) {

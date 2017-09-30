@@ -26,10 +26,10 @@
 #include <linux/miscdevice.h>
 #include <linux/mutex.h>
 #include <linux/sched.h>
+#include <linux/semaphore.h>
 #include <linux/wait.h>
 
 #include "vmx86.h"
-#include "compat_semaphore.h"
 #include "driver_vmcore.h"
 
 
@@ -51,7 +51,7 @@ typedef struct VMMappedUserMem {
 struct VMDriver;
 
 /* 16 pages (64KB) looks as a good limit for one allocation */
-#define VMMON_MAX_LOWMEM_PAGES	16
+#define VMMON_MAX_LOWMEM_PAGES  16
 
 typedef struct VMLinux {
    struct VMLinux *next;
@@ -66,17 +66,6 @@ typedef struct VMLinux {
    struct semaphore lock4Gb;
    unsigned int size4Gb;
    struct page *pages4Gb[VMMON_MAX_LOWMEM_PAGES];
-
-   /*
-    * LinuxDriverPoll() support
-    */
-
-   wait_queue_head_t pollQueue;
-   volatile uint32 *pollTimeoutPtr;
-   VMMappedUserMem *pollTimeoutHandle;
-   VmTimeType pollTime;
-   struct VMLinux *pollForw;
-   struct VMLinux **pollBack;
 } VMLinux;
 
 
@@ -95,19 +84,8 @@ typedef struct VMXLinuxState {
    char buf[LINUXLOG_BUFFER_SIZE];
    VMLinux *head;
 
-   /*
-    * for LinuxDriverPoll()
-    */
-
-   struct timer_list pollTimer;
-   wait_queue_head_t pollQueue;
-
-   struct VMLinux *pollList;
-
    struct task_struct *fastClockThread;
-   struct file *fastClockFile;
    unsigned fastClockRate;
-   long fastClockPriority;
    uint64 swapSize;
 } VMXLinuxState;
 

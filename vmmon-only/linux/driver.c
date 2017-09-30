@@ -23,7 +23,7 @@
 
 #include <linux/file.h>
 #include <linux/highmem.h>
-#include <linux/poll.h>
+#include <linux/mm.h>
 #include <linux/preempt.h>
 #include <linux/slab.h>
 #include <linux/smp.h>
@@ -33,12 +33,11 @@
 
 #include "compat_version.h"
 #include "compat_module.h"
-#include "compat_page.h"
 
 #include "usercalldefs.h"
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 16)
-#error Linux before 2.6.16 is not supported
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 32)
+#error Linux kernels before 2.6.32 are not supported
 #endif
 
 #include <asm/io.h>
@@ -66,15 +65,9 @@
 #include "hostif_priv.h"
 #include "vmhost.h"
 
-#include "vmmonInt.h"
-
 static void LinuxDriverQueue(VMLinux *vmLinux);
 static void LinuxDriverDequeue(VMLinux *vmLinux);
 static Bool LinuxDriverCheckPadding(void);
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 24)
-#define VMW_NOPAGE_2624
-#endif
 
 #define VMMON_UNKNOWN_SWAP_SIZE -1ULL
 
@@ -103,27 +96,17 @@ long LinuxDriver_Ioctl(struct file *filp, u_int iocmd,
                        unsigned long ioarg);
 
 static int LinuxDriver_Close(struct inode *inode, struct file *filp);
-static unsigned int LinuxDriverPoll(struct file *file, poll_table *wait);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 static int LinuxDriverFault(struct vm_fault *fault);
-#elif defined(VMW_NOPAGE_2624)
-static int LinuxDriverFault(struct vm_area_struct *vma, struct vm_fault *fault);
 #else
-static struct page *LinuxDriverNoPage(struct vm_area_struct *vma,
-                                      unsigned long address,
-                                      int *type);
+static int LinuxDriverFault(struct vm_area_struct *vma, struct vm_fault *fault);
 #endif
 static int LinuxDriverMmap(struct file *filp, struct vm_area_struct *vma);
 
-static void LinuxDriverPollTimeout(unsigned long clientData);
 static unsigned int LinuxDriverEstimateTSCkHz(void);
 
 static struct vm_operations_struct vmuser_mops = {
-#ifdef VMW_NOPAGE_2624
         .fault  = LinuxDriverFault
-#else
-        .nopage = LinuxDriverNoPage
-#endif
 };
 
 static struct file_operations vmuser_fops;
@@ -135,7 +118,41 @@ static VmTimeStart tsckHzStartTime;
 /*
  *----------------------------------------------------------------------
  *
- * LinuxDriverEstimateTSCkHzWork --
+ * LinuxDriverReadTSCAndUptimeSmpCB --
+ * LinuxDriverReadTSCAndUptime --
+ *
+ *       Read TSC and uptime on CPU 0. Reading on CPU 0 is best
+ *       effort, and the remote smp function call may fail for two
+ *       reasons: either the function is not supportd by the kernel,
+ *       or the cpu went offline. In this unlikely event, we perform
+ *       the read on the local cpu.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static void
+LinuxDriverReadTSCAndUptimeSmpCB(void *arg)
+{
+   VmTimeStart *time = (VmTimeStart *) arg;
+   Vmx86_ReadTSCAndUptime(time);
+   /* Ensure the above write is visible to the remote caller. */
+   SMP_RW_BARRIER_RW();
+}
+
+static void
+LinuxDriverReadTSCAndUptime(VmTimeStart *time)
+{
+   if (smp_call_function_single(0, LinuxDriverReadTSCAndUptimeSmpCB,
+                                (void *)time, 1) != 0) {
+      LinuxDriverReadTSCAndUptimeSmpCB(time);
+   }
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * LinuxDriverEstimateTSCkHz --
  *
  *      Estimates TSC frequency in terms of cycles and system uptime
  *      elapsed since module init. At module init, the starting cycle
@@ -149,19 +166,30 @@ static VmTimeStart tsckHzStartTime;
  *      query races with the timer, the first thread to write to 'tsckHz'
  *      wins.
  *
+ * Results:
+ *
+ *      Returns the estimated TSC khz, cached in tscKhz. If tsckHz is
+ *      0, the reads uptime on CPU 0 and estimates tsc khz, followed
+ *      by caching it in tsckHz.
+ *
  *----------------------------------------------------------------------
  */
 
-static void
-LinuxDriverEstimateTSCkHzWork(void *data)
+static uint32
+LinuxDriverEstimateTSCkHz(void)
 {
+   uint32 khz;
    VmTimeStart curTime;
    uint64 cycles;
    uint64 uptime;
-   unsigned int khz;
 
-   ASSERT(tsckHzStartTime.count != 0 && tsckHzStartTime.time != 0);
-   Vmx86_ReadTSCAndUptime(&curTime);
+   khz = Atomic_Read(&tsckHz);
+   if (khz != 0) {
+      return khz;
+   }
+
+   ASSERT(tsckHzStartTime.count != 0);
+   LinuxDriverReadTSCAndUptime(&curTime);
    cycles = curTime.count - tsckHzStartTime.count;
    uptime = curTime.time  - tsckHzStartTime.time;
    khz    = Vmx86_ComputekHz(cycles, uptime);
@@ -172,45 +200,6 @@ LinuxDriverEstimateTSCkHzWork(void *data)
        }
    } else if (Atomic_ReadIfEqualWrite(&tsckHz, 0, cpu_khz) == 0) {
        Log("Failed to compute TSC frequency, using cpu_khz: %u\n", cpu_khz);
-   }
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * LinuxDriverEstimateTSCkHz --
- *
- *      Returns the estimated TSC khz, cached in tscKhz. If tsckHz is
- *      0, the routine kicks off estimation work on CPU 0.
- *
- * Results:
- *
- *      Returns the estimated TSC khz value.
- *
- *----------------------------------------------------------------------
- */
-
-static unsigned int
-LinuxDriverEstimateTSCkHz(void)
-{
-   int err;
-   uint32 khz;
-
-   khz = Atomic_Read(&tsckHz);
-   if (khz != 0) {
-      return khz;
-   }
-   err = compat_smp_call_function_single(0, LinuxDriverEstimateTSCkHzWork,
-                                         NULL, 1);
-   /*
-    * The smp function call may fail for two reasons, either
-    * the function is not supportd by the kernel, or the cpu
-    * went offline. In this unlikely event, we just perform
-    * the work wherever we can.
-    */
-   if (err != 0) {
-      LinuxDriverEstimateTSCkHzWork(NULL);
    }
 
    return Atomic_Read(&tsckHz);
@@ -255,23 +244,20 @@ LinuxDriverEstimateTSCkHzDeferred(unsigned long data)
 static void
 LinuxDriverInitTSCkHz(void)
 {
-   unsigned int khz;
- 
-   khz = compat_tsc_khz();
-   if (khz != 0) {
-      Atomic_Write(&tsckHz, khz);
-      Log("Using tsc_khz as TSC frequency: %u\n", khz);
+   if (tsc_khz != 0) {  /* Exported kernel value */
+      Atomic_Write(&tsckHz, tsc_khz);
+      Log("Using tsc_khz as TSC frequency: %u\n", tsc_khz);
       return;
    }
 
-   Vmx86_ReadTSCAndUptime(&tsckHzStartTime);
+   LinuxDriverReadTSCAndUptime(&tsckHzStartTime);
    tscTimer.function = LinuxDriverEstimateTSCkHzDeferred;
    tscTimer.expires  = jiffies + 4 * HZ;
    tscTimer.data     = 0;
    add_timer(&tscTimer);
 }
 
- 
+
 /*
  *----------------------------------------------------------------------
  *
@@ -300,23 +286,13 @@ init_module(void)
    }
 
    CPUID_Init();
+
    if (!Task_Initialize()) {
       return -ENOEXEC;
    }
 
-   /*
-    * Initialize LinuxDriverPoll state
-    */
-
-   init_waitqueue_head(&linuxState.pollQueue);
-   init_timer(&linuxState.pollTimer);
-   linuxState.pollTimer.data = 0;
-   linuxState.pollTimer.function = LinuxDriverPollTimeout;
-
    linuxState.fastClockThread = NULL;
-   linuxState.fastClockFile = NULL;
    linuxState.fastClockRate = 0;
-   linuxState.fastClockPriority = -20;
    linuxState.swapSize = VMMON_UNKNOWN_SWAP_SIZE;
 
    /*
@@ -327,7 +303,6 @@ init_module(void)
 
    memset(&vmuser_fops, 0, sizeof vmuser_fops);
    vmuser_fops.owner = THIS_MODULE;
-   vmuser_fops.poll = LinuxDriverPoll;
    vmuser_fops.unlocked_ioctl = LinuxDriver_Ioctl;
    vmuser_fops.compat_ioctl = LinuxDriver_Ioctl;
    vmuser_fops.open = LinuxDriver_Open;
@@ -394,7 +369,6 @@ cleanup_module(void)
 
    Log("Module %s: unloaded\n", linuxState.deviceName);
 
-   del_timer_sync(&linuxState.pollTimer);
    del_timer_sync(&tscTimer);
 
    Task_Terminate();
@@ -435,7 +409,6 @@ LinuxDriver_Open(struct inode *inode, // IN
    memset(vmLinux, 0, sizeof *vmLinux);
 
    sema_init(&vmLinux->lock4Gb, 1);
-   init_waitqueue_head(&vmLinux->pollQueue);
 
    filp->private_data = vmLinux;
    LinuxDriverQueue(vmLinux);
@@ -591,20 +564,6 @@ LinuxDriver_Close(struct inode *inode, // IN
 
    LinuxDriverDestructor4Gb(vmLinux);
 
-   /*
-    * Clean up poll state.
-    */
-
-   HostIF_PollListLock(0);
-   if (vmLinux->pollBack != NULL) {
-      if ((*vmLinux->pollBack = vmLinux->pollForw) != NULL) {
-         vmLinux->pollForw->pollBack = vmLinux->pollBack;
-      }
-   }
-   HostIF_PollListUnlock(0);
-   // XXX call wake_up()?
-   HostIF_UnmapUserMem(vmLinux->pollTimeoutHandle);
-
    kfree(vmLinux);
    filp->private_data = NULL;
 
@@ -612,262 +571,10 @@ LinuxDriver_Close(struct inode *inode, // IN
 }
 
 
-#define POLLQUEUE_MAX_TASK 1000
-static DEFINE_SPINLOCK(pollQueueLock);
-static void *pollQueue[POLLQUEUE_MAX_TASK];
-static unsigned int pollQueueCount = 0;
-
-
 /*
  *-----------------------------------------------------------------------------
  *
- * LinuxDriverQueuePoll --
- *
- *      Remember that current process waits for next timer event.
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      None.
- *
- *-----------------------------------------------------------------------------
- */
-
-static INLINE_SINGLE_CALLER void
-LinuxDriverQueuePoll(void)
-{
-   unsigned long flags;
-
-   spin_lock_irqsave(&pollQueueLock, flags);
-
-   /*
-    * Under normal circumstances every process should be listed
-    * only once in this array. If it becomes problem that process
-    * can be in the array twice, walk array! Maybe you can keep
-    * it sorted by 'current' value then, making IsPollQueued
-    * a bit faster...
-    */
-
-   if (pollQueueCount < POLLQUEUE_MAX_TASK) {
-      pollQueue[pollQueueCount++] = current;
-   }
-   spin_unlock_irqrestore(&pollQueueLock, flags);
-}
-
-
-/*
- *-----------------------------------------------------------------------------
- *
- * LinuxDriverIsPollQueued --
- *
- *      Determine whether timer event occurred since we queued for it using
- *      LinuxDriverQueuePoll.
- *
- * Results:
- *      0    Event already occurred.
- *      1    Event did not occur yet.
- *
- * Side effects:
- *      None.
- *
- *-----------------------------------------------------------------------------
- */
-
-static INLINE_SINGLE_CALLER int
-LinuxDriverIsPollQueued(void)
-{
-   unsigned long flags;
-   unsigned int i;
-   int retval = 0;
-
-   spin_lock_irqsave(&pollQueueLock, flags);
-   for (i = 0; i < pollQueueCount; i++) {
-      if (current == pollQueue[i]) {
-         retval = 1;
-         break;
-      }
-   }
-   spin_unlock_irqrestore(&pollQueueLock, flags);
-
-   return retval;
-}
-
-
-/*
- *-----------------------------------------------------------------------------
- *
- * LinuxDriverFlushPollQueue --
- *
- *      Signal to queue that timer event occurred.
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      None.
- *
- *-----------------------------------------------------------------------------
- */
-
-static INLINE_SINGLE_CALLER void
-LinuxDriverFlushPollQueue(void)
-{
-   unsigned long flags;
-
-   spin_lock_irqsave(&pollQueueLock, flags);
-   pollQueueCount = 0;
-   spin_unlock_irqrestore(&pollQueueLock, flags);
-}
-
-
-/*
- *-----------------------------------------------------------------------------
- *
- * LinuxDriverWakeUp --
- *
- *      Wake up processes waiting on timer event.
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      None.
- *
- *-----------------------------------------------------------------------------
- */
-
-void
-LinuxDriverWakeUp(Bool selective)  // IN:
-{
-   if (selective && linuxState.pollList != NULL) {
-      struct timeval tv;
-      VmTimeType now;
-      VMLinux *p;
-      VMLinux *next;
-
-      HostIF_PollListLock(1);
-      do_gettimeofday(&tv);
-      now = tv.tv_sec * 1000000ULL + tv.tv_usec;
-
-      for (p = linuxState.pollList; p != NULL; p = next) {
-         next = p->pollForw;
-
-         if (p->pollTime <= now) {
-            if ((*p->pollBack = next) != NULL) {
-               next->pollBack = p->pollBack;
-            }
-            p->pollForw = NULL;
-            p->pollBack = NULL;
-            wake_up(&p->pollQueue);
-         }
-      }
-      HostIF_PollListUnlock(1);
-   }
-
-   LinuxDriverFlushPollQueue();
-   wake_up(&linuxState.pollQueue);
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * LinuxDriverPoll  --
- *
- *      This is used to wake up the VMX when a user call arrives, or
- *      to wake up select() or poll() at the next clock tick.
- *
- *----------------------------------------------------------------------
- */
-
-static unsigned int
-LinuxDriverPoll(struct file *filp,  // IN:
-                poll_table *wait)   // IN:
-{
-   VMLinux *vmLinux = (VMLinux *) filp->private_data;
-   unsigned int mask = 0;
-
-   /*
-    * Set up or check the timeout for fast wakeup.
-    *
-    * Thanks to Petr for this simple and correct implementation:
-    *
-    * There are four cases of wait == NULL:
-    *    another file descriptor is ready in the same poll()
-    *    just slept and woke up
-    *    nonblocking poll()
-    *    did not sleep due to memory allocation on 2.4.21-9.EL
-    * In first three cases, it's okay to return POLLIN.
-    * Unfortunately, for 4th variant we have to do some
-    * bookkeeping to not return POLLIN when timer did not expire
-    * yet.
-    *
-    * We may schedule a timer unnecessarily if an existing
-    * timer fires between poll_wait() and timer_pending().
-    *
-    * -- edward
-    */
-
-   if (wait == NULL) {
-      if (vmLinux->pollBack == NULL && !LinuxDriverIsPollQueued()) {
-         mask = POLLIN;
-      }
-   } else {
-      if (linuxState.fastClockThread && vmLinux->pollTimeoutPtr != NULL) {
-         struct timeval tv;
-
-         do_gettimeofday(&tv);
-         poll_wait(filp, &vmLinux->pollQueue, wait);
-         vmLinux->pollTime = *vmLinux->pollTimeoutPtr +
-                                       tv.tv_sec * 1000000ULL + tv.tv_usec;
-         if (vmLinux->pollBack == NULL) {
-            HostIF_PollListLock(2);
-            if (vmLinux->pollBack == NULL) {
-               if ((vmLinux->pollForw = linuxState.pollList) != NULL) {
-                  vmLinux->pollForw->pollBack = &vmLinux->pollForw;
-               }
-               linuxState.pollList = vmLinux;
-               vmLinux->pollBack = &linuxState.pollList;
-            }
-            HostIF_PollListUnlock(2);
-         }
-      } else {
-         LinuxDriverQueuePoll();
-         poll_wait(filp, &linuxState.pollQueue, wait);
-
-         if (!timer_pending(&linuxState.pollTimer)) {
-            mod_timer(&linuxState.pollTimer, jiffies + 1);
-         }
-      }
-   }
-
-   return mask;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * LinuxDriverPollTimeout  --
- *
- *      Wake up a process waiting in poll/select.  This is called from
- *      the timer, and hence processed in the bottom half
- *
- *----------------------------------------------------------------------
- */
-
-static void
-LinuxDriverPollTimeout(unsigned long clientData)  // IN:
-{
-   LinuxDriverWakeUp(FALSE);
-}
-
-
-/*
- *-----------------------------------------------------------------------------
- *
- * LinuxDriverNoPage/LinuxDriverFault --
+ * LinuxDriverFault --
  *
  *      Callback for returning allocated page for memory mapping
  *
@@ -883,16 +590,12 @@ LinuxDriverPollTimeout(unsigned long clientData)  // IN:
  *-----------------------------------------------------------------------------
  */
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 static int
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 LinuxDriverFault(struct vm_fault *fault)     //IN/OUT
-#elif defined(VMW_NOPAGE_2624)
-static int LinuxDriverFault(struct vm_area_struct *vma, //IN
-                            struct vm_fault *fault)     //IN/OUT
 #else
-static struct page *LinuxDriverNoPage(struct vm_area_struct *vma, //IN
-                                      unsigned long address,      //IN
-                                      int *type)                  //OUT: Fault type
+LinuxDriverFault(struct vm_area_struct *vma, //IN
+                 struct vm_fault *fault)     //IN/OUT
 #endif
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
@@ -902,28 +605,15 @@ static struct page *LinuxDriverNoPage(struct vm_area_struct *vma, //IN
    unsigned long pg;
    struct page* page;
 
-#ifdef VMW_NOPAGE_2624
    pg = fault->pgoff;
-#else
-   pg = ((address - vma->vm_start) >> PAGE_SHIFT) + vma->vm_pgoff;
-#endif
    pg = VMMON_MAP_OFFSET(pg);
    if (pg >= vmLinux->size4Gb) {
-#ifdef VMW_NOPAGE_2624
       return VM_FAULT_SIGBUS;
-#else
-      return 0;
-#endif
    }
    page = vmLinux->pages4Gb[pg];
    get_page(page);
-#ifdef VMW_NOPAGE_2624
    fault->page = page;
    return 0;
-#else
-   *type = VM_FAULT_MINOR;
-   return page;
-#endif
 }
 
 
@@ -1198,7 +888,7 @@ LinuxDriverSyncCallOnEachCPU(SyncFunc func,  // IN:
     * on this CPU too.
     */
 
-   compat_smp_call_function(LinuxDriverSyncCallHook, &args, 0);
+   smp_call_function(LinuxDriverSyncCallHook, &args, 0);
 
    /*
     * smp_call_function doesn't return until all cpus have been
@@ -1262,10 +952,10 @@ LinuxDriverReadTSC(void *data,   // OUT: TSC values
    /* Any looping means another CPU changed min/max. */
    do {
       old = Atomic_Read64(&tscDelta->min);
-   } while (old > tsc && !Atomic_CMPXCHG64(&tscDelta->min, &old, &tsc));
+   } while (old > tsc && !Atomic_CMPXCHG64(&tscDelta->min, old, tsc));
    do {
       old = Atomic_Read64(&tscDelta->max);
-   } while (old < tsc && !Atomic_CMPXCHG64(&tscDelta->max, &old, &tsc));
+   } while (old < tsc && !Atomic_CMPXCHG64(&tscDelta->max, old, tsc));
 
    return TRUE;
 }
@@ -1356,24 +1046,18 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
    switch (iocmd) {
    case IOCTL_VMX86_VERSION:
    case IOCTL_VMX86_CREATE_VM:
-   case IOCTL_VMX86_INIT_CROSSGDT:
    case IOCTL_VMX86_SET_UID:
    case IOCTL_VMX86_GET_NUM_VMS:
    case IOCTL_VMX86_GET_TOTAL_MEM_USAGE:
    case IOCTL_VMX86_SET_HARD_LIMIT:
-   case IOCTL_VMX86_PAE_ENABLED:
-   case IOCTL_VMX86_VMX_ENABLED:
    case IOCTL_VMX86_GET_IPI_VECTORS:
    case IOCTL_VMX86_GET_KHZ_ESTIMATE:
    case IOCTL_VMX86_GET_ALL_CPUID:
    case IOCTL_VMX86_GET_ALL_MSRS:
-   case IOCTL_VMX86_SET_POLL_TIMEOUT_PTR:
-   case IOCTL_VMX86_GET_KERNEL_CLOCK_RATE:
    case IOCTL_VMX86_GET_REFERENCE_CLOCK_HZ:
    case IOCTL_VMX86_INIT_PSEUDO_TSC:
    case IOCTL_VMX86_CHECK_PSEUDO_TSC:
    case IOCTL_VMX86_GET_PSEUDO_TSC:
-   case IOCTL_VMX86_SET_HOST_CLOCK_PRIORITY:
    case IOCTL_VMX86_SYNC_GET_TSCS:
    case IOCTL_VMX86_GET_UNAVAIL_PERF_CTRS:
       break;
@@ -1394,65 +1078,79 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       retval = VMMON_VERSION;
       break;
 
-   case IOCTL_VMX86_CREATE_VM:
+   case IOCTL_VMX86_CREATE_VM: {
+      VMCreateBlock args;
+
       if (vm != NULL) {
          retval = -EINVAL;
          break;
       }
-
-      vm = Vmx86_CreateVM();
+      retval = HostIF_CopyFromUser(&args, (VA64)ioarg, sizeof args);
+      if (retval != 0) {
+         break;
+      }
+      vm = Vmx86_CreateVM(args.bsBlob, args.bsBlobSize);
 
       if (vm == NULL) {
          retval = -ENOMEM;
       } else {
          vmLinux->vm = vm;
-         retval = vm->userID;
+         args.vmid = vm->userID;
+         retval = HostIF_CopyToUser((VA64)ioarg, &args, sizeof args);
       }
       break;
+   }
+
+   case IOCTL_VMX86_PROCESS_BOOTSTRAP: {
+      VMProcessBootstrapBlock *args;
+      Bool res;
+
+      args = HostIF_AllocKernelMem(sizeof *args, TRUE);
+      if (args == NULL) {
+         retval = -ENOMEM;
+         break;
+      }
+      retval = HostIF_CopyFromUser(args, (VA64)ioarg, sizeof *args);
+      if (retval != 0) {
+         HostIF_FreeKernelMem(args);
+         break;
+      }
+      res = Vmx86_ProcessBootstrap(vm,
+                                   args->bsBlobAddr,
+                                   args->numBytes,
+                                   args->headerOffset,
+                                   args->numVCPUs,
+                                   args->ptRootVAs,
+                                   args->shRegions);
+      if (!res) {
+         retval = -ENOMEM;
+      }
+      HostIF_FreeKernelMem(args);
+      break;
+   }
 
    case IOCTL_VMX86_RELEASE_VM:
       vmLinux->vm = NULL;
       Vmx86_ReleaseVM(vm);
       break;
 
-   case IOCTL_VMX86_ALLOC_CROSSGDT: {
-      InitBlock initBlock;
-
-      if (Task_AllocCrossGDT(&initBlock)) {
-         retval = HostIF_CopyToUser((char *)ioarg, &initBlock,
-                                    sizeof initBlock);
-      } else {
-         retval = -EINVAL;
-      }
-      break;
-   }
-
    case IOCTL_VMX86_INIT_VM: {
-      InitBlock initParams;
+      InitBlock *initParams;
 
-      retval = HostIF_CopyFromUser(&initParams, (char *)ioarg,
-                                   sizeof initParams);
-      if (retval != 0) {
+      initParams = HostIF_AllocKernelMem(sizeof *initParams, TRUE);
+      if (initParams == NULL) {
+         retval = -ENOMEM;
          break;
       }
-      if (Vmx86_InitVM(vm, &initParams)) {
-         retval = -EINVAL;
-         break;
+      retval = HostIF_CopyFromUser(initParams, ioarg, sizeof *initParams);
+      if (retval == 0) {
+         if (Vmx86_InitVM(vm, initParams) == 0) {
+            retval = HostIF_CopyToUser(ioarg, initParams, sizeof *initParams);
+         } else {
+            retval = -EINVAL;
+         }
       }
-      retval = HostIF_CopyToUser((char *)ioarg, &initParams,
-                                 sizeof initParams);
-      break;
-   }
-
-   case IOCTL_VMX86_INIT_CROSSGDT: {
-      InitCrossGDT initCrossGDT;
-
-      retval = HostIF_CopyFromUser(&initCrossGDT, (char *)ioarg,
-                                   sizeof initCrossGDT);
-
-      if ((retval == 0) && Task_InitCrossGDT(&initCrossGDT)) {
-         retval = -EIO;
-      }
+      HostIF_FreeKernelMem(initParams);
       break;
    }
 
@@ -1477,31 +1175,31 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
    case IOCTL_VMX86_LOCK_PAGE: {
       VMLockPage args;
 
-      retval = HostIF_CopyFromUser(&args, (void *)ioarg, sizeof args);
+      retval = HostIF_CopyFromUser(&args, ioarg, sizeof args);
       if (retval) {
          break;
       }
       args.ret.status = Vmx86_LockPage(vm, args.uAddr, FALSE, &args.ret.mpn);
-      retval = HostIF_CopyToUser((void *)ioarg, &args, sizeof args);
+      retval = HostIF_CopyToUser(ioarg, &args, sizeof args);
       break;
    }
 
    case IOCTL_VMX86_LOCK_PAGE_NEW: {
       VMLockPage args;
 
-      retval = HostIF_CopyFromUser(&args, (void *)ioarg, sizeof args);
+      retval = HostIF_CopyFromUser(&args, ioarg, sizeof args);
       if (retval) {
          break;
       }
       args.ret.status = Vmx86_LockPage(vm, args.uAddr, TRUE, &args.ret.mpn);
-      retval = HostIF_CopyToUser((void *)ioarg, &args, sizeof args);
+      retval = HostIF_CopyToUser(ioarg, &args, sizeof args);
       break;
    }
 
    case IOCTL_VMX86_UNLOCK_PAGE: {
       VA64 uAddr;
 
-      retval = HostIF_CopyFromUser(&uAddr, (void *)ioarg, sizeof uAddr);
+      retval = HostIF_CopyFromUser(&uAddr, ioarg, sizeof uAddr);
       if (retval) {
          break;
       }
@@ -1512,7 +1210,7 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
    case IOCTL_VMX86_UNLOCK_PAGE_BY_MPN: {
       VMMUnlockPageByMPN args;
 
-      retval = HostIF_CopyFromUser(&args, (void *)ioarg, sizeof args);
+      retval = HostIF_CopyFromUser(&args, ioarg, sizeof args);
       if (retval) {
          break;
       }
@@ -1523,12 +1221,12 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
    case IOCTL_VMX86_LOOK_UP_MPN: {
       VMLockPage args;
 
-      retval = HostIF_CopyFromUser(&args, (void *)ioarg, sizeof args);
+      retval = HostIF_CopyFromUser(&args, ioarg, sizeof args);
       if (retval) {
          break;
       }
       args.ret.status = Vmx86_LookupUserMPN(vm, args.uAddr, &args.ret.mpn);
-      retval = HostIF_CopyToUser((void *)ioarg, &args, sizeof args);
+      retval = HostIF_CopyToUser(ioarg, &args, sizeof args);
       break;
    }
 
@@ -1543,7 +1241,7 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
    case IOCTL_VMX86_SET_HARD_LIMIT: {
       int32 limit;
 
-      retval = HostIF_CopyFromUser(&limit, (void *)ioarg, sizeof limit);
+      retval = HostIF_CopyFromUser(&limit, ioarg, sizeof limit);
       if (retval != 0) {
          break;
       }
@@ -1556,19 +1254,19 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
    case IOCTL_VMX86_ADMIT: {
       VMMemInfoArgs args;
 
-      retval = HostIF_CopyFromUser(&args, (void *)ioarg, sizeof args);
+      retval = HostIF_CopyFromUser(&args, ioarg, sizeof args);
       if (retval != 0) {
          break;
       }
       Vmx86_Admit(vm, &args);
-      retval = HostIF_CopyToUser((void *)ioarg, &args, sizeof args);
+      retval = HostIF_CopyToUser(ioarg, &args, sizeof args);
       break;
    }
 
    case IOCTL_VMX86_READMIT: {
       OvhdMem_Deltas delta;
 
-      retval = HostIF_CopyFromUser(&delta, (void *)ioarg, sizeof delta);
+      retval = HostIF_CopyFromUser(&delta, ioarg, sizeof delta);
       if (retval != 0) {
          break;
       }
@@ -1582,7 +1280,7 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
    case IOCTL_VMX86_UPDATE_MEM_INFO: {
       VMMemMgmtInfoPatch patch;
 
-      retval = HostIF_CopyFromUser(&patch, (void *)ioarg, sizeof patch);
+      retval = HostIF_CopyFromUser(&patch, ioarg, sizeof patch);
       if (retval == 0) {
          Vmx86_UpdateMemInfo(vm, &patch);
       }
@@ -1591,17 +1289,15 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
 
    case IOCTL_VMX86_GET_MEM_INFO: {
       VA64 uAddr;
-      VMMemInfoArgs *userVA;
       VMMemInfoArgs in;
       VMMemInfoArgs *out;
 
-      retval = HostIF_CopyFromUser(&uAddr, (void *)ioarg, sizeof uAddr);
+      retval = HostIF_CopyFromUser(&uAddr, ioarg, sizeof uAddr);
       if (retval) {
          break;
       }
 
-      userVA = VA64ToPtr(uAddr);
-      retval = HostIF_CopyFromUser(&in, userVA, sizeof in);
+      retval = HostIF_CopyFromUser(&in, uAddr, sizeof in);
       if (retval) {
          break;
       }
@@ -1623,26 +1319,18 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
          break;
       }
 
-      retval = HostIF_CopyToUser(userVA, out,
+      retval = HostIF_CopyToUser(uAddr, out,
                                  VM_GET_MEM_INFO_SIZE(out->numVMs));
       HostIF_FreeKernelMem(out);
       break;
    }
-
-   case IOCTL_VMX86_PAE_ENABLED:
-      retval = Vmx86_PAEEnabled();
-      break;
-
-   case IOCTL_VMX86_VMX_ENABLED:
-      retval = Vmx86_VMXEnabled();
-      break;
 
    case IOCTL_VMX86_APIC_INIT: {
       VMAPICInfo info;
       Bool setVMPtr;
       Bool probe;
 
-      retval = HostIF_CopyFromUser(&info, (VMAPICInfo *)ioarg, sizeof info);
+      retval = HostIF_CopyFromUser(&info, ioarg, sizeof info);
       if (retval != 0) {
          break;
       }
@@ -1667,8 +1355,7 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
    case IOCTL_VMX86_SEND_IPI: {
       VCPUSet ipiTargets;
 
-      retval = HostIF_CopyFromUser(&ipiTargets, (VCPUSet *) ioarg,
-                                   sizeof ipiTargets);
+      retval = HostIF_CopyFromUser(&ipiTargets, ioarg, sizeof ipiTargets);
 
       if (retval == 0) {
          HostIF_IPI(vm, &ipiTargets);
@@ -1689,8 +1376,7 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       ipiVectors.monitorIPIVector = monitorIPIVector;
       ipiVectors.hvIPIVector      = hvIPIVector;
 
-      retval = HostIF_CopyToUser((void *)ioarg, &ipiVectors,
-                                  sizeof ipiVectors);
+      retval = HostIF_CopyToUser(ioarg, &ipiVectors, sizeof ipiVectors);
       break;
    }
 
@@ -1700,17 +1386,15 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
 
    case IOCTL_VMX86_GET_ALL_CPUID: {
       VA64 uAddr;
-      CPUIDQuery *userVA;
       CPUIDQuery in;
       CPUIDQuery *out;
 
-      retval = HostIF_CopyFromUser(&uAddr, (void *)ioarg, sizeof uAddr);
+      retval = HostIF_CopyFromUser(&uAddr, ioarg, sizeof uAddr);
       if (retval) {
          break;
       }
 
-      userVA = VA64ToPtr(uAddr);
-      retval = HostIF_CopyFromUser(&in, userVA, sizeof in);
+      retval = HostIF_CopyFromUser(&in, uAddr, sizeof in);
       if (retval) {
          break;
       }
@@ -1740,26 +1424,25 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
          break;
       }
 
-      retval = HostIF_CopyToUser((int8 *)userVA + sizeof *userVA,
-                                  &out->logicalCPUs[0],
-                           out->numLogicalCPUs * sizeof out->logicalCPUs[0]);
+      retval = HostIF_CopyToUser(uAddr + sizeof in,
+                                 &out->logicalCPUs[0],
+                                 out->numLogicalCPUs *
+                                 sizeof out->logicalCPUs[0]);
       HostIF_FreeKernelMem(out);
       break;
    }
 
    case IOCTL_VMX86_GET_ALL_MSRS: {
       VA64 uAddr;
-      MSRQuery *userVA;
       MSRQuery in;
       MSRQuery *out;
 
-      retval = HostIF_CopyFromUser(&uAddr, (void *)ioarg, sizeof uAddr);
+      retval = HostIF_CopyFromUser(&uAddr, ioarg, sizeof uAddr);
       if (retval) {
          break;
       }
 
-      userVA = VA64ToPtr(uAddr);
-      retval = HostIF_CopyFromUser(&in, userVA, sizeof in);
+      retval = HostIF_CopyFromUser(&in, uAddr, sizeof in);
       if (retval) {
          break;
       }
@@ -1789,9 +1472,10 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
          break;
       }
 
-      retval = HostIF_CopyToUser((int8 *)userVA + sizeof *userVA,
-                                  &out->logicalCPUs[0],
-                            out->numLogicalCPUs * sizeof out->logicalCPUs[0]);
+      retval = HostIF_CopyToUser(uAddr + sizeof in,
+                                 &out->logicalCPUs[0],
+                                 out->numLogicalCPUs *
+                                 sizeof out->logicalCPUs[0]);
       HostIF_FreeKernelMem(out);
       break;
    }
@@ -1800,7 +1484,7 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
    case IOCTL_VMX86_FREE_LOCKED_PAGES: {
          VMMPNList req;
 
-         retval = HostIF_CopyFromUser(&req, (void *)ioarg, sizeof req);
+         retval = HostIF_CopyFromUser(&req, ioarg, sizeof req);
          if (retval) {
            break;
          }
@@ -1818,141 +1502,98 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
    case IOCTL_VMX86_GET_NEXT_ANON_PAGE: {
       VMMPNNext req;
 
-      retval = HostIF_CopyFromUser(&req, (void *)ioarg, sizeof req);
+      retval = HostIF_CopyFromUser(&req, ioarg, sizeof req);
       if (retval) {
          req.outMPN = INVALID_MPN;
       } else {
          req.outMPN = Vmx86_GetNextAnonPage(vm, req.inMPN);
       }
-      retval = HostIF_CopyToUser((void *)ioarg, &req, sizeof req);
+      retval = HostIF_CopyToUser(ioarg, &req, sizeof req);
       break;
    }
 
-   case IOCTL_VMX86_GET_LOCKED_PAGES_LIST: {
-         VMMPNList req;
-
-         retval = HostIF_CopyFromUser(&req, (void *)ioarg, sizeof req);
-         if (retval) {
-            break;
-         }
-         retval = Vmx86_GetLockedPageList(vm, req.mpnList, req.mpnCount);
-         break;
-      }
-
    case IOCTL_VMX86_READ_PAGE: {
+         void *tempPage;
          VMMReadWritePage req;
 
-         retval = HostIF_CopyFromUser(&req, (void *)ioarg, sizeof req);
+         retval = HostIF_CopyFromUser(&req, ioarg, sizeof req);
          if (retval) {
             break;
          }
-         retval = HostIF_ReadPage(vm, req.mpn, req.uAddr, FALSE);
+
+         tempPage = HostIF_AllocPage();
+         if (tempPage == NULL) {
+            retval = -ENOMEM;
+            break;
+         }
+
+         retval = HostIF_ReadPhysical(vm, MPN_2_MA(req.mpn),
+                                      PtrToVA64(tempPage), TRUE, PAGE_SIZE);
+         if (retval == 0) {
+            retval = HostIF_CopyToUser(req.uAddr, tempPage, PAGE_SIZE);
+         }
+
+         HostIF_FreePage(tempPage);
          break;
       }
 
    case IOCTL_VMX86_WRITE_PAGE: {
          VMMReadWritePage req;
 
-         retval = HostIF_CopyFromUser(&req, (void *)ioarg, sizeof req);
+         retval = HostIF_CopyFromUser(&req, ioarg, sizeof req);
          if (retval) {
             break;
          }
-         retval = HostIF_WritePage(vm, req.mpn, req.uAddr, FALSE);
+         retval = HostIF_WritePhysical(vm, MPN_2_MA(req.mpn), req.uAddr, FALSE,
+                                       PAGE_SIZE);
          break;
       }
-
-   case IOCTL_VMX86_SET_POLL_TIMEOUT_PTR: {
-      vmLinux->pollTimeoutPtr = NULL;
-      HostIF_UnmapUserMem(vmLinux->pollTimeoutHandle);
-      if (ioarg != 0) {
-         vmLinux->pollTimeoutPtr = HostIF_MapUserMem((VA)ioarg,
-                                              sizeof *vmLinux->pollTimeoutPtr,
-                                                 &vmLinux->pollTimeoutHandle);
-
-         if (vmLinux->pollTimeoutPtr == NULL) {
-            retval = -EINVAL;
-            break;
-         }
-      }
-      break;
-   }
-
-   case IOCTL_VMX86_GET_KERNEL_CLOCK_RATE:
-      retval = HZ;
-      break;
-
-   case IOCTL_VMX86_FAST_SUSP_RES_SET_OTHER_FLAG:
-      retval = Vmx86_FastSuspResSetOtherFlag(vm, ioarg);
-      break;
-
-   case IOCTL_VMX86_FAST_SUSP_RES_GET_MY_FLAG:
-      retval = Vmx86_FastSuspResGetMyFlag(vm, ioarg);
-      break;
 
    case IOCTL_VMX86_GET_REFERENCE_CLOCK_HZ: {
       uint64 refClockHz = HostIF_UptimeFrequency();
 
-      retval = HostIF_CopyToUser((void *)ioarg, &refClockHz,
-                                 sizeof refClockHz);
+      retval = HostIF_CopyToUser(ioarg, &refClockHz, sizeof refClockHz);
       break;
    }
 
    case IOCTL_VMX86_INIT_PSEUDO_TSC: {
       PTSCInitParams params;
 
-      retval = HostIF_CopyFromUser(&params, (void *)ioarg, sizeof params);
+      retval = HostIF_CopyFromUser(&params, ioarg, sizeof params);
       if (retval != 0) {
          break;
       }
       Vmx86_InitPseudoTSC(&params);
-      retval = HostIF_CopyToUser((void *)ioarg, &params, sizeof params);
+      retval = HostIF_CopyToUser(ioarg, &params, sizeof params);
       break;
    }
 
    case IOCTL_VMX86_CHECK_PSEUDO_TSC: {
       PTSCCheckParams params;
 
-      retval = HostIF_CopyFromUser(&params, (void *)ioarg, sizeof params);
+      retval = HostIF_CopyFromUser(&params, ioarg, sizeof params);
       if (retval != 0) {
          break;
       }
       params.usingRefClock = Vmx86_CheckPseudoTSC(&params.lastTSC,
                                                   &params.lastRC);
 
-      retval = HostIF_CopyToUser((void *)ioarg, &params, sizeof params);
+      retval = HostIF_CopyToUser(ioarg, &params, sizeof params);
       break;
    }
 
    case IOCTL_VMX86_GET_PSEUDO_TSC: {
       uint64 ptsc = Vmx86_GetPseudoTSC();
 
-      retval = HostIF_CopyToUser((void *)ioarg, &ptsc, sizeof ptsc);
+      retval = HostIF_CopyToUser(ioarg, &ptsc, sizeof ptsc);
       break;
    }
-
-   case IOCTL_VMX86_SET_HOST_CLOCK_PRIORITY:
-      /*
-       * This affects the global fast clock priority, and it only
-       * takes effect when the fast clock rate transitions from zero
-       * to a non-zero value.
-       *
-       * This is used to allow VMs to optionally work around
-       * bug 218750 by disabling our default priority boost. If any
-       * VM chooses to apply this workaround, the effect is permanent
-       * until vmmon is reloaded!
-       */
-
-      HostIF_FastClockLock(3);
-      linuxState.fastClockPriority = MAX(-20, MIN(19, (int)ioarg));
-      HostIF_FastClockUnlock(3);
-      retval = 0;
-      break;
 
    case IOCTL_VMX86_SYNC_GET_TSCS: {
       uint64 delta;
 
       if (LinuxDriverSyncReadTSCs(&delta)) {
-         retval = HostIF_CopyToUser((void *)ioarg, &delta, sizeof delta);
+         retval = HostIF_CopyToUser(ioarg, &delta, sizeof delta);
        } else {
          retval = -EBUSY;
       }
@@ -1961,10 +1602,10 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
 
    case IOCTL_VMX86_SET_HOST_SWAP_SIZE: {
       uint64 swapSize;
-      retval = HostIF_CopyFromUser(&swapSize, (void *)ioarg, sizeof swapSize);
+      retval = HostIF_CopyFromUser(&swapSize, ioarg, sizeof swapSize);
       if (retval != 0) {
          Warning("Could not copy swap size from user, status %d\n", retval);
-	 break;
+         break;
       }
       linuxState.swapSize = swapSize;
       break;
@@ -1972,11 +1613,11 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
 
    case IOCTL_VMX86_GET_UNAVAIL_PERF_CTRS: {
       uint64 ctrs = Vmx86_GetUnavailablePerfCtrs();
-      retval = HostIF_CopyToUser((void *)ioarg, &ctrs, sizeof ctrs);
+      retval = HostIF_CopyToUser(ioarg, &ctrs, sizeof ctrs);
       break;
    }
 
-   default: 
+   default:
       Warning("Unknown ioctl %d\n", iocmd);
       retval = -EINVAL;
    }

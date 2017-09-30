@@ -17,8 +17,8 @@
  *********************************************************/
 
 /*
- *  hostif.h - Platform dependent interface for supporting 
- *             the vmx86 device driver. 
+ *  hostif.h - Platform dependent interface for supporting
+ *             the vmx86 device driver.
  */
 
 
@@ -36,7 +36,7 @@
 #include "hostifGlobalLock.h"
 
 /*
- * Host-specific definitions. 
+ * Host-specific definitions.
  */
 #if !__linux__ && !defined(WINNT_DDK) && !defined __APPLE__
 #error "Only Linux or NT or Mac OS defined for now."
@@ -69,11 +69,12 @@ typedef enum {
 EXTERN int   HostIF_Init(VMDriver *vm);
 EXTERN int   HostIF_LookupUserMPN(VMDriver *vm, VA64 uAddr, MPN *mpn);
 EXTERN void *HostIF_MapCrossPage(VMDriver *vm, VA64 uAddr);
-EXTERN void  HostIF_InitFP(VMDriver *vm);
 
 EXTERN void *HostIF_AllocPage(void);
 EXTERN void  HostIF_FreePage(void *ptr);
 
+EXTERN VPN   HostIF_MapPage(MPN mpn);
+EXTERN void  HostIF_UnmapPage(VPN vpn);
 EXTERN int   HostIF_LockPage(VMDriver *vm, VA64 uAddr,
                              Bool allowMultipleMPNsPerVA, MPN *mpn);
 EXTERN int   HostIF_UnlockPage(VMDriver *vm, VA64 uAddr);
@@ -86,9 +87,8 @@ EXTERN unsigned int HostIF_EstimateLockedPageLimit(const VMDriver *vm,
                                                    unsigned int lockedPages);
 EXTERN void  HostIF_Wait(unsigned int timeoutMs);
 EXTERN void  HostIF_WaitForFreePages(unsigned int timeoutMs);
-EXTERN void *HostIF_AllocCrossGDT(uint32 numPages, MPN maxValidFirst,
-                                  MPN *crossGDTMPNs);
-EXTERN void  HostIF_FreeCrossGDT(uint32 numPages, void *crossGDT);
+EXTERN void *HostIF_AllocKernelPages(unsigned numPages, MPN *mpns);
+EXTERN void  HostIF_FreeKernelPages(unsigned numPages, void *ptr);
 EXTERN void  HostIF_VMLock(VMDriver *vm, int callerID);
 EXTERN void  HostIF_VMUnlock(VMDriver *vm, int callerID);
 #ifdef VMX86_DEBUG
@@ -119,12 +119,11 @@ EXTERN int HostIF_AllocLockedPages(VMDriver *vm, VA64 addr,
 EXTERN int HostIF_FreeLockedPages(VMDriver *vm, VA64 addr,
                                   unsigned int numPages, Bool kernelMPNBuffer);
 EXTERN MPN HostIF_GetNextAnonPage(VMDriver *vm, MPN mpn);
-EXTERN int HostIF_GetLockedPageList(VMDriver *vm, VA64 uAddr,
-                                    unsigned int numPages);
 
-EXTERN int HostIF_ReadPage(VMDriver *vm, MPN mpn, VA64 addr, Bool kernelBuffer);
-EXTERN int HostIF_WritePage(VMDriver *vm, MPN mpn, VA64 addr,
-                            Bool kernelBuffer);
+EXTERN int HostIF_ReadPhysical(VMDriver *vm, MA ma, VA64 addr,
+                               Bool kernelBuffer, size_t len);
+EXTERN int HostIF_WritePhysical(VMDriver *vm, MA ma, VA64 addr,
+                                Bool kernelBuffer, size_t len);
 EXTERN int HostIF_WriteMachinePage(MPN mpn, VA64 addr);
 #if defined __APPLE__
 // There is no need for a fast clock lock on Mac OS.
@@ -140,6 +139,9 @@ EXTERN MPN HostIF_AllocMachinePage(void);
 EXTERN void HostIF_FreeMachinePage(MPN mpn);
 
 EXTERN int HostIF_SafeRDMSR(uint32 msr, uint64 *val);
+
+EXTERN int HostIF_CopyFromUser(void *dst, VA64 src, size_t len);
+EXTERN int HostIF_CopyToUser(VA64 dst, const void *src, size_t len);
 
 #if defined __APPLE__
 EXTERN void HostIF_PageUnitTest(void);

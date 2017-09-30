@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2015 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -43,6 +43,17 @@
 #include "overheadmem_types.h"
 #include "pageLock_defs.h"
 #include "numa_defs.h"
+#include "bootstrap_vmm.h"
+
+#if defined __cplusplus
+extern "C" {
+#endif
+
+
+/*
+ * Maximum number of shared regions that can be passed to MonLoader.
+ */
+#define ML_SHARED_REGIONS_MAX 3
 
 /*
  *-----------------------------------------------------------------------------
@@ -133,7 +144,7 @@ PtrToVA64(void const *ptr) // IN
  *
  */
 
-#define VMMON_VERSION           (308 << 16 | 0)
+#define VMMON_VERSION           (329 << 16 | 0)
 #define VMMON_VERSION_MAJOR(v)  ((uint32) (v) >> 16)
 #define VMMON_VERSION_MINOR(v)  ((uint16) (v))
 
@@ -197,11 +208,10 @@ enum IOCTLCmd {
 #endif
    IOCTLCMD(VERSION) = IOCTLCMD(FIRST),
    IOCTLCMD(CREATE_VM),
+   IOCTLCMD(PROCESS_BOOTSTRAP),
    IOCTLCMD(RELEASE_VM),
    IOCTLCMD(GET_NUM_VMS),
-   IOCTLCMD(ALLOC_CROSSGDT),
    IOCTLCMD(INIT_VM),
-   IOCTLCMD(INIT_CROSSGDT),
    IOCTLCMD(RUN_VM),
    IOCTLCMD(LOOK_UP_MPN),
    IOCTLCMD(LOCK_PAGE),
@@ -212,7 +222,6 @@ enum IOCTLCmd {
    IOCTLCMD(ADMIT),
    IOCTLCMD(UPDATE_MEM_INFO),
    IOCTLCMD(READMIT),
-   IOCTLCMD(PAE_ENABLED),
    IOCTLCMD(GET_TOTAL_MEM_USAGE),
    IOCTLCMD(GET_KHZ_ESTIMATE),
    IOCTLCMD(SET_HOST_CLOCK_RATE),
@@ -224,7 +233,6 @@ enum IOCTLCmd {
    IOCTLCMD(ALLOC_LOCKED_PAGES),
    IOCTLCMD(FREE_LOCKED_PAGES),
    IOCTLCMD(GET_NEXT_ANON_PAGE),
-   IOCTLCMD(GET_LOCKED_PAGES_LIST),
 
    IOCTLCMD(GET_ALL_MSRS),
 
@@ -251,7 +259,6 @@ enum IOCTLCmd {
 
 #if defined __linux__ || defined __APPLE__
    IOCTLCMD(GET_ALL_CPUID),
-   IOCTLCMD(GET_KERNEL_CLOCK_RATE),
 #endif
 
 #if defined _WIN32 || defined __APPLE__
@@ -260,9 +267,8 @@ enum IOCTLCmd {
 
 #if defined _WIN32
    IOCTLCMD(FREE_CONTIG_PAGES),
-   IOCTLCMD(HARD_LIMIT_MONITOR_STATUS),	// Windows 2000 only
-   IOCTLCMD(BLUE_SCREEN),	// USE_BLUE_SCREEN only
-   IOCTLCMD(CHANGE_HARD_LIMIT),
+   IOCTLCMD(HARD_LIMIT_MONITOR_STATUS), // used by vmauthd on Windows
+   IOCTLCMD(CHANGE_HARD_LIMIT),         // used by vmauthd on Windows
    IOCTLCMD(GET_KERNEL_PROC_ADDRESS),
    IOCTLCMD(READ_VA64),
    IOCTLCMD(SET_MEMORY_PARAMS),
@@ -277,14 +283,7 @@ enum IOCTLCmd {
    IOCTLCMD(BLUEPILL),
 #endif
 
-   IOCTLCMD(SET_POLL_TIMEOUT_PTR),
-
-   IOCTLCMD(FAST_SUSP_RES_SET_OTHER_FLAG),
-   IOCTLCMD(FAST_SUSP_RES_GET_MY_FLAG),
-
 #if defined __linux__
-   IOCTLCMD(SET_HOST_CLOCK_PRIORITY),
-   IOCTLCMD(VMX_ENABLED),
    IOCTLCMD(SET_HOST_SWAP_SIZE),
 #endif
 
@@ -318,10 +317,9 @@ enum IOCTLCmd {
 #define IOCTL_VMX86_VERSION             VMIOCTL_BUFFERED(VERSION)
 #define IOCTL_VMX86_CREATE_VM           VMIOCTL_BUFFERED(CREATE_VM)
 #define IOCTL_VMX86_RELEASE_VM          VMIOCTL_BUFFERED(RELEASE_VM)
+#define IOCTL_VMX86_PROCESS_BOOTSTRAP   VMIOCTL_BUFFERED(PROCESS_BOOTSTRAP)
 #define IOCTL_VMX86_GET_NUM_VMS         VMIOCTL_BUFFERED(GET_NUM_VMS)
-#define IOCTL_VMX86_ALLOC_CROSSGDT      VMIOCTL_BUFFERED(ALLOC_CROSSGDT)
 #define IOCTL_VMX86_INIT_VM             VMIOCTL_BUFFERED(INIT_VM)
-#define IOCTL_VMX86_INIT_CROSSGDT       VMIOCTL_BUFFERED(INIT_CROSSGDT)
 #define IOCTL_VMX86_RUN_VM              VMIOCTL_NEITHER(RUN_VM)
 #define IOCTL_VMX86_SEND_IPI            VMIOCTL_NEITHER(SEND_IPI)
 #define IOCTL_VMX86_GET_IPI_VECTORS     VMIOCTL_BUFFERED(GET_IPI_VECTORS)
@@ -334,8 +332,6 @@ enum IOCTLCmd {
 #define IOCTL_VMX86_ADMIT               VMIOCTL_BUFFERED(ADMIT)
 #define IOCTL_VMX86_READMIT             VMIOCTL_BUFFERED(READMIT)
 #define IOCTL_VMX86_UPDATE_MEM_INFO     VMIOCTL_BUFFERED(UPDATE_MEM_INFO)
-#define IOCTL_VMX86_PAE_ENABLED         VMIOCTL_BUFFERED(PAE_ENABLED)
-#define IOCTL_VMX86_BEEP                VMIOCTL_BUFFERED(BEEP)
 #define IOCTL_VMX86_HARD_LIMIT_MONITOR_STATUS   VMIOCTL_BUFFERED(HARD_LIMIT_MONITOR_STATUS)
 #define IOCTL_VMX86_CHANGE_HARD_LIMIT   VMIOCTL_BUFFERED(CHANGE_HARD_LIMIT)
 #define IOCTL_VMX86_ALLOC_CONTIG_PAGES  VMIOCTL_BUFFERED(ALLOC_CONTIG_PAGES)
@@ -352,7 +348,6 @@ enum IOCTLCmd {
 #define IOCTL_VMX86_ALLOC_LOCKED_PAGES  VMIOCTL_BUFFERED(ALLOC_LOCKED_PAGES)
 #define IOCTL_VMX86_FREE_LOCKED_PAGES   VMIOCTL_BUFFERED(FREE_LOCKED_PAGES)
 #define IOCTL_VMX86_GET_NEXT_ANON_PAGE  VMIOCTL_BUFFERED(GET_NEXT_ANON_PAGE)
-#define IOCTL_VMX86_GET_LOCKED_PAGES_LIST VMIOCTL_BUFFERED(GET_LOCKED_PAGES_LIST)
 
 #define IOCTL_VMX86_GET_KERNEL_PROC_ADDRESS  VMIOCTL_BUFFERED(GET_KERNEL_PROC_ADDRESS)
 #define IOCTL_VMX86_READ_VA64           VMIOCTL_BUFFERED(READ_VA64)
@@ -361,16 +356,11 @@ enum IOCTLCmd {
 #define IOCTL_VMX86_REMEMBER_KHZ_ESTIMATE VMIOCTL_BUFFERED(REMEMBER_KHZ_ESTIMATE)
 
 #define IOCTL_VMX86_GET_ALL_MSRS        VMIOCTL_BUFFERED(GET_ALL_MSRS)
-#define IOCTL_VMX86_COUNT_PRESENT_PAGES	VMIOCTL_BUFFERED(COUNT_PRESENT_PAGES)
-
-#define IOCTL_VMX86_FAST_SUSP_RES_SET_OTHER_FLAG VMIOCTL_BUFFERED(FAST_SUSP_RES_SET_OTHER_FLAG)
-#define IOCTL_VMX86_FAST_SUSP_RES_GET_MY_FLAG    VMIOCTL_BUFFERED(FAST_SUSP_RES_GET_MY_FLAG)
 
 #define IOCTL_VMX86_GET_REFERENCE_CLOCK_HZ   VMIOCTL_BUFFERED(GET_REFERENCE_CLOCK_HZ)
 #define IOCTL_VMX86_INIT_PSEUDO_TSC          VMIOCTL_BUFFERED(INIT_PSEUDO_TSC)
 #define IOCTL_VMX86_CHECK_PSEUDO_TSC         VMIOCTL_BUFFERED(CHECK_PSEUDO_TSC)
 #define IOCTL_VMX86_GET_PSEUDO_TSC           VMIOCTL_NEITHER(GET_PSEUDO_TSC)
-#define IOCTL_VMX86_SET_HOST_CLOCK_PRIORITY  VMIOCTL_BUFFERED(SET_HOST_CLOCK_PRIORITY)
 #define IOCTL_VMX86_GET_UNAVAIL_PERF_CTRS    VMIOCTL_NEITHER(GET_UNAVAIL_PERF_CTRS)
 #define IOCTL_VMX86_REMAP_SCATTER_LIST VMIOCTL_BUFFERED(REMAP_SCATTER_LIST)
 #define IOCTL_VMX86_UNMAP_SCATTER_LIST VMIOCTL_BUFFERED(UNMAP_SCATTER_LIST)
@@ -563,13 +553,34 @@ typedef struct IPIVectors {
 #endif
 
 /*
- * This struct is passed to IOCTL_VMX86_INIT_CROSSGDT to fill in a crossGDT
- * entry.
+ * Arguments and return value for VM creation.
  */
-typedef struct InitCrossGDT {
-   uint32 index;      // index in crossGDT to update (offset / 8)
-   Descriptor value;  // value to set the crossGDT entry to
-} InitCrossGDT;
+typedef struct VMCreateBlock {
+   VA64               bsBlob;        // IN: User VA of the VMM bootstrap blob.
+   uint32             bsBlobSize;    // IN: Size of VMM bootstrap blob.
+   uint16             vmid;          // OUT: VM ID for the created VM.
+} VMCreateBlock;
+
+/*
+ * Information about a shared region.
+ */
+typedef struct VMSharedRegion {
+   uint32 index;
+   VPN    baseVpn;
+   uint32 numPages;
+} VMSharedRegion;
+
+/*
+ * Arguments for VMM bootstrap processing.
+ */
+typedef struct VMProcessBootstrapBlock {
+   VA64           bsBlobAddr;    // IN: User VA of the VMM bootstrap blob.
+   uint32         numBytes;      // IN: Size of VMM bootstrap blob.
+   uint32         headerOffset;  // IN: Offset of header in blob.
+   uint16         numVCPUs;      // IN: Number of VCPUs.
+   VA64           ptRootVAs[MAX_VCPUS];  // IN: User VA of PT roots.
+   VMSharedRegion shRegions[ML_SHARED_REGIONS_MAX]; // IN: Shared regions.
+} VMProcessBootstrapBlock;
 
 #if defined __linux__
 
@@ -619,5 +630,10 @@ typedef struct VMAllocContiguousMem {
 
 /* Clean up helper macros */
 #undef IOCTLCMD
+
+
+#if defined __cplusplus
+} // extern "C"
+#endif
 
 #endif // ifndef _IOCONTROLS_H_

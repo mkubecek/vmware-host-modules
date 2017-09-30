@@ -19,20 +19,20 @@
 /*
  * comport.c --
  *
- *      Simple COM1 port routines for debugging code that can't do any real 
+ *      Simple COM1 port routines for debugging code that can't do any real
  *      host IO, such as the worldswitch and related.
  *
- *      They all wait for the last character to complete transmission so if the 
- *      system crashes immediately on return, the last character will be seen 
+ *      They all wait for the last character to complete transmission so if the
+ *      system crashes immediately on return, the last character will be seen
  *      by the remote end.
  *
- *      These routines do not have any external dependencies so can be called 
+ *      These routines do not have any external dependencies so can be called
  *      by any code that has privilege to access IO ports.
  *
- *      Under Windows, they can be made to forward output to DbgPrint for 
- *      printing via the debugger.  Just have USE_DBGPRINT set to 1.  If you 
- *      let USE_DBGPRINT be 0 with Windows, make sure the comport hardware is 
- *      powered-up by leaving Hyperterm running with the comport open, else 
+ *      Under Windows, they can be made to forward output to DbgPrint for
+ *      printing via the debugger.  Just have USE_DBGPRINT set to 1.  If you
+ *      let USE_DBGPRINT be 0 with Windows, make sure the comport hardware is
+ *      powered-up by leaving Hyperterm running with the comport open, else
  *      Windows will power the chip down.
  */
 

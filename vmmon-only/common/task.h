@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2013 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2013,2015 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -16,26 +16,24 @@
  *
  *********************************************************/
 
-
-
 #ifndef TASK_H
 #define TASK_H
 
 #define INCLUDE_ALLOW_VMMON
 #define INCLUDE_ALLOW_VMCORE
 #include "includeCheck.h"
+#include "bootstrap_vmm.h"
 
 struct InitBlock;
-struct InitCrossGDT;
 
-extern Bool Task_AllocCrossGDT(struct InitBlock *initBlock);
+extern Bool Task_CreateCrossGDT(BSVMM_GDTInit *gdt);
 extern int Task_InitCrosspage(VMDriver *vm, struct InitBlock *params);
-extern int Task_InitCrossGDT(struct InitCrossGDT *initCrossGDT);
 extern void Task_Switch(VMDriver *vm, Vcpuid vcpuid);
 extern Bool Task_Initialize(void);
 extern void Task_Terminate(void);
 extern MPN Task_GetHVRootPageForPCPU(uint32 pCPU);
 extern Descriptor *Task_GetTmpGDT(uint32 pCPU);
+extern void Task_SwitchPTPPageCleanup(VMDriver *vm);
 
 #endif
 

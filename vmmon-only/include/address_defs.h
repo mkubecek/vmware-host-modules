@@ -36,6 +36,11 @@
 
 #include "vm_basic_defs.h" // For PAGE_SHIFT
 
+#if defined __cplusplus
+extern "C" {
+#endif
+
+
 /*
  * Virtual, physical, machine address and page conversion macros
  */
@@ -92,4 +97,9 @@ IsGoodMPNOrMemref(MPN mpn)
    return IsGoodMPN(mpn) || mpn == MEMREF_MPN;
 }
 
+
+#if defined __cplusplus
+} // extern "C"
 #endif
+
+#endif // _ADDRESS_DEFS_H_

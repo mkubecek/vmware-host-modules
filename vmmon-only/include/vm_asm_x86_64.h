@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2015 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -32,6 +32,7 @@
 #define INCLUDE_ALLOW_VMMON
 #define INCLUDE_ALLOW_VMK_MODULE
 #define INCLUDE_ALLOW_VMKERNEL
+#define INCLUDE_ALLOW_USERLEVEL
 #define INCLUDE_ALLOW_DISTRIBUTE
 #include "includeCheck.h"
 

@@ -20,7 +20,7 @@
 /*
  * hashFunc.c --
  *
- *	The core implementation lives in lib/shared/hashFunc.h because it 
+ *      The core implementation lives in lib/shared/hashFunc.h because it
  *      is shared by the vmkernel and vmmon.
  */
 
@@ -31,10 +31,10 @@
  */
 
 // arbitrary constant
-#define	HASH_INIT_VALUE	(42)
+#define HASH_INIT_VALUE (42)
 
 // 64-bit hash for one 4K page
-uint64 
+uint64
 HashFunc_HashPage(const void *addr)
 {
    return hash2((uint64 *)addr, PAGE_SIZE / sizeof (uint64), HASH_INIT_VALUE);
