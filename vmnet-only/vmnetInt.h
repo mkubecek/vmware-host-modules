@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998, 2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -77,7 +77,7 @@
 
 
 extern struct proto vmnet_proto;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0) || defined(sk_net_refcnt)
 #   define compat_sk_alloc(_bri, _pri) sk_alloc(&init_net, \
                                                 PF_NETLINK, _pri, &vmnet_proto, 1)
 #elif defined(VMW_NETDEV_HAS_NET)
