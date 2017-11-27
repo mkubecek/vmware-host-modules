@@ -21,6 +21,7 @@
 
 #define EXPORT_SYMTAB
 
+#include "compat_timer.h"
 #include <linux/file.h>
 #include <linux/highmem.h>
 #include <linux/mm.h>
@@ -216,7 +217,7 @@ LinuxDriverEstimateTSCkHz(void)
  *----------------------------------------------------------------------
  */
 static void
-LinuxDriverEstimateTSCkHzDeferred(unsigned long data)
+LinuxDriverEstimateTSCkHzDeferred(compat_timer_arg_t unused)
 {
    LinuxDriverEstimateTSCkHz();
 }
@@ -251,9 +252,7 @@ LinuxDriverInitTSCkHz(void)
    }
 
    LinuxDriverReadTSCAndUptime(&tsckHzStartTime);
-   tscTimer.function = LinuxDriverEstimateTSCkHzDeferred;
    tscTimer.expires  = jiffies + 4 * HZ;
-   tscTimer.data     = 0;
    add_timer(&tscTimer);
 }
 
@@ -335,7 +334,7 @@ init_module(void)
        linuxState.deviceName, linuxState.major, linuxState.minor);
 
    HostIF_InitUptime();
-   init_timer(&tscTimer);
+   compat_timer_setup(&tscTimer, LinuxDriverEstimateTSCkHzDeferred, 0);
    LinuxDriverInitTSCkHz();
    Vmx86_InitIDList();
 
