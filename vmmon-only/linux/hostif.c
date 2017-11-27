@@ -30,6 +30,7 @@
 
 /* Must come before vmware.h --hpreg */
 #include "compat_page.h"
+#include "compat_timer.h"
 #include <linux/binfmts.h>
 #include <linux/delay.h>
 #include <linux/file.h>
@@ -1793,7 +1794,7 @@ HostIFReadUptimeWork(unsigned long *j)  // OUT: current jiffies
  */
 
 static void
-HostIFUptimeResyncMono(unsigned long data)  // IN: ignored
+HostIFUptimeResyncMono(compat_timer_arg_t unused)  // IN: ignored
 {
    unsigned long jifs;
    uintptr_t flags;
@@ -1855,8 +1856,7 @@ HostIF_InitUptime(void)
                   -(tv.tv_usec * (UPTIME_FREQ / 1000000) + 
                     tv.tv_sec * UPTIME_FREQ));
 
-   init_timer(&uptimeState.timer);
-   uptimeState.timer.function = HostIFUptimeResyncMono;
+   timer_setup(&uptimeState.timer, HostIFUptimeResyncMono, 0);
    mod_timer(&uptimeState.timer, jiffies + HZ);
 }
 
