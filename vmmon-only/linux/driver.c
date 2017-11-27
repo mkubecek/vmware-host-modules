@@ -21,6 +21,7 @@
 
 #define EXPORT_SYMTAB
 
+#include "compat_timer.h"
 #include <linux/file.h>
 #include <linux/highmem.h>
 #include <linux/poll.h>
@@ -115,7 +116,7 @@ static struct page *LinuxDriverNoPage(struct vm_area_struct *vma,
 #endif
 static int LinuxDriverMmap(struct file *filp, struct vm_area_struct *vma);
 
-static void LinuxDriverPollTimeout(unsigned long clientData);
+static void LinuxDriverPollTimeout(compat_timer_arg_t unused);
 static unsigned int LinuxDriverEstimateTSCkHz(void);
 
 static struct vm_operations_struct vmuser_mops = {
@@ -227,7 +228,7 @@ LinuxDriverEstimateTSCkHz(void)
  *----------------------------------------------------------------------
  */
 static void
-LinuxDriverEstimateTSCkHzDeferred(unsigned long data)
+LinuxDriverEstimateTSCkHzDeferred(compat_timer_arg_t unused)
 {
    LinuxDriverEstimateTSCkHz();
 }
@@ -265,9 +266,7 @@ LinuxDriverInitTSCkHz(void)
    }
 
    Vmx86_ReadTSCAndUptime(&tsckHzStartTime);
-   tscTimer.function = LinuxDriverEstimateTSCkHzDeferred;
    tscTimer.expires  = jiffies + 4 * HZ;
-   tscTimer.data     = 0;
    add_timer(&tscTimer);
 }
 
@@ -309,9 +308,7 @@ init_module(void)
     */
 
    init_waitqueue_head(&linuxState.pollQueue);
-   init_timer(&linuxState.pollTimer);
-   linuxState.pollTimer.data = 0;
-   linuxState.pollTimer.function = LinuxDriverPollTimeout;
+   compat_timer_setup(&linuxState.pollTimer, LinuxDriverPollTimeout, 0);
 
    linuxState.fastClockThread = NULL;
    linuxState.fastClockFile = NULL;
@@ -360,7 +357,7 @@ init_module(void)
        linuxState.deviceName, linuxState.major, linuxState.minor);
 
    HostIF_InitUptime();
-   init_timer(&tscTimer);
+   compat_timer_setup(&tscTimer, LinuxDriverEstimateTSCkHzDeferred, 0);
    LinuxDriverInitTSCkHz();
    Vmx86_InitIDList();
 
@@ -858,7 +855,7 @@ LinuxDriverPoll(struct file *filp,  // IN:
  */
 
 static void
-LinuxDriverPollTimeout(unsigned long clientData)  // IN:
+LinuxDriverPollTimeout(compat_timer_arg_t unused)  // IN:
 {
    LinuxDriverWakeUp(FALSE);
 }
