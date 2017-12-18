@@ -1777,7 +1777,7 @@ HostIF_InitUptime(void)
                   -(tv.tv_usec * (UPTIME_FREQ / 1000000) +
                     tv.tv_sec * UPTIME_FREQ));
 
-   timer_setup(&uptimeState.timer, HostIFUptimeResyncMono, 0);
+   compat_timer_setup(&uptimeState.timer, HostIFUptimeResyncMono, 0);
    mod_timer(&uptimeState.timer, jiffies + HZ);
 }
 

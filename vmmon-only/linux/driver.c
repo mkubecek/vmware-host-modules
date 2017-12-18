@@ -334,7 +334,7 @@ init_module(void)
        linuxState.deviceName, linuxState.major, linuxState.minor);
 
    HostIF_InitUptime();
-   timer_setup(&tscTimer, LinuxDriverEstimateTSCkHzDeferred, 0);
+   compat_timer_setup(&tscTimer, LinuxDriverEstimateTSCkHzDeferred, 0);
    LinuxDriverInitTSCkHz();
    Vmx86_InitIDList();
 
