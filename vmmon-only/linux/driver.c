@@ -308,7 +308,7 @@ init_module(void)
     */
 
    init_waitqueue_head(&linuxState.pollQueue);
-   timer_setup(&linuxState.pollTimer, LinuxDriverPollTimeout, 0);
+   compat_timer_setup(&linuxState.pollTimer, LinuxDriverPollTimeout, 0);
 
    linuxState.fastClockThread = NULL;
    linuxState.fastClockFile = NULL;
@@ -357,7 +357,7 @@ init_module(void)
        linuxState.deviceName, linuxState.major, linuxState.minor);
 
    HostIF_InitUptime();
-   timer_setup(&tscTimer, LinuxDriverEstimateTSCkHzDeferred, 0);
+   compat_timer_setup(&tscTimer, LinuxDriverEstimateTSCkHzDeferred, 0);
    LinuxDriverInitTSCkHz();
    Vmx86_InitIDList();
 

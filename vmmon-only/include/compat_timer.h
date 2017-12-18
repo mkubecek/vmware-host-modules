@@ -7,7 +7,7 @@
 
 typedef unsigned long compat_timer_arg_t;
 
-static inline void timer_setup(struct timer_list *timer,
+static inline void compat_timer_setup(struct timer_list *timer,
 				      void (*func)(compat_timer_arg_t),
 				      unsigned int flags)
 {
@@ -20,6 +20,13 @@ static inline void timer_setup(struct timer_list *timer,
 #else /* new timer interface since 4.15 */
 
 typedef struct timer_list *compat_timer_arg_t;
+
+static inline void compat_timer_setup(struct timer_list *timer,
+				      void (*func)(compat_timer_arg_t),
+				      unsigned int flags)
+{
+	timer_setup(timer, func, flags);
+}
 
 #endif /* new timer interface since 4.15 */
 
