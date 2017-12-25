@@ -337,9 +337,7 @@ typedef netdev_features_t compat_netdev_features_t;
 typedef u32 compat_netdev_features_t;
 #endif
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0) || \
-    (defined(RHEL_RELEASE_CODE) && RHEL_RELEASE_CODE >= 0x0704) || \
-    (defined(CONFIG_SUSE_KERNEL) && LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 73))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0) || defined(VMW_NETIF_TRANS_UPDATE)
 #define compat_netif_trans_update(d) netif_trans_update(d)
 #else
 #define compat_netif_trans_update(d) do { (d)->trans_start = jiffies; } while (0)
