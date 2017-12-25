@@ -1516,17 +1516,34 @@ HostIF_EstimateLockedPageLimit(const VMDriver* vm,                // IN
    unsigned int reservedPages = MEMDEFAULTS_MIN_HOST_PAGES;
    unsigned int hugePages = (vm == NULL) ? 0 :
       BYTES_2_PAGES(vm->memInfo.hugePageBytes);
-   unsigned int lockedPages = global_page_state(NR_PAGETABLE) +
-                              global_page_state(NR_SLAB_UNRECLAIMABLE) +
-                              global_page_state(NR_UNEVICTABLE) +
-                              hugePages + reservedPages;
-   unsigned int anonPages =
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0)
-      global_page_state(NR_ANON_MAPPED);
-#else
-      global_page_state(NR_ANON_PAGES);
-#endif
+   unsigned int lockedPages = hugePages + reservedPages;
+   unsigned int anonPages;
    unsigned int swapPages = BYTES_2_PAGES(linuxState.swapSize);
+
+   /* global_page_state is global_zone_page_state in 4.14. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+   lockedPages += global_zone_page_state(NR_PAGETABLE);
+#else
+   lockedPages += global_page_state(NR_PAGETABLE);
+#endif
+   /* NR_SLAB_* moved from zone to node in 4.13. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
+   lockedPages += global_node_page_state(NR_SLAB_UNRECLAIMABLE);
+#else
+   lockedPages += global_page_state(NR_SLAB_UNRECLAIMABLE);
+#endif
+   /* NR_UNEVICTABLE moved from global to node in 4.8. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0)
+   lockedPages += global_node_page_state(NR_UNEVICTABLE);
+#else
+   lockedPages += global_page_state(NR_UNEVICTABLE);
+#endif
+   /* NR_ANON_MAPPED moved & changed name in 4.8. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0)
+   anonPages = global_node_page_state(NR_ANON_MAPPED);
+#else
+   anonPages = global_page_state(NR_ANON_PAGES);
+#endif
 
    if (anonPages > swapPages) {
       lockedPages += anonPages - swapPages;

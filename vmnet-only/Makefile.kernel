@@ -20,6 +20,7 @@
 INCLUDE := -I$(SRCROOT)
 
 EXTRA_CFLAGS := $(CC_OPTS) $(INCLUDE)
+EXTRA_CFLAGS += $(call vm_check_build, $(SRCROOT)/netif_trans_update.c,-DVMW_NETIF_TRANS_UPDATE, )
 
 obj-m += $(DRIVER).o
 
