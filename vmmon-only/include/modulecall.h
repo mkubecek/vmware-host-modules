@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -374,6 +374,7 @@ struct VMCrossPageData {
 
    volatile Bool wsException[NUM_EXCEPTIONS]; // Tracks faults in worldswitch.
    uint64        wsUD2;                       // IP of ud2 instr or 0 if unset.
+   uint64        specCtrl; /* host MSR_SPEC_CTRL value before world switch. */
 }
 #include "vmware_pack_end.h"
 VMCrossPageData;
@@ -430,7 +431,7 @@ struct VMCrossPage {
 #include "vmware_pack_end.h"
 VMCrossPage;
 
-#define CROSSPAGE_VERSION_BASE 0xbfb /* increment by 1 */
+#define CROSSPAGE_VERSION_BASE 0xbfc /* increment by 1 */
 #define CROSSPAGE_VERSION    ((CROSSPAGE_VERSION_BASE << 1) + WS_INTR_STRESS)
 
 #if !defined(VMX86_SERVER) && defined(VMM)

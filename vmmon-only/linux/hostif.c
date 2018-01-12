@@ -1637,9 +1637,6 @@ HostIFReadUptimeWork(unsigned long *j)  // OUT: current jiffies
    unsigned long jifs, jifBase;
    unsigned int attempts = 0;
 
-   /* Assert that HostIF_InitUptime has been called. */
-   ASSERT(uptimeState.timer.function);
-
  retry:
    do {
       version  = VersionedAtomic_BeginTryRead(&uptimeState.version);
@@ -1705,7 +1702,7 @@ HostIFReadUptimeWork(unsigned long *j)  // OUT: current jiffies
  */
 
 static void
-HostIFUptimeResyncMono(unsigned long data)  // IN: ignored
+HostIFUptimeResyncMono(struct timer_list *timer)  // IN: ignored
 {
    unsigned long jifs;
    uintptr_t flags;
@@ -1767,8 +1764,13 @@ HostIF_InitUptime(void)
                   -(tv.tv_usec * (UPTIME_FREQ / 1000000) +
                     tv.tv_sec * UPTIME_FREQ));
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0) && !defined(timer_setup)
    init_timer(&uptimeState.timer);
-   uptimeState.timer.function = HostIFUptimeResyncMono;
+   uptimeState.timer.function = (void *)HostIFUptimeResyncMono;
+   uptimeState.timer.data = (unsigned long)&uptimeState.timer;
+#else
+   timer_setup(&uptimeState.timer, HostIFUptimeResyncMono, 0);
+#endif
    mod_timer(&uptimeState.timer, jiffies + HZ);
 }
 

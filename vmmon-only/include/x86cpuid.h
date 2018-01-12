@@ -460,6 +460,10 @@ FLAG(   6,  0, ECX,  0,  1, HW_COORD_FEEDBACK,                 NO,   0, FALSE) \
 FLAG(   6,  0, ECX,  1,  1, ACNT2,                             ANY, 13, FALSE) \
 FLAG(   6,  0, ECX,  3,  1, ENERGY_PERF_BIAS,                  NO,   0, FALSE)
 
+#define CPUID_7_EDX_26 \
+FLAG(   7,  0, EDX, 26,  1, LEVEL7EDX_RSVD1,                    NO,  0, FALSE)
+#define CPUID_7_EDX_27 \
+FLAG(   7,  0, EDX, 27,  1, LEVEL7EDX_RSVD2,                    NO,  0, FALSE)
 
 /*    LEVEL, SUB-LEVEL, REG, POS, SIZE, NAME,             MON SUPP, HWV, CPL3 */
 #define CPUID_FIELD_DATA_LEVEL_7                                               \
@@ -499,7 +503,8 @@ FLAG(   7,  0, ECX,  1,  1, AVX512VBMI,                        YES, 15, TRUE)  \
 FLAG(   7,  0, ECX,  3,  1, PKU,                               YES, 13, TRUE)  \
 FLAG(   7,  0, ECX,  4,  1, OSPKE,                             ANY, 13, TRUE)  \
 FLAG(   7,  0, ECX, 30,  1, SGX_LC,                            NO,   0, FALSE) \
-
+CPUID_7_EDX_26 \
+CPUID_7_EDX_27
 
 /*    LEVEL, SUB-LEVEL, REG, POS, SIZE, NAME,             MON SUPP, HWV, CPL3 */
 #define CPUID_FIELD_DATA_LEVEL_A                                               \
@@ -941,6 +946,9 @@ FLAG(  87,  0, EDX,  7,  1, HWPSTATE,                          NA,   0, FALSE) \
 FLAG(  87,  0, EDX,  8,  1, TSC_INVARIANT,                     NA,   0, FALSE) \
 FLAG(  87,  0, EDX,  9,  1, CORE_PERF_BOOST,                   NA,   0, FALSE)
 
+#define CPUID_88_EBX_12 \
+FLAG(  88,  0, EBX, 12,  1, LEVEL88EBX_RSVD1,                  NO,   0, FALSE)
+
 /*    LEVEL, REG, POS, SIZE, NAME,                        MON SUPP, HWV, CPL3 */
 #define CPUID_FIELD_DATA_LEVEL_88                                              \
 FIELD( 88,  0, EAX,  0,  8, PHYS_BITS,                         YES,  4, FALSE) \
@@ -949,6 +957,7 @@ FIELD( 88,  0, EAX, 16,  8, GUEST_PHYS_ADDR_SZ,                YES,  8, FALSE) \
 FLAG(  88,  0, EBX,  0,  1, CLZERO,                            YES, 14, TRUE)  \
 FLAG(  88,  0, EBX,  1,  1, IRPERF,                            NO,   0, FALSE) \
 FLAG(  88,  0, EBX,  2,  1, XSAVE_ERR_PTR,                     NO,   0, FALSE) \
+CPUID_88_EBX_12 \
 FIELD( 88,  0, ECX,  0,  8, LEAF88_CORE_COUNT,                 YES,  4, FALSE) \
 FIELD( 88,  0, ECX, 12,  4, APICID_COREID_SIZE,                YES,  7, FALSE) \
 FIELD( 88,  0, ECX, 16,  2, PERFTSC_SIZE,                      NO,   0, FALSE)

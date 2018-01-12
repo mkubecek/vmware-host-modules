@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998, 2016-2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998, 2016-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -37,6 +37,7 @@
 uint32 cpuidFeatures;
 static CpuidVendor vendor = CPUID_NUM_VENDORS;
 static uint32 version;
+static Bool hasSpecCtrl;
 
 
 /*
@@ -99,6 +100,9 @@ CPUID_Init(void)
       Warning("VMMON CPUID: Unrecognized CPU\n");
       vendor = CPUID_VENDOR_UNKNOWN;
    }
+
+   __GET_CPUID2(7, 0, &regs);
+   hasSpecCtrl = vendor == CPUID_VENDOR_INTEL && ((regs.edx >> 26) & 0x3) != 0;
 }
 
 
@@ -175,4 +179,27 @@ CPUID_HostSupportsHV(void)
 {
    return (vendor == CPUID_VENDOR_AMD   && SVM_CapableCPU()) ||
           (vendor == CPUID_VENDOR_INTEL && VT_CapableCPU());
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * CPUID_HostSupportsSpecCtrl --
+ *
+ *     Determine whether the processor supports MSR_SPEC_CTRL.
+ *
+ * Results:
+ *     True iff the processor supports the required features.
+ *
+ * Side effects:
+ *     None.
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+Bool
+CPUID_HostSupportsSpecCtrl(void)
+{
+   return hasSpecCtrl;
 }

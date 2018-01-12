@@ -216,7 +216,7 @@ LinuxDriverEstimateTSCkHz(void)
  *----------------------------------------------------------------------
  */
 static void
-LinuxDriverEstimateTSCkHzDeferred(unsigned long data)
+LinuxDriverEstimateTSCkHzDeferred(struct timer_list *data)
 {
    LinuxDriverEstimateTSCkHz();
 }
@@ -251,9 +251,7 @@ LinuxDriverInitTSCkHz(void)
    }
 
    LinuxDriverReadTSCAndUptime(&tsckHzStartTime);
-   tscTimer.function = LinuxDriverEstimateTSCkHzDeferred;
    tscTimer.expires  = jiffies + 4 * HZ;
-   tscTimer.data     = 0;
    add_timer(&tscTimer);
 }
 
@@ -335,7 +333,13 @@ init_module(void)
        linuxState.deviceName, linuxState.major, linuxState.minor);
 
    HostIF_InitUptime();
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0) && !defined(timer_setup)
    init_timer(&tscTimer);
+   tscTimer.function = (void *)LinuxDriverEstimateTSCkHzDeferred;
+   tscTimer.data = (unsigned long)&tscTimer;
+#else
+   timer_setup(&tscTimer, LinuxDriverEstimateTSCkHzDeferred, 0);
+#endif
    LinuxDriverInitTSCkHz();
    Vmx86_InitIDList();
 
