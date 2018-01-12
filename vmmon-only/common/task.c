@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -81,6 +81,9 @@
 /* It is OK to set this to 1 on 64-bit Linux/Mac OS for testing. */
 #   define USE_TEMPORARY_GDT 0
 #endif
+
+/* Cycle through values of SPEC_CTRL and verify they survive world switch. */
+#undef CYCLE_SPEC_CTRL
 
 #define TS_ASSERT(t) do { \
    DEBUG_ONLY(if (!(t)) TaskAssertFail(__LINE__);)  \
@@ -2371,6 +2374,11 @@ Task_Switch(VMDriver *vm,  // IN
    uint32 pCPU;
    MPN hvRootMPN;
    Descriptor *tempGDTBase;
+#ifdef CYCLE_SPEC_CTRL
+   Bool specCtrlEqual = FALSE;
+   uint64 readSpecCtrlValue = 0;
+   static volatile uint64 currentSpecCtrlValue = 0;
+#endif
 
    ASSERT_ON_COMPILE(sizeof(VMCrossPage) == PAGE_SIZE);
    TaskDisableNMI(&vm->hostAPIC, &lint0NMI, &lint1NMI, &pcNMI, &thermalNMI);
@@ -2588,12 +2596,30 @@ Task_Switch(VMDriver *vm,  // IN
          TS_ASSERT(SELECTOR_TABLE(ds) == SELECTOR_GDT);
          TS_ASSERT(SELECTOR_TABLE(ss) == SELECTOR_GDT);
 
+         if (CPUID_HostSupportsSpecCtrl()) {
+#ifdef CYCLE_SPEC_CTRL
+            currentSpecCtrlValue = (currentSpecCtrlValue + 1) % 4;
+            __SET_MSR(MSR_SPEC_CTRL, currentSpecCtrlValue);
+#endif
+            crosspage->crosspageData.specCtrl = __GET_MSR(MSR_SPEC_CTRL);
+         }
+
          DEBUG_ONLY(crosspage->crosspageData.tinyStack[0] = 0xDEADBEEF;)
          /* Running in host context prior to TaskSwitchToMonitor() */
          TaskSwitchToMonitor(crosspage);
          /* Running in host context after to TaskSwitchToMonitor() */
 
          TS_ASSERT(crosspage->crosspageData.tinyStack[0] == 0xDEADBEEF);
+
+#ifdef CYCLE_SPEC_CTRL
+         if (CPUID_HostSupportsSpecCtrl()) {
+            readSpecCtrlValue = __GET_MSR(MSR_SPEC_CTRL);
+            specCtrlEqual = readSpecCtrlValue ==
+                            crosspage->crosspageData.specCtrl;
+            /* Do not leak cycling SPEC_CTRL value back to host. */
+            __SET_MSR(MSR_SPEC_CTRL, 0);
+         }
+#endif
 
          /*
           * Temporarily disable single-step stress as VMX/VMCS change code
@@ -2732,6 +2758,12 @@ Task_Switch(VMDriver *vm,  // IN
          if (UNLIKELY(TaskGotException(crosspage, EXC_UD))) {
             Warning("#UD occurred on switch back to host; dumping core");
          }
+#ifdef CYCLE_SPEC_CTRL
+         if (UNLIKELY(!specCtrlEqual)) {
+            Warning("SpecCtrl not equal: expected %"FMT64"x, got %"FMT64"x\n",
+                    crosspage->crosspageData.specCtrl, readSpecCtrlValue);
+         }
+#endif
          /*
           * The NMI/MCE checks above are special cases for interrupts
           * received during worldswitch.  Here is the more generic case
