@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2015 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -79,6 +79,7 @@ MSRQuery;
 #define MSR_SMI_COUNT         0x00000034 // Intel Nehalem Family
 #define MSR_FEATCTL           0x0000003a
 #define MSR_TSC_ADJUST        0x0000003b
+#define MSR_SPEC_CTRL         0x00000048
 #define MSR_BIOS_UPDT_TRIG    0x00000079
 #define MSR_BIOS_SIGN_ID      0x0000008b
 #define MSR_PERFCTR0          0x000000c1
@@ -105,6 +106,7 @@ MSRQuery;
 #define MSR_KERNELGSBASE      0xc0000102
 #define MSR_TSC_AUX           0xc0000103
 #define MSR_BD_TSC_RATIO      0xc0000104
+
 
 #define MSR_MISC_FEATURES_ENABLES            0x140
 
@@ -342,6 +344,8 @@ typedef enum {
 #define MSR_VM_CR_SVME_DISABLE     0x0000000000000010ULL
 #define MSR_VM_CR_RESERVED         0xffffffffffffffe0ULL
 
+#define MSR_AMD_DE_CFG           0xc0011029  // Decode configuration
+#define MSR_AMD_DE_CFG_BIT1      (1ULL<<1)
 
 /* Syscall/Sysret related MSRs (x86_64) */
 #define MSR_STAR             0xc0000081 // Also present on Athlons.

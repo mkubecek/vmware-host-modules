@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2016 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -419,6 +419,10 @@ FIELD(  6,  0, EBX,  0,  4, NUM_INTR_THRESHOLDS,                   NA,  FALSE) \
 FLAG(   6,  0, ECX,  0,  1, HW_COORD_FEEDBACK,                     NA,  FALSE) \
 FLAG(   6,  0, ECX,  3,  1, ENERGY_PERF_BIAS,                      NA,  FALSE)
 
+#define CPUID_7_EDX_26 \
+FLAG(   7,  0, EDX, 26,  1, LEVEL7EDX_RSVD1,                       NO,  FALSE)
+#define CPUID_7_EDX_27 \
+FLAG(   7,  0, EDX, 27,  1, LEVEL7EDX_RSVD2,                       NO,  FALSE)
 
 /*    LEVEL, SUB-LEVEL, REG, POS, SIZE, NAME,                  MON SUPP, CPL3 */
 #define CPUID_FIELD_DATA_LEVEL_7                                               \
@@ -440,8 +444,9 @@ FLAG(   7,  0, EBX, 18,  1, RDSEED,                                YES, TRUE)  \
 FLAG(   7,  0, EBX, 19,  1, ADX,                                   YES, TRUE)  \
 FLAG(   7,  0, EBX, 20,  1, SMAP,                                  YES, FALSE) \
 FLAG(   7,  0, EBX, 25,  1, PT,                                    NO,  FALSE) \
-FLAG(   7,  0, ECX,  0,  1, PREFETCHWT1,                           NO,  TRUE)
-
+FLAG(   7,  0, ECX,  0,  1, PREFETCHWT1,                           NO,  TRUE)  \
+CPUID_7_EDX_26 \
+CPUID_7_EDX_27
 
 /*    LEVEL, SUB-LEVEL, REG, POS, SIZE, NAME,                  MON SUPP, CPL3 */
 #define CPUID_FIELD_DATA_LEVEL_A                                               \
@@ -707,6 +712,7 @@ FIELD( 84,  0, EAX,  0, 32, LEAF84_BRAND_STRING_EAX,               NA,  FALSE) \
 FIELD( 84,  0, EBX,  0, 32, LEAF84_BRAND_STRING_EBX,               NA,  FALSE) \
 FIELD( 84,  0, ECX,  0, 32, LEAF84_BRAND_STRING_ECX,               NA,  FALSE) \
 FIELD( 84,  0, EDX,  0, 32, LEAF84_BRAND_STRING_EDX,               NA,  FALSE)
+
 
 #define CPUID_8A_EDX_11 \
 FLAG(  8A,  0, EDX, 11,  1, SVMEDX_RSVD1,                          NO,  FALSE)
