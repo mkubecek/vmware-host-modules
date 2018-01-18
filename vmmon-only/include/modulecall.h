@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2015 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2015,2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -421,6 +421,7 @@ struct VMCrossPageData {
     */
    uint8 switchHostIDT [sizeof(Gate64) * NUM_EXCEPTIONS]; // hostCS:hostVA
    uint8 switchMon64IDT[sizeof(Gate64) * NUM_EXCEPTIONS]; // 64-bit monCS:monVA
+   uint64        specCtrl; /* host MSR_SPEC_CTRL value before world switch. */
 }
 #include "vmware_pack_end.h"
 VMCrossPageData;
@@ -474,7 +475,7 @@ struct VMCrossPage {
 #include "vmware_pack_end.h"
 VMCrossPage;
 
-#define CROSSPAGE_VERSION_BASE 0xbf1 /* increment by 1 */
+#define CROSSPAGE_VERSION_BASE 0xbf2 /* increment by 1 */
 #define CROSSPAGE_VERSION    ((CROSSPAGE_VERSION_BASE << 1) + WS_INTR_STRESS)
 
 #if !defined(VMX86_SERVER) && defined(VMM)
