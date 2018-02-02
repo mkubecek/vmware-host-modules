@@ -4,5 +4,6 @@
 *.ko.cmd
 *.mod.c
 .tmp_versions
+.cache.mk
 Module.symvers
 modules.order
