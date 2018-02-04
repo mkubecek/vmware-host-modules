@@ -12,12 +12,17 @@ a particular version of Player or Workstation.
 
 From these tags, branches "player-${version}" and "workstation-${version}"
 are forked. These branches track changes needed to build these modules
-against recent kernel versions. Tag "p${ver}-k${ver}" marks the set of
-changes needed to build modules from Player ${ver} against kernel ${ver},
+against recent kernel versions. Tag "p${ver}-k${kver}" marks the set of
+changes needed to build modules from Player ${ver} against kernel ${kver},
 e.g. p12.5.5-k4.11 is for Player 12.5.5 and kernel 4.11; similar naming
 scheme "w${ver}-k${kver}" is used for Workstation modules. In general,
 later points in the branch should also work with older kernels (e.g.
-p12.5.5-k4.11 with kernel 4.10) but it's not completely reliable.
+p12.5.5-k4.11 with kernel 4.10) but it's not guaranteed; it may happen that
+a fix for new kernel version may be too complicated to make also work with
+older versions.
+
+At the moment, changes are tested to build against all (vanilla) kernel
+releases starting with 4.9.
 
 This repository is provided "as is" with no guarantees. Use the contents on
 your own risk.
