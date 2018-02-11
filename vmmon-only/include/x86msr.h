@@ -489,7 +489,9 @@ MSRQuery;
 #define MSR_K7_HWCR_SSEDIS         0x00008000ULL // Disable SSE bit
 #define MSR_K7_HWCR_MONMWAITUSEREN 0x00000400ULL // Enable MONITOR/MWAIT CPL>0
 #define MSR_K7_HWCR_TLBFFDIS       0x00000040ULL // Disable TLB Flush Filter
+#ifndef MSR_K7_HWCR_SMMLOCK
 #define MSR_K7_HWCR_SMMLOCK        0x00000001ULL // Lock SMM environment
+#endif
 
 #ifndef MSR_K8_SYSCFG
 #define MSR_K8_SYSCFG        0xc0010010
