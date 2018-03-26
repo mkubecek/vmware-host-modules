@@ -2307,12 +2307,23 @@ TaskSwitchToMonitor(VMCrossPage *crosspage)
    {
       uint64 raxGetsWiped, rcxGetsWiped;
 
+#ifdef CALL_NOSPEC
+      __asm__ __volatile__(CALL_NOSPEC
+                           : "=a" (raxGetsWiped),
+                             "=c" (rcxGetsWiped)
+                           : "0" (codePtr),
+                             "1" (crosspage),
+                             THUNK_TARGET(codePtr)
+                           : "rdx", "r8", "r9", "r10", "r11", "cc", "memory");
+#else
       __asm__ __volatile__("call *%%rax"
                            : "=a" (raxGetsWiped),
                              "=c" (rcxGetsWiped)
                            : "0" (codePtr),
                              "1" (crosspage)
                            : "rdx", "r8", "r9", "r10", "r11", "cc", "memory");
+#endif
+
    }
 #elif defined(_MSC_VER)
    /*
