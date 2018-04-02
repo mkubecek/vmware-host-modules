@@ -13,7 +13,7 @@ DEPMOD = /sbin/depmod
 
 .PHONY: FORCE subdirs $(SUBDIRS) clean tarballs
 
-subdirs: $(SUBDIRS)
+subdirs: retiredcheck $(SUBDIRS)
 
 FORCE:
 
@@ -28,7 +28,10 @@ gitcleancheck: gitcheck
 	@git diff --exit-code HEAD >/dev/null 2>&1 \
 	     || echo "Warning: tarballs will reflect current HEAD (no uncommited changes)"
 
-install: $(MODFILES)
+retiredcheck:
+	@test -f RETIRED && cat RETIRED || true
+
+install: retiredcheck $(MODFILES)
 	@for f in $(MODFILES); do \
 	    mver=$$($(MODINFO) -F vermagic $$f);\
 	    mver=$${mver%% *};\
