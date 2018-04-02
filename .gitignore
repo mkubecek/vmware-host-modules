@@ -3,6 +3,8 @@
 *.ko
 *.ko.cmd
 *.mod.c
+*.tar
 .tmp_versions
+.cache.mk
 Module.symvers
 modules.order
