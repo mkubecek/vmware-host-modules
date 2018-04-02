@@ -1,0 +1,197 @@
+This document explains how to use the repository to retrieve the module
+source, build modules and install them. There are two basic methods: we can
+either build the modules from source and install them ourselves or replace
+VMware provided source tarballs with patched ones and let it use its own
+vmware-modconfig tool.
+
+
+0. Quick guide for impatient
+----------------------------
+
+First method (build and install):
+
+  wget https://github.com/mkubecek/vmware-host-modules/archive/workstation-14.1.1.tar.gz
+  tar -xzf workstation-14.1.1.tar.gz
+  cd vmware-host-modules-workstation-14.1.1
+  make
+  make install
+
+Last command must be executed with root privileges (first four shouldn't).
+Based on your VMware product, replace "14.1.1" with your installed version
+and/or "workstation" with "player".
+
+Second method (replace original tarballs):
+
+  wget https://github.com/mkubecek/vmware-host-modules/archive/workstation-14.1.1.tar.gz
+  tar -xzf workstation-14.1.1.tar.gz
+  cd vmware-host-modules-workstation-14.1.1
+  tar -cf vmmon.tar vmmon-only
+  tar -cf vmnet.tar vmnet-only
+  cp -v vmmon.tar vmnet.tar /usr/lib/vmware/modules/source/
+  vmware-modconfig --console --install-all
+
+In this case, last two commands require root privileges.
+
+
+1a. Retrieve the source - with git
+----------------------------------
+
+Using git is preferrable as it allows an easy switch to sources for
+different product/version or update for newer kernel version. Without git,
+you can only download one particular source snapshot.
+
+First, clone the repository from GitHub either using HTTPS
+
+  git clone https://github.com/mkubecek/vmware-host-modules.git
+
+or using SSH
+
+  git clone git@github.com:mkubecek/vmware-host-modules.git
+
+Using SSH is preferrable if you already have an account on GitHub, use
+HTTPS if you don't.
+
+Branch "master" cannot be used to build modules, it contains only common
+files so that changes in them can be merged into all other branches easily.
+To get actual sources, checkout a "real" branch, e.g.
+
+  git checkout workstation-14.1.1
+
+Branch name consists of "workstation" (for Workstation) or "player" (for
+Player), a dash and version number ("14.1.1" here). Always use correct
+product and version, the modules check if internal source version matches
+installed product and refuse to load otherwise. Actually, in all recent
+versions, "workstation" and "player" sources have been identical but there
+is no guarantee it will always be the case.
+
+To pull out updated branch (if there are new commits), run "git pull", to
+switch to a new branch run "git fetch" and "git checkout ...".
+
+
+1b. Retrieve the source - without git
+-------------------------------------
+
+GitHub allows to download a particular snapshot (branch or tag) directly
+without git:
+
+  wget https://github.com/mkubecek/vmware-host-modules/archive/workstation-14.1.1.tar.gz
+
+where "workstation" and "14.1.1" have the same meaning as in section 1a.
+Any other tool can be used to retrieve the URL, of course. It's also
+possible to download directly from the web interface, switch to the branch
+you are interested in, click the "Clone or download" button and then
+"Download ZIP".
+
+Unpack the downloaded archive
+
+  tar -xzf workstation-14.1.1.tar.gz
+
+or
+
+  unzip vmware-host-modules-workstation-14.1.1.zip
+
+depending on archive type. Then change to the resulting directory.
+
+
+2a. Build and install modules - directly
+----------------------------------------
+
+To build modules against currently running kernel, just run "make" in top
+level directory. It creates two module files vmmon-only/vmmon.ko and
+vmnet-only/vmnet.ko (unstripped). To build against a different kernel, set
+variable VM_UNAME, e.g.
+
+  make VM_UNAME='4.14.15-5-default'
+
+As name suggests, this variable should be set to what "uname -r" would show
+when that kernel is booted (it's the same as name of the subdirectory under
+/lib/modules with modules of that kernel).
+
+To install built modules for currently running kernel, run "make install".
+This command needs to be run as user with permissions to write into the
+directory with kernel modules (under normal circumstances, this should be
+only root). The VM_UNAME variable can be used to install for a different
+kernel. Unless you know well what are you doing and why, the same value
+should be always used for "make" and "make install". That's why makefile
+checks if vermagic tag of the moudules match VM_UNAME (or current kernel if
+VM_UNAME isn't set).
+
+If DESTDIR is not set (or is empty), "make install" also runs depmod to
+update module dependency cache.
+
+Note that "make install" replaces existing module files but it does not
+replace modules in running kernel if they are already loaded. Reloading the
+modules can be enforced e.g. by
+
+  /etc/init.d/vmware restart
+
+All running VMs should be turned off before this.
+
+
+2b. Build and install modules - replacing the original source tarballs
+----------------------------------------------------------------------
+
+Manual build and installation of host modules may be natural for developers
+and power users but those who prefer to "just use" would appreciate if they
+could rely on standard VMware tools. To this goal, we need to replace the
+module source tarballs with patched versions.
+
+In local checked out repository, the replacement tarballs can be created
+with
+
+  make tarballs
+
+This command creates files vmmon.tar and vmnet.tar which can be used to
+replace the original tarballs provided with the VMware product. Note that
+this command creates the tarball from current HEAD (in git language), i.e.
+they do not contain any uncommited local changes (e.g. files created by
+test build).
+
+When using a downloaded tarball, simply run
+
+  tar -cf vmmon.tar vmmon-only
+  tar -cf vmnet.tar vmmon-only
+
+to create the tarballs. In this case, there is no protection against
+unwanted local changes.
+
+Whatever way you used to create the tarballs, replace the original ones
+provided by VMware
+
+  /usr/lib/vmware/modules/source/vmmon.tar
+  /usr/lib/vmware/modules/source/vmnet.tar
+
+by patched versions. It is highly recommended to backup the original
+tarballs before replacing them.
+
+Once patched tarballs are installed, you can rebuild the modules as usual:
+
+  vmware-modconfig --console --install-all
+
+or let the GUI run the command for you.
+
+Replacing the original tarballs prevents having to rebuild and install the
+modules manually with every new kernel version. However, once the VMware
+product is upgraded or reinstalled, tarballs are replaced so that if the
+new VMware version doesn't build/work with a recent kernel, you still need
+to repeat the process. The same also holds if there is a new kernel which
+requires updated version of the patches.
+
+
+3. Final notes
+--------------
+
+Always make sure that you are using a branch matching the Workstation or
+Player version you are running. VMware software may refuse to start if
+module intended for different version is loaded. And unless you have
+a reason not to, use current head of that branch; even if the module
+builds, there may still be later fixes which may be important.
+
+In some web forums, one can comments suggesting to rip out one patched file
+and use it as replacement for the corresponding file with VMware tarballs.
+Please don't do this - and if you do, don't complain if something doesn't
+work. A commit fixing some problem is meant to be used as a whole; picking
+just changes in one file can lead to rather unpredictable results. While
+picking just one commit (or some of the commits) in a branch is perfectly
+fine (you should still know what are you doing and why), picking just one
+patched file rarely makes sense.
