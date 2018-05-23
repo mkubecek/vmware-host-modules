@@ -85,6 +85,7 @@ MSRQuery;
 #define MSR_FEATCTL           0x0000003a
 #define MSR_TSC_ADJUST        0x0000003b
 #define MSR_SPEC_CTRL         0x00000048
+#define MSR_PRED_CMD          0x00000049
 #define MSR_BIOS_UPDT_TRIG    0x00000079
 #define MSR_BIOS_SIGN_ID      0x0000008b
 #define MSR_PERFCTR0          0x000000c1
@@ -113,6 +114,14 @@ MSRQuery;
 #define MSR_TSC_AUX           0xc0000103
 #define MSR_BD_TSC_RATIO      0xc0000104
 
+#define IA32_MSR_ARCH_CAPABILITIES           0x10a
+#define MSR_ARCH_CAPABILITIES_RDCL_NO             (1ULL << 0)
+#define MSR_ARCH_CAPABILITIES_IBRS_ALL            (1ULL << 1)
+#define MSR_ARCH_CAPABILITIES_RSBA                (1ULL << 2)
+
+#define MSR_SPEC_CTRL_IBRS                        (1UL << 0)
+#define MSR_SPEC_CTRL_STIBP                       (1UL << 1)
+#define MSR_PRED_CMD_IBPB                         (1UL << 0)
 
 #define MSR_MISC_FEATURES_ENABLES            0x140
 
