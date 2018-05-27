@@ -31,7 +31,7 @@ $(DRIVER)-y := $(subst $(SRCROOT)/, , $(patsubst %.c, %.o, \
 		$(SRCROOT)/bootstrap/*.c)))
 
 clean:
-	rm -rf $(wildcard $(DRIVER).mod.c $(DRIVER).ko .tmp_versions \
+	rm -rf $(wildcard $(DRIVER).mod.c $(DRIVER).ko .tmp_versions .cache.mk \
 		Module.symvers Modules.symvers Module.markers modules.order \
 		$(foreach dir,linux/ common/ vmcore/ bootstrap/ \
 		./,$(addprefix $(dir),.*.cmd .*.o.flags *.o)))
