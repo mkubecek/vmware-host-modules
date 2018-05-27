@@ -32,6 +32,6 @@ $(DRIVER)-y := driver.o hub.o userif.o netif.o bridge.o procfs.o smac_compat.o \
 ####
 
 clean:
-	rm -rf $(DRIVER).o $(DRIVER).mod.o $(DRIVER).mod.c $(DRIVER).ko \
+	rm -rf $(DRIVER).o $(DRIVER).mod.o $(DRIVER).mod.c $(DRIVER).ko .cache.mk \
 	       .tmp_versions Module.symvers Modules.symvers Module.markers \
 	       modules.order $($(DRIVER)-y) .*.cmd .*.o.flags
