@@ -43,6 +43,7 @@ install: retiredcheck $(MODFILES)
 	if test -z "$(DESTDIR)"; then $(DEPMOD) -a $(VM_UNAME); fi
 
 clean: $(SUBDIRS)
+	rm -f *.o
 
 tarballs: $(TARBALLS)
 
