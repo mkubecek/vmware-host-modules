@@ -99,6 +99,7 @@
 #include "pgtbl.h"
 #include "vmmonInt.h"
 #include "versioned_atomic.h"
+#include "compat_poll.h"
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 #   define global_zone_page_state global_page_state
@@ -2486,7 +2487,7 @@ HostIF_SemaphoreWait(VMDriver *vm,   // IN:
       
       poll_initwait(&table);
       current->state = TASK_INTERRUPTIBLE;
-      mask = file->f_op->poll(file, &table.pt);
+      mask = compat_vfs_poll(file, &table.pt);
       if (!(mask & (POLLIN | POLLERR | POLLHUP))) {
          vm->vmhost->vcpuSemaTask[vcpuid] = current;
          schedule_timeout(timeoutms * HZ / 1000);  // convert to Hz
