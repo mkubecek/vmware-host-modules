@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014,2016 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014,2016,2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -39,6 +39,7 @@
 #include "vm_basic_types.h"
 #include "x86types.h"
 #include "vm_pagetable.h"
+#include "x86paging_common.h"
 
 #define LM_PTE_PFN_MASK      CONST64U(0xffffffffff000)
 #define LM_PTE_2_PFN(_pte)   (((_pte) & LM_PTE_PFN_MASK) >> PT_PTE_PFN_SHIFT)
@@ -68,6 +69,8 @@
 #define LM_MAKE_L3E(_pfn, _avail, _flags) LM_MAKE_PTE(_pfn, _avail, _flags)
 #define LM_MAKE_L2E(_pfn, _avail, _flags) LM_MAKE_PTE(_pfn, _avail, _flags)
 #define LM_MAKE_L1E(_pfn, _avail, _flags) LM_MAKE_PTE(_pfn, _avail, _flags)
+
+
 
 
 /*

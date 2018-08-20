@@ -144,7 +144,7 @@ PtrToVA64(void const *ptr) // IN
  *
  */
 
-#define VMMON_VERSION           (330 << 16 | 0)
+#define VMMON_VERSION           (331 << 16 | 0)
 #define VMMON_VERSION_MAJOR(v)  ((uint32) (v) >> 16)
 #define VMMON_VERSION_MINOR(v)  ((uint16) (v))
 
