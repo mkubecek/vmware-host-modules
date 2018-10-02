@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2005-2014,2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 2005-2014,2017-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -134,8 +134,9 @@
 /* VMCB.nptCtl */
 #define SVM_VMCB_NPTCTL_NP_ENABLE          (1 << 0)
 
-/* VMCB.debugCtl */
-#define SVM_VMCB_DEBUGCTL_LBR_ENABLE       (1 << 0)
+/* VMCB.virtExt */
+#define SVM_VMCB_VIRTEXT_LBR_ENABLE        (1 << 0)
+#define SVM_VMCB_VIRTEXT_V_VMSAVE_VMLOAD   (1 << 1)
 
 /* VMCB.clean */
 #define SVMCLEAN       \
@@ -330,7 +331,7 @@ enum {
 
 #undef CLEANBIT
 };
-   
+
 static INLINE uint64
 SVM_ExecCtlBit(uint32 exitCode)
 {
@@ -389,7 +390,7 @@ SVM_ExecCtlBit(uint32 exitCode)
  *----------------------------------------------------------------------
  *
  * SVM_EnabledFromFeatures --
- * 
+ *
  *  Returns TRUE if SVM is enabled in the given VM control MSR bits.
  *
  *----------------------------------------------------------------------
@@ -405,7 +406,7 @@ SVM_EnabledFromFeatures(uint64 vmCR)
  *----------------------------------------------------------------------
  *
  * SVM_LockedFromFeatures --
- * 
+ *
  *  Returns TRUE if SVM is locked in the given VM control MSR bits.
  *
  *----------------------------------------------------------------------
@@ -461,32 +462,18 @@ SVM_CapableCPU(void)
  *   SVM-enabled monitor.  This function assumes that the processor is
  *   SVM_Capable().  We only support CPUs that populate the exitIntInfo
  *   field of the VMCB when IDT vectoring is interrupted by a task switch
- *   intercept.  That behavior was first introduced with Family 10H.
+ *   intercept.  That behavior was first introduced with AMD Family 10H.
+ *   As Hygon's Dhyana is a descendant of AMD's Zen microarchitecture
+ *   (Family 17H), SVM is always supported.
  *----------------------------------------------------------------------
  */
 static INLINE Bool
-SVM_SupportedVersion(uint32 version)
+SVM_SupportedVersion(CpuidVendor vendor, uint32 version)
 {
-   return CPUID_EFFECTIVE_FAMILY(version) >= CPUID_FAMILY_K8L;
+   return (vendor == CPUID_VENDOR_AMD &&
+           CPUID_EFFECTIVE_FAMILY(version) >= CPUID_FAMILY_K8L) ||
+          vendor == CPUID_VENDOR_HYGON;
 }
-
-
-/*
- *
- *----------------------------------------------------------------------
- * SVM_SupportedCPU --
- *
- *   Wrapper to call SVM_SupportedVersion() with the right
- *   parameter(s) for the current CPU.
- *----------------------------------------------------------------------
- */
-static INLINE Bool
-SVM_SupportedCPU(void)
-{
-   return SVM_SupportedVersion(__GET_EAX_FROM_CPUID(1));
-}
-
-
 #endif /* VMM */
 
 #endif /* _X86SVM_H_ */

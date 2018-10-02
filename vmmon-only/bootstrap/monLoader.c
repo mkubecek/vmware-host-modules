@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2015-2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 2015-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -104,7 +104,7 @@ typedef struct MonPTMPNs {
 } MonPTMPNs;
  
 typedef struct MonLoaderContext {
-   MonLoaderEnvContext *envCtx; /* Environment-specific context */
+   struct MonLoaderEnvContext *envCtx; /* Environment-specific context */
    struct {
       MonPTMPNs    ptMPNs;      /* Mappings into the AS for the current VCPU. */
       VPN          ASFirstVPN;  /* first VPN in the address space */
@@ -405,6 +405,10 @@ MonLoaderCreateAddressSpace(MonLoaderContext *ctx,      // IN/OUT
          }
          LOG(5, "%s: monVPN=0x%"FMTVPN"x: L2E=0x%"FMT64"x\n", __FUNCTION__,
                  monVPN, pte);
+         if (!PTE_PRESENT(pte)) {
+            ptMPNs->L1MPNs[i] = INVALID_MPN;
+            continue;
+         }
          mpn = LM_PTE_2_PFN(pte);
          if (mpn == INVALID_MPN || !ML_PERMS_MATCH(pte, flags)) {
             return ML_ERROR_PAGE_TABLE_IMPORT;
@@ -490,6 +494,9 @@ MonLoaderMapPageTables(MonLoaderContext *ctx,      // IN/OUT
          VPN vpn = monVPN + i;
          if (verify) {
             PT_L1E l1e;
+            if (ptMPNs[i] == INVALID_MPN && level == 1) {
+               continue;
+            }
             if (MonLoaderTranslateMonVPNToL1E(ctx, vpn, &l1e) != ML_OK ||
                 LM_PTE_2_PFN(l1e) != ptMPNs[i] || !ML_PERMS_MATCH(l1e, flags)) {
                return ML_ERROR_PAGE_TABLE_VERIFY;
@@ -786,7 +793,8 @@ MonLoaderShareFromBlob(MonLoaderContext *ctx,        // IN/OUT
 {
    uint64 endOff = blobOffset + blobSize;
 
-   if ((blobOffset & PAGE_MASK) != 0 || (blobSize & PAGE_MASK) != 0 ||
+   if ((blobOffset & (PAGE_SIZE - 1)) != 0 ||
+       (blobSize & (PAGE_SIZE - 1)) != 0 ||
        (flags & PTE_RW) != 0) {
       return ML_ERROR_SHARE;
    }

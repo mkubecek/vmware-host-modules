@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2015 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -54,7 +54,6 @@
 #define PTE_PAT         0x00000080
 #define PTE_G           0x00000100
 #define PTE_LARGE_PAT   0x00001000
-#define PTE_RSVD        CONST64(0x0008000000000000)
 #define PTE_NX          CONST64(0x8000000000000000)
 #define PTE_NX_SHIFT    63
 

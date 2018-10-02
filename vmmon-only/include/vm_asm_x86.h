@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014,2016 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014,2016-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -66,7 +66,7 @@
  *                    ((__builtin_constant_p(expr) ? ((expr) >> 16) == 0) \
  *                                                 : sizeof(expr) <= 2)
  */
-#if (__GNUC__ >= 4) && (__GNUC_MINOR__ >= 1)
+#if (__GNUC__ >= 4) && (__GNUC_MINOR__ >= 1) && !defined(USE_UBSAN)
 #define ASSERT_ON_COMPILE_SELECTOR_SIZE(expr)                                \
    ASSERT_ON_COMPILE(sizeof(Selector) == 2 &&                                \
                      ((__builtin_constant_p(expr) && ((expr) >> 16) == 0) || \

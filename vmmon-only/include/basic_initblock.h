@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2006, 2016 VMware, Inc. All rights reserved.
+ * Copyright (C) 2006-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -47,13 +47,11 @@ typedef
 #include "vmware_pack_begin.h"
 struct InitBlock {
    uint32 magicNumber;     /* Magic number (INIT_BLOCK_MAGIC) */
-   Vcpuid numVCPUs;
+   uint32 vmInitFailurePeriod;
    VA64   crosspage[MAX_INITBLOCK_CPUS];
    LPN64  monStartLPN;
    LPN64  monEndLPN;
-   uint32 vmInitFailurePeriod;
-   LA64   crossGDTHKLA;
-   MPN    crossGDTMPNs[5];  // CROSSGDT_NUMPAGES
+   MPN    crossGDTMPN;
    uint16 numPTPPages;
 }
 #include "vmware_pack_end.h"

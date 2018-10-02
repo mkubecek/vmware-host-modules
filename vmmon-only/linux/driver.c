@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -65,8 +65,8 @@
 #include "hostif_priv.h"
 #include "vmhost.h"
 
-static void LinuxDriverQueue(VMLinux *vmLinux);
-static void LinuxDriverDequeue(VMLinux *vmLinux);
+static void LinuxDriverQueue(Device *device);
+static void LinuxDriverDequeue(Device *device);
 static Bool LinuxDriverCheckPadding(void);
 
 #define VMMON_UNKNOWN_SWAP_SIZE -1ULL
@@ -284,6 +284,7 @@ init_module(void)
    }
 
    CPUID_Init();
+   Vmx86_CacheNXState();
 
    if (!Task_Initialize()) {
       return -ENOEXEC;
@@ -404,18 +405,18 @@ static int
 LinuxDriver_Open(struct inode *inode, // IN
                  struct file *filp)   // IN
 {
-   VMLinux *vmLinux;
+   Device *device;
 
-   vmLinux = kmalloc(sizeof *vmLinux, GFP_KERNEL);
-   if (vmLinux == NULL) {
+   device = kmalloc(sizeof *device, GFP_KERNEL);
+   if (device == NULL) {
       return -ENOMEM;
    }
-   memset(vmLinux, 0, sizeof *vmLinux);
+   memset(device, 0, sizeof *device);
 
-   sema_init(&vmLinux->lock4Gb, 1);
+   sema_init(&device->lock4Gb, 1);
 
-   filp->private_data = vmLinux;
-   LinuxDriverQueue(vmLinux);
+   filp->private_data = device;
+   LinuxDriverQueue(device);
 
    Vmx86_Open();
 
@@ -517,17 +518,17 @@ LinuxDriverAllocPages(unsigned int gfpFlag, // IN
  */
 
 static void
-LinuxDriverDestructor4Gb(VMLinux *vmLinux) // IN
+LinuxDriverDestructor4Gb(Device *device) // IN
 {
    unsigned int pg;
 
-   if (!vmLinux->size4Gb) {
+   if (!device->size4Gb) {
       return;
    }
-   for (pg = 0; pg < vmLinux->size4Gb; pg++) {
-      put_page(vmLinux->pages4Gb[pg]);
+   for (pg = 0; pg < device->size4Gb; pg++) {
+      put_page(device->pages4Gb[pg]);
    }
-   vmLinux->size4Gb = 0;
+   device->size4Gb = 0;
 }
 
 
@@ -547,15 +548,15 @@ static int
 LinuxDriver_Close(struct inode *inode, // IN
                   struct file *filp)   // IN
 {
-   VMLinux *vmLinux;
+   Device *device;
 
-   vmLinux = (VMLinux *)filp->private_data;
-   ASSERT(vmLinux);
+   device = (Device *)filp->private_data;
+   ASSERT(device);
 
-   LinuxDriverDequeue(vmLinux);
-   if (vmLinux->vm != NULL) {
-      Vmx86_ReleaseVM(vmLinux->vm);
-      vmLinux->vm = NULL;
+   LinuxDriverDequeue(device);
+   if (device->vm != NULL) {
+      Vmx86_ReleaseVM(device->vm);
+      device->vm = NULL;
    }
 
    Vmx86_Close();
@@ -566,9 +567,9 @@ LinuxDriver_Close(struct inode *inode, // IN
     * uses it anymore, and we do not need to hold the semaphore.
     */
 
-   LinuxDriverDestructor4Gb(vmLinux);
+   LinuxDriverDestructor4Gb(device);
 
-   kfree(vmLinux);
+   kfree(device);
    filp->private_data = NULL;
 
    return 0;
@@ -605,16 +606,16 @@ LinuxDriverFault(struct vm_area_struct *vma, //IN
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
    struct vm_area_struct *vma = fault->vma;
 #endif
-   VMLinux *vmLinux = (VMLinux *) vma->vm_file->private_data;
+   Device *device = (Device *) vma->vm_file->private_data;
    unsigned long pg;
    struct page* page;
 
    pg = fault->pgoff;
    pg = VMMON_MAP_OFFSET(pg);
-   if (pg >= vmLinux->size4Gb) {
+   if (pg >= device->size4Gb) {
       return VM_FAULT_SIGBUS;
    }
-   page = vmLinux->pages4Gb[pg];
+   page = device->pages4Gb[pg];
    get_page(page);
    fault->page = page;
    return 0;
@@ -640,7 +641,7 @@ LinuxDriverFault(struct vm_area_struct *vma, //IN
  *-----------------------------------------------------------------------------
  */
 
-static int LinuxDriverAllocContig(VMLinux *vmLinux,
+static int LinuxDriverAllocContig(Device *device,
                                   struct vm_area_struct *vma,
                                   unsigned long off,
                                   unsigned long size)
@@ -686,9 +687,9 @@ static int LinuxDriverAllocContig(VMLinux *vmLinux,
       return -ENOMEM;
    }
    /* Sorry. Only one mmap per one open. */
-   down(&vmLinux->lock4Gb);
-   if (vmLinux->size4Gb) {
-      up(&vmLinux->lock4Gb);
+   down(&device->lock4Gb);
+   if (device->size4Gb) {
+      up(&device->lock4Gb);
       return -EINVAL;
    }
    vmaAllocSize = 1 << vmaOrder;
@@ -696,18 +697,18 @@ static int LinuxDriverAllocContig(VMLinux *vmLinux,
       int err;
 
       err = LinuxDriverAllocPages(gfpFlag, vmaOrder,
-                                  vmLinux->pages4Gb + i, size - i);
+                                  device->pages4Gb + i, size - i);
       if (err) {
          while (i > 0) {
-            put_page(vmLinux->pages4Gb[--i]);
+            put_page(device->pages4Gb[--i]);
          }
-         up(&vmLinux->lock4Gb);
+         up(&device->lock4Gb);
 
          return err;
       }
    }
-   vmLinux->size4Gb = size;
-   up(&vmLinux->lock4Gb);
+   device->size4Gb = size;
+   up(&device->lock4Gb);
    vma->vm_ops = &vmuser_mops;
 
    return 0;
@@ -737,7 +738,7 @@ static int
 LinuxDriverMmap(struct file *filp,
                 struct vm_area_struct *vma)
 {
-   VMLinux *vmLinux = (VMLinux *) filp->private_data;
+   Device *device = (Device *) filp->private_data;
    unsigned long size;
    int err;
 
@@ -752,10 +753,10 @@ LinuxDriverMmap(struct file *filp,
    if (size < 1) {
       return -EINVAL;
    }
-   if (vmLinux->vm) {
+   if (device->vm) {
       err = -EINVAL;
    } else {
-      err = LinuxDriverAllocContig(vmLinux, vma, vma->vm_pgoff, size);
+      err = LinuxDriverAllocContig(device, vma, vma->vm_pgoff, size);
    }
    if (err) {
       return err;
@@ -1032,16 +1033,16 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
                   u_int iocmd,          // IN:
                   unsigned long ioarg)  // IN:
 {
-   VMLinux *vmLinux = (VMLinux *) filp->private_data;
+   Device *device = (Device *) filp->private_data;
    int retval = 0;
    Vcpuid vcpuid;
    VMDriver *vm;
 
-   if (vmLinux == NULL) {
+   if (device == NULL) {
       return -EINVAL;
    }
 
-   vm = vmLinux->vm;
+   vm = device->vm;
 
    /*
     * Validate the VM pointer for those IOCTLs that require it.
@@ -1093,12 +1094,12 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       if (retval != 0) {
          break;
       }
-      vm = Vmx86_CreateVM(args.bsBlob, args.bsBlobSize);
+      vm = Vmx86_CreateVM(args.bsBlob, args.bsBlobSize, args.numVCPUs);
 
       if (vm == NULL) {
          retval = -ENOMEM;
       } else {
-         vmLinux->vm = vm;
+         device->vm = vm;
          args.vmid = vm->userID;
          retval = HostIF_CopyToUser((VA64)ioarg, &args, sizeof args);
       }
@@ -1107,14 +1108,19 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
 
    case IOCTL_VMX86_PROCESS_BOOTSTRAP: {
       VMProcessBootstrapBlock *args;
+      VA64 uAddr;
       Bool res;
 
+      retval = HostIF_CopyFromUser(&uAddr, (VA64)ioarg, sizeof uAddr);
+      if (retval != 0) {
+         break;
+      }
       args = HostIF_AllocKernelMem(sizeof *args, TRUE);
       if (args == NULL) {
          retval = -ENOMEM;
          break;
       }
-      retval = HostIF_CopyFromUser(args, (VA64)ioarg, sizeof *args);
+      retval = HostIF_CopyFromUser(args, uAddr, sizeof *args);
       if (retval != 0) {
          HostIF_FreeKernelMem(args);
          break;
@@ -1134,22 +1140,27 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
    }
 
    case IOCTL_VMX86_RELEASE_VM:
-      vmLinux->vm = NULL;
+      device->vm = NULL;
       Vmx86_ReleaseVM(vm);
       break;
 
    case IOCTL_VMX86_INIT_VM: {
       InitBlock *initParams;
+      VA64 uAddr;
 
+      retval = HostIF_CopyFromUser(&uAddr, (VA64)ioarg, sizeof uAddr);
+      if (retval != 0) {
+         break;
+      }
       initParams = HostIF_AllocKernelMem(sizeof *initParams, TRUE);
       if (initParams == NULL) {
          retval = -ENOMEM;
          break;
       }
-      retval = HostIF_CopyFromUser(initParams, ioarg, sizeof *initParams);
+      retval = HostIF_CopyFromUser(initParams, uAddr, sizeof *initParams);
       if (retval == 0) {
          if (Vmx86_InitVM(vm, initParams) == 0) {
-            retval = HostIF_CopyToUser(ioarg, initParams, sizeof *initParams);
+            retval = HostIF_CopyToUser(uAddr, initParams, sizeof *initParams);
          } else {
             retval = -EINVAL;
          }
@@ -1176,18 +1187,7 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
 #endif
       break;
 
-   case IOCTL_VMX86_LOCK_PAGE: {
-      VMLockPage args;
-
-      retval = HostIF_CopyFromUser(&args, ioarg, sizeof args);
-      if (retval) {
-         break;
-      }
-      args.ret.status = Vmx86_LockPage(vm, args.uAddr, FALSE, &args.ret.mpn);
-      retval = HostIF_CopyToUser(ioarg, &args, sizeof args);
-      break;
-   }
-
+   case IOCTL_VMX86_LOCK_PAGE:
    case IOCTL_VMX86_LOCK_PAGE_NEW: {
       VMLockPage args;
 
@@ -1195,7 +1195,9 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       if (retval) {
          break;
       }
-      args.ret.status = Vmx86_LockPage(vm, args.uAddr, TRUE, &args.ret.mpn);
+      args.ret.status = Vmx86_LockPage(vm, args.uAddr,
+                                       iocmd == IOCTL_VMX86_LOCK_PAGE_NEW,
+                                       &args.ret.mpn);
       retval = HostIF_CopyToUser(ioarg, &args, sizeof args);
       break;
    }
@@ -1356,6 +1358,16 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       retval = -Vmx86_SetHostClockRate(vm, (unsigned)ioarg);
       break;
 
+   case IOCTL_VMX86_SEND_ONE_IPI: {
+      Vcpuid v = ioarg;
+      if (v < vm->numVCPUs) {
+         HostIF_OneIPI(vm, v);
+      } else {
+         retval = -EINVAL;
+      }
+      break;
+   }
+
    case IOCTL_VMX86_SEND_IPI: {
       VCPUSet ipiTargets;
 
@@ -1371,14 +1383,8 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
    case IOCTL_VMX86_GET_IPI_VECTORS: {
       IPIVectors ipiVectors;
 
-      ipiVectors.hostIPIVectors[0] = CALL_FUNCTION_VECTOR;
-#ifdef CALL_FUNCTION_SINGLE_VECTOR
-      ipiVectors.hostIPIVectors[1] = CALL_FUNCTION_SINGLE_VECTOR;
-#else
-      ipiVectors.hostIPIVectors[1] = 0;
-#endif
-      ipiVectors.monitorIPIVector = monitorIPIVector;
-      ipiVectors.hvIPIVector      = hvIPIVector;
+      ipiVectors.monitorIPIVector = HostIF_GetMonitorIPIVector();
+      ipiVectors.hvIPIVector      = HostIF_GetHVIPIVector();
 
       retval = HostIF_CopyToUser(ioarg, &ipiVectors, sizeof ipiVectors);
       break;
@@ -1484,22 +1490,16 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       break;
    }
 
-   case IOCTL_VMX86_ALLOC_LOCKED_PAGES:
-   case IOCTL_VMX86_FREE_LOCKED_PAGES: {
+   case IOCTL_VMX86_ALLOC_LOCKED_PAGES: {
          VMMPNList req;
 
          retval = HostIF_CopyFromUser(&req, ioarg, sizeof req);
          if (retval) {
-           break;
+            break;
          }
-         if (iocmd == IOCTL_VMX86_ALLOC_LOCKED_PAGES) {
-            retval = Vmx86_AllocLockedPages(vm, req.mpnList,
-                                            req.mpnCount, FALSE,
-                                            req.ignoreLimits);
-         } else {
-            retval = Vmx86_FreeLockedPages(vm, req.mpnList,
-                                           req.mpnCount, FALSE);
-         }
+         retval = Vmx86_AllocLockedPages(vm, req.mpnList,
+                                         req.mpnCount, FALSE,
+                                         req.ignoreLimits);
          break;
       }
 
@@ -1517,7 +1517,6 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
    }
 
    case IOCTL_VMX86_READ_PAGE: {
-         void *tempPage;
          VMMReadWritePage req;
 
          retval = HostIF_CopyFromUser(&req, ioarg, sizeof req);
@@ -1525,19 +1524,8 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
             break;
          }
 
-         tempPage = HostIF_AllocPage();
-         if (tempPage == NULL) {
-            retval = -ENOMEM;
-            break;
-         }
-
-         retval = HostIF_ReadPhysical(vm, MPN_2_MA(req.mpn),
-                                      PtrToVA64(tempPage), TRUE, PAGE_SIZE);
-         if (retval == 0) {
-            retval = HostIF_CopyToUser(req.uAddr, tempPage, PAGE_SIZE);
-         }
-
-         HostIF_FreePage(tempPage);
+         retval = HostIF_ReadPhysical(vm, MPN_2_MA(req.mpn), req.uAddr, FALSE,
+                                      PAGE_SIZE);
          break;
       }
 
@@ -1621,6 +1609,20 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       break;
    }
 
+   case IOCTL_VMX86_GET_MONITOR_CONTEXT: {
+      VMMonContext args;
+      retval = HostIF_CopyFromUser(&args, ioarg, sizeof args);
+      if (retval != 0) {
+         break;
+      }
+      if (!Vmx86_GetMonitorContext(vm, args.vcpuid, &args.context)) {
+         retval = -EINVAL;
+      } else {
+         retval = HostIF_CopyToUser(ioarg, &args, sizeof args);
+      }
+      break;
+   }
+
    default:
       Warning("Unknown ioctl %d\n", iocmd);
       retval = -EINVAL;
@@ -1636,7 +1638,7 @@ exit:
  *
  * LinuxDriverQueue --
  *
- *      add the vmLinux to the global queue
+ *      add the device to the global queue
  *
  * Results:
  *
@@ -1648,7 +1650,7 @@ exit:
  */
 
 static void
-LinuxDriverQueue(VMLinux *vmLinux)  // IN/OUT:
+LinuxDriverQueue(Device *device)  // IN/OUT:
 {
    /*
     * insert in global vm queue
@@ -1656,8 +1658,8 @@ LinuxDriverQueue(VMLinux *vmLinux)  // IN/OUT:
 
    HostIF_GlobalLock(12);
 
-   vmLinux->next = linuxState.head;
-   linuxState.head = vmLinux;
+   device->next = linuxState.head;
+   linuxState.head = device;
 
    HostIF_GlobalUnlock(12);
 }
@@ -1680,16 +1682,16 @@ LinuxDriverQueue(VMLinux *vmLinux)  // IN/OUT:
  */
 
 static void
-LinuxDriverDequeue(VMLinux *vmLinux)  // IN/OUT:
+LinuxDriverDequeue(Device *device)  // IN/OUT:
 {
-   VMLinux **p;
+   Device **p;
 
    HostIF_GlobalLock(13);
-   for (p = &linuxState.head; *p != vmLinux; p = &(*p)->next) {
+   for (p = &linuxState.head; *p != device; p = &(*p)->next) {
       ASSERT(*p != NULL);
    }
-   *p = vmLinux->next;
-   vmLinux->next = NULL;
+   *p = device->next;
+   device->next = NULL;
    HostIF_GlobalUnlock(13);
 }
 

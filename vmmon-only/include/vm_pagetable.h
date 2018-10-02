@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2014,2016 VMware, Inc. All rights reserved.
+ * Copyright (C) 2014-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -54,6 +54,7 @@ typedef enum {
    PT_LEVEL_2,
    PT_LEVEL_3,
    PT_LEVEL_4,
+   PT_LEVEL_STOP = PT_LEVEL_1,
    PT_MAX_LEVELS = PT_LEVEL_4
 } PT_Level;
 
@@ -63,6 +64,9 @@ typedef enum {
 #define PT_PTE_PFN_SHIFT      PAGE_SHIFT
 #define PT_ENTRIES_PER_PT     (1 << PT_LEVEL_SHIFT)
 #define PT_OFF_MASK           (PT_ENTRIES_PER_PT - 1)
+
+/* Align any page number type to the 2M containing page number. */
+#define PT_2M_ALIGN_PN(x)     ((x) & ~PT_OFF_MASK)
 
 /*
  * log2 of the

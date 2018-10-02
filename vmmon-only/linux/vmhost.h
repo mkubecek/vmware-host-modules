@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2002 VMware, Inc. All rights reserved.
+ * Copyright (C) 2002-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -79,22 +79,23 @@ typedef struct VMHost {
     */
    Mutex vmMutex;
 
-   unsigned int       crosspagePagesCount;
-   struct page        *crosspagePages[MAX_INITBLOCK_CPUS];
-   struct task_struct *vcpuSemaTask[MAX_INITBLOCK_CPUS];
+   unsigned int         crosspagePagesCount;
+   struct page        **crosspagePages;      /* ptr to numVCPUs-sized array */
+   struct task_struct **vcpuSemaTask;        /* ptr to numVCPUs-sized array */
+
    /*
     * Pages that were allocated/mapped by VMX and locked by the driver and
     * don't have a particular VA.
     */
-   struct PhysTracker *lockedPages;
+   struct PhysTracker  *lockedPages;
    /*
     * Locked pages that were allocated by the driver and don't have
     * a particular VA. They are used as monitor anonymous pages or
     * as pages for "AWE" guest memory.
     */
-   struct PhysTracker *AWEPages;
+   struct PhysTracker  *AWEPages;
    /* Is VMDriver.hostAPIC mapped or is from __fix_to_virt(FIX_APIC_BASE)? */
-   Bool               hostAPICIsMapped;
+   Bool                 hostAPICIsMapped;
 } VMHost;
 
 #endif

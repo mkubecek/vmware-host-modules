@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998,2015 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998,2015-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -121,7 +121,7 @@
 
 /*
  * Use APIC_MSR_BASEMASK as mask only for reading the MSR_APIC_BASE.
- * Use VMCORESHARED->reservedAPIC as mask when writing MSR_APIC_BASE.
+ * Use guestReservedAPIC as mask when writing MSR_APIC_BASE.
  */
 #define APIC_MSR_BASEMASK     CONST64U(0x0000fffffffff000)
 #define APIC_MSR_X2APIC_ENABLED 0x00000400

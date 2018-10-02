@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2011 VMware, Inc. All rights reserved.
+ * Copyright (C) 2011, 2016, 2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -17,7 +17,8 @@
  *********************************************************/
 
 #include "vmware.h"
-#include "hostif.h"
+#include "x86apic.h"
+#include "x86msr.h"
 #include "x86cpuid_asm.h"
 #include "vm_asm.h"
 #include "cpuid.h"
@@ -56,7 +57,7 @@ APIC_GetMA(void)
 
    if (cpuVendor != CPUID_VENDOR_INTEL &&
        cpuVendor != CPUID_VENDOR_AMD &&
-       cpuVendor != CPUID_VENDOR_VIA) {
+       cpuVendor != CPUID_VENDOR_HYGON) {
       return (MA)-1;
    }
 
@@ -78,14 +79,12 @@ APIC_GetMA(void)
 
    /*
     * On Intel, the high bits are reserved so we mask.
-    * On AMD, high bits are explicitly MBZ, so no need.
-    * Via doesn't specify, so we'll assume reserved.
+    * On AMD and Hygon, high bits are explicitly MBZ, so no need.
     */
-   if (cpuVendor == CPUID_VENDOR_INTEL || cpuVendor == CPUID_VENDOR_VIA) {
+   if (cpuVendor == CPUID_VENDOR_INTEL) {
       /*
        * Intel suggests using CPUID 0x80000008.eax[7-0] (physical
        * address size), with 36 (24 bit MPNs) as a fallback.
-       * Via has that cpuid leaf as well.
        */
       unsigned numPhysicalBits = 36;
 

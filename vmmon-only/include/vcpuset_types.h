@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2002-2013, 2016 VMware, Inc. All rights reserved.
+ * Copyright (C) 2002-2013, 2016-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -41,7 +41,7 @@
 #define VCS_SUBSET_WIDTH                                                   64
 #define VCS_SUBSET_SHIFT                                                    6
 #define VCS_SUBSET_MASK               ((CONST64U(1) << VCS_SUBSET_SHIFT) - 1)
-#define VCS_SUBSET_COUNT                                                    4
+#define VCS_SUBSET_COUNT                                                   32
 
 
 #define VCS_VCPUID_SUBSET_IDX(v)                    ((v) >> VCS_SUBSET_SHIFT)
@@ -56,11 +56,12 @@ typedef struct VCPUSet {
 } VCPUSet;
 
 MY_ASSERTS(VCPUSET_ASSERTS,
+           ASSERT_ON_COMPILE(VCS_SUBSET_WIDTH * VCS_SUBSET_COUNT >= MAX_VCPUS);
            /*
             * Catch changes in VCPUSet which need to be reflected in
             * bora/public/iocontrolsMacosTable.h.
             */
-           ASSERT_ON_COMPILE(VCS_SUBSET_COUNT == 4);
+           ASSERT_ON_COMPILE(VCS_SUBSET_COUNT == 32);
            /*
             * There is code that depends on sizeof(VCPUSet) being a power of
             * 2 in at least vcpuHotPlug.c and possible other places.

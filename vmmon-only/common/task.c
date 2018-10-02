@@ -89,8 +89,8 @@
    DEBUG_ONLY(if (!(t)) TaskAssertFail(__LINE__);)  \
 } while (0)
 
-static CrossGDT *crossGDT = NULL;
-static MPN crossGDTMPNs[CROSSGDT_NUMPAGES];
+static CrossGDT *crossGDT;
+static MPN crossGDTMPN;
 static Selector kernelStackSegment = 0;
 static uint32 dummyLVT;
 static Atomic_uint64 hvRootPage[MAX_PCPUS];
@@ -414,12 +414,12 @@ TaskAssertFail(int line)
 /*
  *-----------------------------------------------------------------------------
  *
- * TaskSaveGDT64 --
+ * TaskSaveGDT --
  *
  *      Save the current GDT in the caller-supplied struct.
  *
  * Results:
- *      *hostGDT64 = copy of the processor's GDT.
+ *      *hostGDT = copy of the processor's GDT.
  *
  * Side effects:
  *      None.
@@ -428,22 +428,21 @@ TaskAssertFail(int line)
  */
 
 static INLINE void
-TaskSaveGDT64(DTR64 *hostGDT64)  // OUT
+TaskSaveGDT(DTR64 *hostGDT)  // OUT
 {
-   hostGDT64->offset = 0;
-   _Get_GDT((DTR *)hostGDT64);
+   _Get_GDT((DTR *)hostGDT);
 }
 
 
 /*
  *-----------------------------------------------------------------------------
  *
- * TaskSaveIDT64 --
+ * TaskSaveIDT --
  *
  *      Save the current IDT in the caller-supplied struct.
  *
  * Results:
- *      *hostIDT64 = copy of the processor's IDT.
+ *      *hostIDT = copy of the processor's IDT.
  *
  * Side effects:
  *      None.
@@ -452,22 +451,21 @@ TaskSaveGDT64(DTR64 *hostGDT64)  // OUT
  */
 
 static INLINE void
-TaskSaveIDT64(DTR64 *hostIDT64)  // OUT
+TaskSaveIDT(DTR64 *hostIDT)  // OUT
 {
-   hostIDT64->offset = 0;
-   _Get_IDT((DTR *)hostIDT64);
+   _Get_IDT((DTR *)hostIDT);
 }
 
 
 /*
  *-----------------------------------------------------------------------------
  *
- * TaskLoadIDT64 --
+ * TaskLoadIDT --
  *
  *      Load the current IDT from the caller-supplied struct.
  *
  * Results:
- *      Processor's IDT = *hostIDT64.
+ *      Processor's IDT = *hostIDT.
  *
  * Side effects:
  *      None.
@@ -476,38 +474,9 @@ TaskSaveIDT64(DTR64 *hostIDT64)  // OUT
  */
 
 static INLINE void
-TaskLoadIDT64(DTR64 *hostIDT64)  // IN
+TaskLoadIDT(DTR64 *hostIDT)  // IN
 {
-   _Set_IDT((DTR *)hostIDT64);
-}
-
-
-/*
- *-----------------------------------------------------------------------------
- *
- * TaskCopyGDT64 --
- *
- *      Copy the given GDT contents to the caller-supplied buffer.
- *
- *      This routine assumes the caller has already verified there is enough
- *      room in the output buffer.
- *
- * Results:
- *      *out = copy of the processor's GDT contents.
- *
- * Side effects:
- *      None.
- *
- *-----------------------------------------------------------------------------
- */
-
-static INLINE void
-TaskCopyGDT64(DTR64 *hostGDT64,  // IN  GDT to be copied from
-              Descriptor *out)   // OUT where to copy contents to
-{
-   memcpy(out,
-          (void *)HOST_KERNEL_LA_2_VA((LA)hostGDT64->offset),
-          hostGDT64->limit + 1);
+   _Set_IDT((DTR *)hostIDT);
 }
 
 
@@ -516,13 +485,13 @@ TaskCopyGDT64(DTR64 *hostGDT64,  // IN  GDT to be copied from
  *
  * Task_Terminate --
  *
- *      Called at driver unload time.  Undoes whatever Task_Initialize did.
+ *      Called at driver unload time.  Frees memory for any allocated GDTs.
  *
  * Results:
  *      None.
  *
  * Side effects:
- *      Release temporary GDT memory.
+ *      None.
  *
  *-----------------------------------------------------------------------------
  */
@@ -533,7 +502,7 @@ Task_Terminate(void)
    TaskFreeHVRootPages();
 
    if (crossGDT != NULL) {
-      HostIF_FreeKernelPages(ARRAYSIZE(crossGDTMPNs), crossGDT);
+      HostIF_FreeKernelPages(1, crossGDT);
       crossGDT = NULL;
    }
 
@@ -548,6 +517,53 @@ Task_Terminate(void)
          }
       }
    }
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * TaskGetFlatWriteableDataSegment --
+ *
+ *      Searches the host GDT for a flat writeable data segment.  The limit and
+ *      granularity bits are not checked because both host and VMM are always
+ *      64-bit and SLC64 is not enabled by either.  Some operating systems
+ *      (e.g. Windows 10) set these values to zero, while most others set them
+ *      to 0xfffff (maximal limit) and 1 (coarse granularity) respectively.
+ *
+ * Results:
+ *      The selector of a flat writeable data segment or a NULL selector
+ *      if none was found.
+ *
+ * Side effects:
+ *      None.
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+Selector
+TaskGetFlatWriteableDataSegment(void)
+{
+   DTR hostGDTR;
+   Descriptor *desc;
+   Descriptor *start;
+   Descriptor *end;
+
+   GET_GDT(hostGDTR);
+   start = (Descriptor *)hostGDTR.offset;
+   end = start + hostGDTR.limit / sizeof *desc;
+
+   for (desc = start + 1; desc + 1 < end; desc++) {
+      if (DT_WRITEABLE_DATA(*desc) &&
+          Desc_GetBase(desc)  == 0 &&
+          Desc_S(desc)        == 1 &&
+          Desc_DPL(desc)      == 0 &&
+          Desc_Present(desc)  == 1 &&
+          Desc_DB(desc)       == 1) {
+         return (desc - start) * sizeof *desc;
+      }
+   }
+   return 0;
 }
 
 
@@ -572,7 +588,7 @@ Task_Initialize(void)
 {
    unsigned i;
 
-   ASSERT_ON_COMPILE(sizeof (Atomic_uint64) == sizeof (MPN));
+   ASSERT_ON_COMPILE(sizeof(Atomic_uint64) == sizeof(MPN));
    for (i = 0; i < ARRAYSIZE(hvRootPage); i++) {
       Atomic_Write64(&hvRootPage[i], INVALID_MPN);
    }
@@ -589,30 +605,10 @@ Task_Initialize(void)
     * read/write flat data segment.
     */
 
-   kernelStackSegment = GET_SS();
-   if (kernelStackSegment == 0) {
-      DTR hostGDTR;
-
-      GET_GDT(hostGDTR);
-      for (kernelStackSegment = 8;
-           kernelStackSegment + 7 <= hostGDTR.limit;
-           kernelStackSegment += 8) {
-         uint64 gdte = *(uint64 *)(hostGDTR.offset + kernelStackSegment);
-
-         if ((gdte & 0xFFCFFEFFFFFFFFFFULL) == 0x00CF92000000FFFFULL) {
-            goto gotnzss;
-         }
-      }
-      Warning("%s: no non-null flat kernel data GDT segment\n",
-              __FUNCTION__);
-
-      return FALSE;
-gotnzss:;
-   }
+   kernelStackSegment = TaskGetFlatWriteableDataSegment();
    if ((kernelStackSegment == 0) || ((kernelStackSegment & 7) != 0)) {
-           Warning("Task_Initialize: unsupported SS %04x\n",
-                   kernelStackSegment);
-         return FALSE;
+      Warning("Task_Initialize: unsupported SS %04x\n", kernelStackSegment);
+      return FALSE;
    }
 
    /*
@@ -659,7 +655,7 @@ gotnzss:;
 
 static INLINE_SINGLE_CALLER void
 TaskRestoreHostGDTTRLDT(Descriptor *tempGDTBase,
-                        DTR64 hostGDT64,
+                        DTR64 hostGDT,
                         Selector ldt,
                         Selector cs,
                         Selector tr)
@@ -668,18 +664,18 @@ TaskRestoreHostGDTTRLDT(Descriptor *tempGDTBase,
    TS_ASSERT((tr & 7) == 0);
 
    if (USE_TEMPORARY_GDT) {
-      DTR64 tempGDT64;
+      DTR64 tempGDT;
 
       /*
        * Set up a temporary GDT so that the TSS 'busy bit' can be
        * changed without affecting the host's data structures.
        */
 
-      const VA hostGDTVA  = HOST_KERNEL_LA_2_VA(hostGDT64.offset);
+      const VA hostGDTVA  = HOST_KERNEL_LA_2_VA(hostGDT.offset);
       const unsigned size = sizeof(Descriptor);
       const Selector ss   = SELECTOR_CLEAR_RPL(GET_SS());
 
-      ASSERT(hostGDTVA == HOST_KERNEL_LA_2_VA(hostGDT64.offset));
+      ASSERT(hostGDTVA == HOST_KERNEL_LA_2_VA(hostGDT.offset));
 
       ASSERT(SELECTOR_RPL(cs) == 0 && SELECTOR_TABLE(cs) == 0);
       ASSERT(SELECTOR_RPL(ss) == 0 && SELECTOR_TABLE(ss) == 0);
@@ -715,11 +711,11 @@ TaskRestoreHostGDTTRLDT(Descriptor *tempGDTBase,
        * then host LDT.
        */
 
-      tempGDT64.limit  = hostGDT64.limit;
-      tempGDT64.offset = HOST_KERNEL_VA_2_LA((VA)tempGDTBase);
-      _Set_GDT((DTR *)&tempGDT64);
+      tempGDT.limit  = hostGDT.limit;
+      tempGDT.offset = HOST_KERNEL_VA_2_LA((VA)tempGDTBase);
+      _Set_GDT((DTR *)&tempGDT);
       SET_TR(tr);
-      _Set_GDT((DTR *)&hostGDT64);
+      _Set_GDT((DTR *)&hostGDT);
       SET_LDT(ldt);
    } else {
       Descriptor *desc;
@@ -729,27 +725,28 @@ TaskRestoreHostGDTTRLDT(Descriptor *tempGDTBase,
        * in the host GDT, then restore host GDT and TR, then LDT.
        */
 
-      desc = (Descriptor *)((VA)HOST_KERNEL_LA_2_VA(hostGDT64.offset + tr));
+      desc = (Descriptor *)((VA)HOST_KERNEL_LA_2_VA(hostGDT.offset + tr));
 #ifdef LINUX_GDT_IS_RO
       /*
-       * If GDT is read-only, we must always load TR from alternative gdt,
-       * otherwise CPU gets page fault when marking TR busy.
+       * If the GDT is read-only, we must always load TR from alternative GDT.
+       * Otherwise the CPU gets a page fault when marking TR busy.
        */
       {
-         DTR64 rwGDT64;
+         DTR64 rwGDT;
 
-         rwGDT64.offset = (unsigned long)tempGDTBase;
-         rwGDT64.limit = hostGDT64.limit;
-         Desc_SetType((Descriptor *)((unsigned long)tempGDTBase + tr), TASK_DESC);
-         _Set_GDT((DTR *)&rwGDT64);
+         rwGDT.offset = (unsigned long)tempGDTBase;
+         rwGDT.limit = hostGDT.limit;
+         Desc_SetType((Descriptor *)((unsigned long)tempGDTBase + tr),
+                      TASK_DESC);
+         _Set_GDT((DTR *)&rwGDT);
          SET_TR(tr);
-         _Set_GDT((DTR *)&hostGDT64);
+         _Set_GDT((DTR *)&hostGDT);
       }
 #else
       if (Desc_Type(desc) == TASK_DESC_BUSY) {
          Desc_SetType(desc, TASK_DESC);
       }
-      _Set_GDT((DTR *)&hostGDT64);
+      _Set_GDT((DTR *)&hostGDT);
       SET_TR(tr);
 #endif
       SET_LDT(ldt);
@@ -816,6 +813,142 @@ TaskSwitchPTPLookupVPN(VMDriver *vm, VPN vpn)
 
    ASSERT(entry != NULL && entry->mpn != 0);
    return entry->mpn;
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * TaskApplyPTPatches --
+ *
+ *    Applies the page table patches to the monitor page tables. This is
+ *    only necessary before the first switch to the VMM. After that, it
+ *    is the VMM's responsibility to patch and unpatch its page tables
+ *    before/after doing a BackToHost.
+ *
+ *    For each populated patch, performs a page walk from L4 to the patch's
+ *    level.  The lowest allowed level is L3.  Invalid patch levels, collisions
+ *    at the patch's level with existing PTEs and non-present PTEs during the
+ *    walk all result in failure.
+ *
+ * Results:
+ *    TRUE if patching was successful, FALSE otherwise.
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+static Bool
+TaskApplyPTPatches(VMDriver *vm, VMCrossPageData *cpData)
+{
+   unsigned i;
+
+   for (i = 0; i < MAX_SWITCH_PT_PATCHES; i++) {
+      VMMPageTablePatch *patch = &cpData->vmmPTP[i];
+      unsigned l4idx = PT_LPN_2_L4OFF(patch->lpn);
+      unsigned l3idx = PT_LPN_2_L3OFF(patch->lpn);
+      PT_L4E pte;
+      MA ma = cpData->monCR3 + l4idx * sizeof pte; /* PTE machine address. */
+
+      if (patch->level == PTP_EMPTY) {
+         return TRUE; /* No more entries. */
+      }
+
+      if (HostIF_ReadPhysical(vm, ma, PtrToVA64(&pte), TRUE, sizeof pte) != 0) {
+         return FALSE;
+      }
+      switch (patch->level) {
+         case 4:
+            ASSERT(patch->pteIdx == l4idx);
+            if (pte != 0) {
+               return FALSE; /* Collision. */
+            }
+            if (HostIF_WritePhysical(vm, ma, PtrToVA64(&patch->pte), TRUE,
+                                     sizeof patch->pte) != 0) {
+               return FALSE;
+            }
+            break;
+         case 3:
+            ASSERT(patch->pteIdx == l3idx);
+            if (!PTE_PRESENT(pte)) {
+               return FALSE; /* Terminate page walk, L4 not present. */
+            }
+            ma = MPN_2_MA(LM_PTE_2_PFN(pte)) + l3idx * sizeof pte;
+            if (HostIF_ReadPhysical(vm, ma, PtrToVA64(&pte), TRUE,
+                                    sizeof pte) != 0) {
+               return FALSE;
+            }
+            if (pte != 0) {
+               return FALSE; /* Collision. */
+            }
+            if (HostIF_WritePhysical(vm, ma, PtrToVA64(&patch->pte), TRUE,
+                                     sizeof patch->pte) != 0) {
+               return FALSE;
+            }
+            break;
+         default:
+            return FALSE; /* Invalid level. */
+            break;
+      }
+   }
+   return TRUE;
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * TaskVerifyPTPatch --
+ *
+ *      Verify that the given 64-bit pagetable contains the given mapping.
+ *      Requires that the mapping is small (at L1).
+ *
+ * Result:
+ *      TRUE if the mapping is as expected, FALSE otherwise.
+ *
+ *-----------------------------------------------------------------------------
+ */
+static Bool
+TaskVerifyPTMap(VMDriver *vm,  // IN
+                MA64      cr3, // IN
+                LPN64     lpn, // IN LPN in mon PT to map
+                MPN       mpn) // IN MPN to which that LPN should map
+{
+   PT_L4E pte = cr3;
+   PT_Level i;
+   for (i = PT_LEVEL_4; i >= PT_LEVEL_1; i--) {
+      unsigned ptShiftBits = PT_LEVEL_SHIFT * (i - 1);
+      unsigned ptIdx = (lpn >> ptShiftBits) & 0x1ff;
+      pte &= LM_PTE_PFN_MASK;
+      if (HostIF_ReadPhysical(vm, pte + ptIdx * sizeof pte, PtrToVA64(&pte),
+                              TRUE, sizeof pte) != 0 || !PTE_PRESENT(pte)) {
+         return FALSE;
+      }
+   }
+   return LM_PTE_2_PFN(pte) == mpn;
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * MonitorVerifyPTPatches --
+ *
+ *    Verifies that the page table patches were correctly applied to the
+ *    VMM's page tables.
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+static Bool
+TaskVerifyPTPatches(VMDriver *vm,
+                    VMCrossPageData *cpData)
+{
+   LPN64 xgCPN = LA_2_LPN(cpData->vmmCrossGDTLA);
+   LPN64 xpCPN = LA_2_LPN(cpData->vmmCrossPageLA);
+   MPN   xpMPN = MA_2_MPN(cpData->crosspageMA);
+   MA    cr3   = cpData->monCR3;
+   return TaskVerifyPTMap(vm, cr3, xpCPN, xpMPN) &&
+          TaskVerifyPTMap(vm, cr3, xgCPN, crossGDTMPN);
 }
 
 
@@ -892,9 +1025,6 @@ TaskSetCrossGDTEntry(uint16 index, Descriptor d)
 
    if (index >= ARRAYSIZE(crossGDT->gdtes)) {
       Warning("%s: index %u too big\n", __FUNCTION__, index);
-   } else if (!CROSSGDT_TESTINDEXMASK(index)) {
-      Warning("%s: index %u not in CROSSGDT_PAGEMASK %x\n", __FUNCTION__,
-              index, CROSSGDT_PAGEMASK);
    } else if (!Desc_Present(crossGDT->gdtes + index)) {
       crossGDT->gdtes[index] = d;
       res = TRUE;
@@ -917,6 +1047,8 @@ TaskSetCrossGDTEntry(uint16 index, Descriptor d)
  * TaskSetCrossGDTVMM --
  *
  *      Initialize/compare the VMM portion of the crossGDT.
+ *      If any VMM entry overlaps with a previously defined
+ *      host entry (and they differ), we return failure.
  *
  * Results:
  *      TRUE if success, FALSE otherwise.
@@ -959,9 +1091,9 @@ TaskSetCrossGDTVMM(BSVMM_GDTInit *gdt)
  *
  * TaskSetCrossGDTHost --
  *
- *      Initializes the host portion of the crossGDT by copying it directly from
- *      the host kernel's GDT. We assume that all the host segments we
- *      will ever need are below CROSSGDT_HOSTLIMIT.
+ *      Initializes the host portion of the crossGDT by copying it directly
+ *      from the host kernel's GDT. We assume that all the host segments we
+ *      will ever need come from the first page of the host's GDT.
  *
  * Results:
  *      TRUE on success, FALSE otherwise.
@@ -975,20 +1107,16 @@ TaskSetCrossGDTVMM(BSVMM_GDTInit *gdt)
 static void
 TaskSetCrossGDTHost(void)
 {
+   unsigned len;
    DTR64 hostGDT;
    /*
     * All copied host segment descriptors will come from the first page of
     * the host kernel GDT.
     */
    ASSERT(HostIF_GlobalLockIsHeld());
-   ASSERT_ON_COMPILE(CROSSGDT_HOSTLIMIT <= PAGE_SIZE / sizeof(Descriptor));
-   ASSERT_ON_COMPILE(CROSSGDT_PAGEMASK & 1);
-
-   TaskSaveGDT64(&hostGDT);
-   if (hostGDT.limit > CROSSGDT_HOSTLIMIT * sizeof(Descriptor) - 1) {
-      hostGDT.limit = CROSSGDT_HOSTLIMIT * sizeof(Descriptor) - 1;
-   }
-   TaskCopyGDT64(&hostGDT, crossGDT->gdtes);
+   TaskSaveGDT(&hostGDT);
+   len = MIN((unsigned)hostGDT.limit + 1, sizeof(CrossGDT));
+   memcpy(crossGDT->gdtes, (void*)HOST_KERNEL_LA_2_VA((LA)hostGDT.offset), len);
 }
 
 
@@ -1012,6 +1140,8 @@ TaskSetCrossGDTHost(void)
 Bool
 Task_CreateCrossGDT(BSVMM_GDTInit *gdt)
 {
+   Bool populatedCrossGDT;
+
    HostIF_GlobalLock(2);
 
    if (crossGDT == NULL) {
@@ -1019,37 +1149,33 @@ Task_CreateCrossGDT(BSVMM_GDTInit *gdt)
        * The crossGDT has not yet been created. This must be the first
        * VM that this driver powers on.
        */
-      ASSERT_ON_COMPILE(sizeof *crossGDT == CROSSGDT_NUMPAGES * PAGE_SIZE);
-      crossGDT = HostIF_AllocKernelPages(ARRAYSIZE(crossGDTMPNs),
-                                         crossGDTMPNs);
+      ASSERT_ON_COMPILE(sizeof *crossGDT == PAGE_SIZE);
+      crossGDT = HostIF_AllocKernelPages(1, &crossGDTMPN);
       if (crossGDT == NULL) {
          HostIF_GlobalUnlock(2);
          Warning("%s: unable to allocate crossGDT\n", __FUNCTION__);
-
          return FALSE;
       }
       memset(crossGDT, 0, sizeof *crossGDT);
       TaskSetCrossGDTHost();
    }
-   if (!TaskSetCrossGDTVMM(gdt)) {
-      HostIF_GlobalUnlock(2);
-      return FALSE;
-   }
+
+   populatedCrossGDT = TaskSetCrossGDTVMM(gdt);
 
    HostIF_GlobalUnlock(2);
 
-   return TRUE;
+   return populatedCrossGDT;
 }
 
 
 /*
  *-----------------------------------------------------------------------------
  *
- * TaskFixupHostSwitchIDTE --
+ * TaskPopulateHostSwitchIDTE --
  *
- *      Fixes up a 64-bit host IDT entry in the crosspage, given the
- *      host kernel CS and the crosspage's code section address on the
- *      host.
+ *      Populates a host interrupt descriptor in the crosspage, setting its
+ *      handler to the associated gate stub, given a host code segment selector
+ *      and the crosspage.
  *
  * Results:
  *      None
@@ -1061,47 +1187,38 @@ Task_CreateCrossGDT(BSVMM_GDTInit *gdt)
  */
 
 static void
-TaskFixupHostSwitchIDTE(Gate64 *entry, Selector cs, VMCrossPageCode *cpCode)
+TaskPopulateHostSwitchIDTE(unsigned idx, Selector cs, VMCrossPage *cp)
 {
+   Gate64 *entry;
    VA64 handlerVA;
-   DEBUG_ONLY(const VA64 codeBase = offsetof(VMCrossPageCode, codeBlock);)
 
    ASSERT_ON_COMPILE(sizeof *entry == 16);
+   ASSERT(idx < NUM_EXCEPTIONS);
 
-   ASSERT(entry->segment      == 0 && entry->ist          == 0 &&
-          entry->reserved0    == 0 && entry->type         == INTER_GATE &&
-          entry->DPL          == 0 && entry->present      == 0 &&
-          entry->offset_16_31 == 0 && entry->offset_32_63 == 0 &&
-          entry->reserved1    == 0);
+   handlerVA = PtrToVA64(&cp->crosspageCode.gateStubs[idx * CP_STUB_SIZE]);
 
-   /*
-    * entry->offset_0_15 is initialized in crosspage.S with an offset relative
-    * to the crosspage's code section. Here, we transform it into an absolute
-    * address.
-    */
-   ASSERT(entry->offset_0_15 >= codeBase &&
-          entry->offset_0_15 < codeBase + sizeof cpCode->codeBlock);
-
-   handlerVA = PtrToVA64(cpCode) + entry->offset_0_15;
+   entry = &cp->crosspageData.switchHostIDT[idx];
 
    entry->offset_0_15  = LOWORD(handlerVA);
-   entry->segment      = cs;
-   entry->present      = 1;
    entry->offset_16_31 = HIWORD(handlerVA);
    entry->offset_32_63 = HIDWORD(handlerVA);
+   entry->type         = INTER_GATE;
+   entry->segment      = cs;
+   entry->present      = 1;
+   entry->ist          = 0;
+   entry->DPL          = 0;
+   entry->reserved0    = 0;
+   entry->reserved1    = 0;
 }
 
 
 /*
  *-----------------------------------------------------------------------------
  *
- *  TaskFixupHostSwitchIDT --
+ *  TaskInitHostSwitchIDT --
  *
- *      Fixes up the contents of the host-context switch IDT and IDTR,
- *      which were partially initialized at compile-time. At this point,
- *      we have the necessary runtime information needed to fully
- *      initialize them: the crosspage's address in the host and the
- *      host kernel's CS.
+ *      Initializes the contents of the host-context switch IDT and IDTR.
+ *      Uses the cross page's host kernel linear address and host kernel CS.
  *
  * Results:
  *      None
@@ -1113,21 +1230,18 @@ TaskFixupHostSwitchIDTE(Gate64 *entry, Selector cs, VMCrossPageCode *cpCode)
  */
 
 static void
-TaskFixupHostSwitchIDT(VMCrossPage *crosspage)
+TaskInitHostSwitchIDT(VMCrossPage *crosspage)
 {
    VMCrossPageData *cpData = &crosspage->crosspageData;
-   VMCrossPageCode *cpCode = &crosspage->crosspageCode;
    const Selector   cs     = cpData->hostInitial64CS;
-   Gate64          *idt    = (Gate64 *)&cpData->switchHostIDT;
 
-   ASSERT(cpData->switchHostIDTR.limit == sizeof cpData->switchHostIDT - 1);
-   ASSERT(cpData->switchHostIDTR.offset == 0);
+   cpData->switchHostIDTR.limit = sizeof cpData->switchHostIDT - 1;
    cpData->switchHostIDTR.offset = PtrToVA64(&cpData->switchHostIDT);
 
-   TaskFixupHostSwitchIDTE(&idt[EXC_DB ], cs, cpCode);
-   TaskFixupHostSwitchIDTE(&idt[EXC_NMI], cs, cpCode);
-   TaskFixupHostSwitchIDTE(&idt[EXC_UD ], cs, cpCode);
-   TaskFixupHostSwitchIDTE(&idt[EXC_MC ], cs, cpCode);
+   TaskPopulateHostSwitchIDTE(EXC_DB,  cs, crosspage);
+   TaskPopulateHostSwitchIDTE(EXC_NMI, cs, crosspage);
+   TaskPopulateHostSwitchIDTE(EXC_UD,  cs, crosspage);
+   TaskPopulateHostSwitchIDTE(EXC_MC,  cs, crosspage);
 }
 
 
@@ -1273,17 +1387,19 @@ TaskSavePTPatch(VMCrossPageData *crosspage,
    ASSERT(PTP_LEVEL_L1 <= level && level <= PTP_LEVEL_L4);
 
    for (i = 0; i < MAX_SWITCH_PT_PATCHES; ++i) {
-      ASSERT(crosspage->vmmPTP[i].level != level || /* No duplicates. */
-             crosspage->vmmPTP[i].pteGlobalIdx != pteGlobalIdx ||
-             crosspage->vmmPTP[i].pteIdx != pteIdx);
+      VMMPageTablePatch *patch = &crosspage->vmmPTP[i];
+      ASSERT(patch->level != level || /* No duplicates. */
+             patch->pteGlobalIdx != pteGlobalIdx ||
+             patch->pteIdx != pteIdx);
 
-      if (crosspage->vmmPTP[i].level == PTP_EMPTY) {
-         crosspage->vmmPTP[i].level = level;
-         crosspage->vmmPTP[i].pteIdx = pteIdx;
-         crosspage->vmmPTP[i].pte   = pte;
-         crosspage->vmmPTP[i].pteGlobalIdx = pteGlobalIdx;
+      if (patch->level == PTP_EMPTY) {
+         patch->level        = level;
+         patch->pteIdx       = pteIdx;
+         patch->pteGlobalIdx = pteGlobalIdx;
+         patch->lpn          = lpn;
+         patch->pte          = pte;
 
-         return &crosspage->vmmPTP[i];
+         return patch;
       }
    }
    Panic("Internal error: PTP table is full");
@@ -1459,36 +1575,22 @@ TaskCreatePTPatches(VMDriver    *vm,
                     uint16      *numPages)
 {
    VMCrossPageData * const cpData = &crosspage->crosspageData;
-   LPN64                   xgCPN  = LA_2_LPN(cpData->vmm64CrossGDTLA);
-   LPN64                   xpCPN  = LA_2_LPN(cpData->vmm64CrossPageLA);
+   LPN64                   xgCPN  = LA_2_LPN(cpData->vmmCrossGDTLA);
+   LPN64                   xpCPN  = LA_2_LPN(cpData->vmmCrossPageLA);
    MPN                     xpMPN  = MA_2_MPN(cpData->crosspageMA);
-   int                     i;
-
    /*
     * Set up patches that the BackToHost code will use to map the
     * crosspage and crossGDT at their crossover addresses (HKLA for
     * the host).
     */
-   if (!TaskCreatePTPatch(vm, cpData, monStartLPN, monEndLPN, xpCPN, xpMPN,
-                          numPages)) {
-      return FALSE;
+   if (TaskCreatePTPatch(vm, cpData, monStartLPN, monEndLPN,
+                         xpCPN, xpMPN, numPages) &&
+       TaskCreatePTPatch(vm, cpData, monStartLPN, monEndLPN,
+                         xgCPN, crossGDTMPN, numPages)) {
+      TaskFixupPTPatches(vm, cpData);
+      return TRUE;
    }
-
-   for (i = 0; CROSSGDT_PAGEMASK >> i; i++) {
-      if ((CROSSGDT_PAGEMASK >> i) & 1) {
-         /*
-          * Set up patches for just first and last pages of cross-gdt
-          * due to the selected value of CROSSGDT_PAGEMASK.
-          */
-         if (!TaskCreatePTPatch(vm, cpData, monStartLPN, monEndLPN, xgCPN + i,
-                                crossGDTMPNs[i], numPages)) {
-            return FALSE;
-         }
-      }
-   }
-   TaskFixupPTPatches(vm, cpData);
-
-   return TRUE;
+   return FALSE;
 }
 
 
@@ -1521,73 +1623,54 @@ Task_InitCrosspage(VMDriver *vm,          // IN
       return 1;
    }
 
-   initParams->crossGDTHKLA = HOST_KERNEL_VA_2_LA((VA)crossGDT);
-   ASSERT_ON_COMPILE(sizeof initParams->crossGDTMPNs == sizeof crossGDTMPNs);
-   memcpy(initParams->crossGDTMPNs, crossGDTMPNs, sizeof crossGDTMPNs);
+   initParams->crossGDTMPN = crossGDTMPN;
 
-   for (vcpuid = 0; vcpuid < initParams->numVCPUs;  vcpuid++) {
-      VA64         crossPageUserAddr = initParams->crosspage[vcpuid];
-      VMCrossPage *p                 = HostIF_MapCrossPage(vm, crossPageUserAddr);
-      MPN          crossPageMPN;
+   ASSERT(0 < vm->numVCPUs && vm->numVCPUs <= MAX_VCPUS);
+   for (vcpuid = 0; vcpuid < vm->numVCPUs; vcpuid++) {
+      VA64             crossPageUserAddr = initParams->crosspage[vcpuid];
+      VMCrossPage     *p = HostIF_MapCrossPage(vm, crossPageUserAddr);
+      VMCrossPageData *cpData;
+      MPN              crossPageMPN;
 
       if (p == NULL) {
          return 1;
       }
+      cpData = &p->crosspageData;
 
+      HostIF_VMLock(vm, 38);
       if (HostIF_LookupUserMPN(vm, crossPageUserAddr, &crossPageMPN) !=
           PAGE_LOOKUP_SUCCESS ||
           crossPageMPN == 0) {
+         HostIF_VMUnlock(vm, 38);
          return 1;
       }
+      HostIF_VMUnlock(vm, 38);
 
-      {
-         /* The version of the crosspage must be the first four
-          * bytes of the crosspage.  See the declaration
-          * of VMCrossPage in modulecall.h.
-          */
+      /*
+       * The version of the crosspage must be the first four bytes of the
+       * crosspage.  See the declaration of VMCrossPage in modulecall.h.
+       */
 
-         ASSERT_ON_COMPILE(offsetof(VMCrossPage, version) == 0);
-         ASSERT_ON_COMPILE(sizeof(p->version) == sizeof(uint32));
+      ASSERT_ON_COMPILE(offsetof(VMCrossPage, crosspageData.version) == 0);
+      ASSERT_ON_COMPILE(sizeof(cpData->version) == sizeof(uint32));
 
-         /* p->version is VMX's version; CROSSPAGE_VERSION is vmmon's. */
-         if (p->version != CROSSPAGE_VERSION) {
-            Warning("%s: crosspage version mismatch: vmmon claims %#x, must "
-                    "match vmx version of %#x.\n", __FUNCTION__,
-                    (int)CROSSPAGE_VERSION, p->version);
-            return 1;
-         }
-      }
-      {
-         /* The following constants are the size and offset of the
-          * VMCrossPage->crosspage_size field as defined by the
-          * vmm/vmx.
-          */
-
-         ASSERT_ON_COMPILE(offsetof(VMCrossPage, crosspage_size) ==
-                           sizeof(uint32));
-         ASSERT_ON_COMPILE(sizeof(p->crosspage_size) == sizeof(uint32));
-
-         if (p->crosspage_size != sizeof(VMCrossPage)) {
-            Warning("%s: crosspage size mismatch: vmmon claims %#x bytes, "
-                    "must match vmm size of %#x bytes.\n", __FUNCTION__,
-                    (unsigned)sizeof(VMCrossPage), p->crosspage_size);
-            return 1;
-         }
-      }
-
-      if (crossPageMPN > MA_2_MPN(0xFFFFFFFF)) {
-         Warning("%s*: crossPageMPN 0x%016" FMT64 "x invalid\n", __FUNCTION__,
-                 crossPageMPN);
+      /* cpData->version is VMX's version; CROSSPAGE_VERSION is vmmon's. */
+      if (cpData->version != CROSSPAGE_VERSION) {
+         Warning("%s: crosspage version mismatch: vmmon claims %#x, must "
+                 "match vmx version of %#x.\n", __FUNCTION__,
+                 (int)CROSSPAGE_VERSION, cpData->version);
          return 1;
       }
       if (!pseudoTSC.initialized) {
          Warning("%s*: PseudoTSC has not been initialized\n", __FUNCTION__);
          return 1;
       }
-      p->crosspageData.crosspageMA = (uint32)MPN_2_MA(crossPageMPN);
-      p->crosspageData.hostCrossPageLA = (LA64)(uintptr_t)p;
-      p->crosspageData.vmm64CrossPageLA = p->crosspageData.hostCrossPageLA;
-      p->crosspageData.vmm64CrossGDTLA = HOST_KERNEL_VA_2_LA((VA)crossGDT);
+      cpData->crosspageMA = MPN_2_MA(crossPageMPN);
+      cpData->hostCrossPageLA = (LA64)(uintptr_t)p;
+      cpData->vmmCrossPageLA = cpData->hostCrossPageLA;
+      cpData->vmmCrossGDTLA = HOST_KERNEL_VA_2_LA((VA)crossGDT);
+      cpData->crossGDTHKLADesc.offset = HOST_KERNEL_VA_2_LA((VA)crossGDT);
+      cpData->crossGDTHKLADesc.limit  = sizeof(CrossGDT) - 1;
 
       HostIF_VMLock(vm, 39);
       if (!TaskCreatePTPatches(vm, p,
@@ -1600,29 +1683,40 @@ Task_InitCrosspage(VMDriver *vm,          // IN
          return 1;
       }
       HostIF_VMUnlock(vm, 39);
+      if (!TaskApplyPTPatches(vm, cpData)) {
+         Warning("%s: Could not apply page table patches for VCPU %d\n",
+                 __FUNCTION__, vcpuid);
+         return 1;
+      }
+      if (!TaskVerifyPTPatches(vm, cpData)) {
+         Warning("%s: Page table patches for VCPU %d failed verification\n",
+                 __FUNCTION__, vcpuid);
+         return 1;
+      }
+
       /*
        * Pass our kernel code segment numbers back to MonitorPlatformInit.
        * They have to be in the GDT so they will be valid when the crossGDT is
        * active.
        */
 
-      p->crosspageData.hostInitial64CS = GET_CS();
-      TS_ASSERT(SELECTOR_RPL  (p->crosspageData.hostInitial64CS) == 0 &&
-                SELECTOR_TABLE(p->crosspageData.hostInitial64CS) == 0);
+      cpData->hostInitial64CS = GET_CS();
+      TS_ASSERT(SELECTOR_RPL  (cpData->hostInitial64CS) == 0 &&
+                SELECTOR_TABLE(cpData->hostInitial64CS) == 0);
 
-      p->crosspageData.moduleCallInterrupted = FALSE;
-      VersionedAtomic_BeginWrite(&p->crosspageData.pseudoTSCConv.vers);
-      p->crosspageData.pseudoTSCConv.p.mult  = 1;
-      p->crosspageData.pseudoTSCConv.p.shift = 0;
-      p->crosspageData.pseudoTSCConv.p.add   = 0;
-      VersionedAtomic_EndWrite(&p->crosspageData.pseudoTSCConv.vers);
-      p->crosspageData.worldSwitchPTSC       = Vmx86_GetPseudoTSC();
-      p->crosspageData.timerIntrTS           = MAX_ABSOLUTE_TS;
-      p->crosspageData.hstTimerExpiry        = MAX_ABSOLUTE_TS;
-      p->crosspageData.monTimerExpiry        = MAX_ABSOLUTE_TS;
-      vm->crosspage[vcpuid]                  = p;
+      cpData->moduleCallInterrupted = FALSE;
+      VersionedAtomic_BeginWrite(&cpData->pseudoTSCConv.vers);
+      cpData->pseudoTSCConv.p.mult  = 1;
+      cpData->pseudoTSCConv.p.shift = 0;
+      cpData->pseudoTSCConv.p.add   = 0;
+      VersionedAtomic_EndWrite(&cpData->pseudoTSCConv.vers);
+      cpData->worldSwitchPTSC       = Vmx86_GetPseudoTSC();
+      cpData->timerIntrTS           = MAX_ABSOLUTE_TS;
+      cpData->hstTimerExpiry        = MAX_ABSOLUTE_TS;
+      cpData->monTimerExpiry        = MAX_ABSOLUTE_TS;
+      vm->crosspage[vcpuid]         = p;
 
-      TaskFixupHostSwitchIDT(p);
+      TaskInitHostSwitchIDT(p);
    }
    /*
     * Report back to the VMX the number of pages allocated for this VM's
@@ -1983,8 +2077,11 @@ TaskUpdateLatestPTSC(VMDriver *vm, VMCrossPageData *crosspage)
             break;
          }
       } while (!Atomic_CMPXCHG64(&vm->ptscLatest, latest, ptsc));
-      /* After updating the latest PTSC, decrement the reference count. */
-      Atomic_Dec32((Atomic_uint32 *)&vm->ptscOffsetInfo.inVMMCnt);
+      /*
+       * vm->ptscOffsetInfo is composed of two dwords, {vcpuid, inVmmCnt}.
+       * After updating the latest PTSC, decrement the reference count.
+       */
+      Atomic_Dec64(&vm->ptscOffsetInfo);
    }
 }
 
@@ -2014,7 +2111,7 @@ TaskUpdatePTSCParameters(VMDriver *vm,
    uint64 tsc, ptsc;
 
    ASSERT_NO_INTERRUPTS();
-   ASSERT_ON_COMPILE(sizeof(vm->ptscOffsetInfo) == sizeof(Atomic_uint64));
+   ASSERT(vcpuid < vm->numVCPUs);
    ptsc = Vmx86_GetPseudoTSC();
    /*
     * Use unsigned comparison to test ptsc inside the interval:
@@ -2094,11 +2191,20 @@ TaskUpdatePTSCParameters(VMDriver *vm,
        * sleep state (otherwise the TSCs wouldn't be in sync to begin
        * with).
        */
-      PseudoTSCOffsetInfo old, new;
+      uint64 old;
+      uint32 newInVMMCnt;    /* Number of vcpus executing in the VMM. */
+      uint32 newVcpuid;      /* Index into VMDriver.ptscOffsets. */
       do {
-         old = vm->ptscOffsetInfo;
-         new = old;
-         if (new.inVMMCnt == 0) {
+         /*
+          * vm->ptscOffsetInfo is composed of two dwords, {vcpuid, inVmmCnt}.
+          * The inVmmCnt data needs to be the low dword because the inVmmCnt
+          * field is decremented in TaskUpdateLatestPTSC() as part of an
+          * atomic decrement of vm->ptscOffsetInfo.
+          */
+         old = Atomic_Read64(&vm->ptscOffsetInfo);
+         newInVMMCnt = LODWORD(old);
+         newVcpuid = HIDWORD(old);
+         if (newInVMMCnt == 0) {
             int64 ptscOffset;
             if (Vmx86_PseudoTSCUsesRefClock()) {
                /* Must read ptscLatest after reading ptscOffsetInfo. */
@@ -2122,14 +2228,14 @@ TaskUpdatePTSCParameters(VMDriver *vm,
              */
             vm->ptscOffsets[vcpuid] = ptscOffset;
             /* Try to use this thread's offset as the global offset. */
-            new.vcpuid = vcpuid;
+            newVcpuid = vcpuid;
          }
-         new.inVMMCnt++;
-      } while (!Atomic_CMPXCHG64((Atomic_uint64 *)&vm->ptscOffsetInfo,
-                                 *(uint64 *)&old, *(uint64 *)&new));
+         newInVMMCnt++;
+      } while (!Atomic_CMPXCHG64(&vm->ptscOffsetInfo, old,
+                                 QWORD(newVcpuid, newInVMMCnt)));
       /* Use the designated global offset as this thread's offset. */
       VersionedAtomic_BeginWrite(&crosspage->pseudoTSCConv.vers);
-      crosspage->pseudoTSCConv.p.add   = vm->ptscOffsets[new.vcpuid];
+      crosspage->pseudoTSCConv.p.add = vm->ptscOffsets[newVcpuid];
       VersionedAtomic_EndWrite(&crosspage->pseudoTSCConv.vers);
       /*
        * Need to derive the worldSwitchPTSC value from TSC since the
@@ -2139,7 +2245,7 @@ TaskUpdatePTSCParameters(VMDriver *vm,
       ptsc = tsc + crosspage->pseudoTSCConv.p.add;
    } else {
       VersionedAtomic_BeginWrite(&crosspage->pseudoTSCConv.vers);
-      crosspage->pseudoTSCConv.p.add   = ptsc - tsc;
+      crosspage->pseudoTSCConv.p.add = ptsc - tsc;
       VersionedAtomic_EndWrite(&crosspage->pseudoTSCConv.vers);
    }
    /* Cache PTSC value for BackToHost. */
@@ -2190,8 +2296,7 @@ TaskUpdatePTSCParameters(VMDriver *vm,
 static INLINE_SINGLE_CALLER void
 TaskSwitchToMonitor(VMCrossPage *crosspage)
 {
-   const uint8 *codePtr = ((uint8 *)&crosspage->crosspageCode +
-                           crosspage->crosspageCode.offsets.hostToVmm);
+   const void *codePtr = ((void *)&crosspage->crosspageCode.toVmmFunc);
 
 #if defined(__GNUC__)
    /*
@@ -2362,7 +2467,7 @@ Task_Switch(VMDriver *vm,  // IN
    uint64      kgs64 = 0;
    uint64      ptMSR = 0;
    uint64      pebsMSR = 0;
-   DTR64       hostGDT64, hostIDT64;
+   DTR64       hostGDT, hostIDT;
    Selector    cs, ds, es, fs, gs, ss;
    Selector    hostTR;
    Selector    hostLDT;
@@ -2370,7 +2475,7 @@ Task_Switch(VMDriver *vm,  // IN
    Bool lint1NMI;
    Bool pcNMI;
    Bool thermalNMI;
-   VMCrossPage *crosspage = vm->crosspage[vcpuid];
+   VMCrossPage *crosspage;
    uint32 pCPU;
    MPN hvRootMPN;
    Descriptor *tempGDTBase;
@@ -2379,6 +2484,9 @@ Task_Switch(VMDriver *vm,  // IN
    uint64 readSpecCtrlValue = 0;
    static volatile uint64 currentSpecCtrlValue = 0;
 #endif
+
+   ASSERT(vcpuid < vm->numVCPUs);
+   crosspage = vm->crosspage[vcpuid];
 
    ASSERT_ON_COMPILE(sizeof(VMCrossPage) == PAGE_SIZE);
    TaskDisableNMI(&vm->hostAPIC, &lint0NMI, &lint1NMI, &pcNMI, &thermalNMI);
@@ -2414,7 +2522,7 @@ Task_Switch(VMDriver *vm,  // IN
          MA foreignVMCS  = ~0ULL;
          MA foreignHSAVE = ~0ULL;
 
-         vm->currentHostCpu[vcpuid] = pCPU;
+         Atomic_Write32(&vm->currentHostCpu[vcpuid], pCPU);
 
          TaskUpdatePTSCParameters(vm, &crosspage->crosspageData, vcpuid);
 
@@ -2446,11 +2554,11 @@ Task_Switch(VMDriver *vm,  // IN
           * few are handled).
           */
 
-         TaskSaveIDT64(&hostIDT64);
-         TaskLoadIDT64(&crosspage->crosspageData.switchHostIDTR);
+         TaskSaveIDT(&hostIDT);
+         TaskLoadIDT(&crosspage->crosspageData.switchHostIDTR);
          TaskTestCrossPageExceptionHandlers(crosspage);
 
-         if (CPUID_GetVendor() == CPUID_VENDOR_INTEL) {
+         if (CPUID_HostSupportsVT()) {
             /*
              * Ensure that VMX is enabled and locked in the feature control MSR,
              * so that we can set CR4.VMXE to activate VMX.
@@ -2486,7 +2594,7 @@ Task_Switch(VMDriver *vm,  // IN
          /*
           * CR4.VMXE must be enabled to support VMX in the monitor.
           */
-         if (CPUID_GetVendor() == CPUID_VENDOR_INTEL) {
+         if (CPUID_HostSupportsVT()) {
             crosspage->crosspageData.wsCR4 |= CR4_VMXE;
          }
 
@@ -2516,9 +2624,9 @@ Task_Switch(VMDriver *vm,  // IN
 
          TaskSaveDebugRegisters(crosspage);
 
-         TaskSaveGDT64(&hostGDT64);
+         TaskSaveGDT(&hostGDT);
 
-         if (CPUID_GetVendor() == CPUID_VENDOR_INTEL) {
+         if (CPUID_HostSupportsVT()) {
             MA vmxonRegion = MPN_2_MA(hvRootMPN);
             VMXStatus status = VMXON_2_STATUS(&vmxonRegion);
             if (status == VMX_Success) {
@@ -2528,7 +2636,7 @@ Task_Switch(VMDriver *vm,  // IN
             }
          }
 
-         if (CPUID_GetVendor() == CPUID_VENDOR_AMD) {
+         if (CPUID_HostSupportsSVM()) {
             efer = __GET_MSR(MSR_EFER);
             if ((efer & MSR_EFER_SVME) == 0) {
                __SET_MSR(MSR_EFER, efer | MSR_EFER_SVME);
@@ -2604,12 +2712,14 @@ Task_Switch(VMDriver *vm,  // IN
             crosspage->crosspageData.specCtrl = __GET_MSR(MSR_SPEC_CTRL);
          }
 
-         DEBUG_ONLY(crosspage->crosspageData.tinyStack[0] = 0xDEADBEEF;)
+         DEBUG_ONLY(crosspage->crosspageData.monTinyStack[0] = 0xDEADBEEF;)
+         DEBUG_ONLY(crosspage->crosspageData.hostTinyStack[0] = 0xDEADBEEF;)
          /* Running in host context prior to TaskSwitchToMonitor() */
          TaskSwitchToMonitor(crosspage);
          /* Running in host context after to TaskSwitchToMonitor() */
 
-         TS_ASSERT(crosspage->crosspageData.tinyStack[0] == 0xDEADBEEF);
+         TS_ASSERT(crosspage->crosspageData.monTinyStack[0] == 0xDEADBEEF);
+         TS_ASSERT(crosspage->crosspageData.hostTinyStack[0] == 0xDEADBEEF);
 
 #ifdef CYCLE_SPEC_CTRL
          if (CPUID_HostSupportsSpecCtrl()) {
@@ -2639,7 +2749,7 @@ Task_Switch(VMDriver *vm,  // IN
             TaskEnableTF();
          }
 
-         if (CPUID_GetVendor() == CPUID_VENDOR_AMD) {
+         if (CPUID_HostSupportsSVM()) {
             __SET_MSR(MSR_VM_HSAVE_PA, foreignHSAVE);
             if ((efer & MSR_EFER_SVME) == 0) {
                __SET_MSR(MSR_EFER, efer);
@@ -2682,8 +2792,7 @@ Task_Switch(VMDriver *vm,  // IN
           * bit needs to be fiddled with.  Also restore host LDT while we're
           * at it.
           */
-         TaskRestoreHostGDTTRLDT(tempGDTBase, hostGDT64,
-                                 hostLDT, cs, hostTR);
+         TaskRestoreHostGDTTRLDT(tempGDTBase, hostGDT, hostLDT, cs, hostTR);
 
          SET_DS(ds);
          SET_ES(es);
@@ -2714,7 +2823,7 @@ Task_Switch(VMDriver *vm,  // IN
           * iff we disabled it.
           */
 
-         TaskLoadIDT64(&hostIDT64);
+         TaskLoadIDT(&hostIDT);
 
          if (pebsMSR != 0) {
             __SET_MSR(IA32_MSR_PEBS_ENABLE, pebsMSR);
@@ -2725,7 +2834,7 @@ Task_Switch(VMDriver *vm,  // IN
          }
 
          TaskUpdateLatestPTSC(vm, &crosspage->crosspageData);
-         vm->currentHostCpu[vcpuid] = INVALID_PCPU;
+         Atomic_Write32(&vm->currentHostCpu[vcpuid], INVALID_PCPU);
 
          /*
           * If an #NMI or #MCE was logged while switching, re-raise such an
@@ -2756,7 +2865,7 @@ Task_Switch(VMDriver *vm,  // IN
             RAISE_INTERRUPT(EXC_MC);
          }
          if (UNLIKELY(TaskGotException(crosspage, EXC_UD))) {
-            Warning("#UD occurred on switch back to host; dumping core");
+            Warning("#UD occurred on switch back to host; dumping core.\n");
          }
 #ifdef CYCLE_SPEC_CTRL
          if (UNLIKELY(!specCtrlEqual)) {

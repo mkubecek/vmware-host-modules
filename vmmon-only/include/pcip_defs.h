@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2009-2014 VMware, Inc. All rights reserved.
+ * Copyright (C) 2009-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -65,16 +65,6 @@ typedef struct FPTIntrProxyInfo {
    uint32            adapterIndex;
    uint32            vectorIndex;
    MonitorIdemAction actionID;
-   uint32 _pad0;
-
-   /*
-    * These addresses are only needed for hosted platforms, where our kernel
-    * modules lack a SharedArea API.
-    */
-#ifndef VMX86_SERVER
-   VA64              notifyUVA;
-   VA64              vectorIndexUVA;
-#endif
 } FPTIntrProxyInfo;
 
 typedef struct UPTIntrProxyInfo {

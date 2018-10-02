@@ -41,14 +41,17 @@
 #include "modulecallstructs.h"
 #include "mon_assert.h"
 
-#define NUM_EXCEPTIONS 20       /* EXC_DE ... EXC_XF. */
- 
+#define NUM_EXCEPTIONS   20     /* EXC_DE ... EXC_XF. */
+#define CP_STUB_SIZE 16     /* A relative jmp instruction (5 bytes)
+                               padded to the next 16 byte boundary. */
+
 #define MODULECALL_TABLE                                                      \
    MC(INTR)                                                                   \
    MC(SEMAWAIT)                                                               \
    MC(SEMASIGNAL)                                                             \
    MC(SEMAFORCEWAKEUP)                                                        \
-   MC(IPI)          /* Hit thread with IPI. */                                \
+   MC(IPI)          /* Hit multiple threads with IPI. */                      \
+   MC(ONE_IPI)      /* Hit a single thread with IPI. */                       \
    MC(USERRETURN)   /* Return codes for user calls. */                        \
    MC(GET_RECYCLED_PAGES)                                                     \
    MC(RELEASE_ANON_PAGES)                                                     \
@@ -58,7 +61,12 @@
    MC(ALLOC_TMP_GDT)                                                          \
    MC(PIN_MPN)                                                                \
    MC(VMCLEAR_VMCS_ALL_CPUS)                                                  \
-   MC(GET_PAGE_ROOT)
+   MC(GET_PAGE_ROOT)                                                          \
+   MC(ALLOC_ANON_LOW_PAGE)                                                    \
+   MC(GET_MON_IPI_VECTOR)                                                     \
+   MC(GET_HV_IPI_VECTOR)                                                      \
+   MC(GET_HOST_TIMER_VECTORS)                                                 \
+   MC(BOOTSTRAP_CLEANUP)
 
 /*
  *----------------------------------------------------------------------
@@ -66,9 +74,6 @@
  * ModuleCallType --
  *
  *      Enumeration of support calls done by the module.
- *
- *      If anything changes in the enum, please update kstatModuleCallPtrs
- *      for stats purposes.
  *
  *----------------------------------------------------------------------
  */
@@ -126,15 +131,6 @@ typedef enum UCCostStamp {
 } UCCostStamp;
 #endif // VMX86_SERVER
 
-typedef
-#include "vmware_pack_begin.h"
-struct CodeOffsets {
-   uint16 hostToVmm;
-   uint16 vmmToHost;
-}
-#include "vmware_pack_end.h"
-CodeOffsets;
-
 #define SHADOW_DR(cpData, n)    (cpData)->shadowDR[n].ureg64
 
 
@@ -143,12 +139,12 @@ CodeOffsets;
  * MAX_SWITCH_PT_PATCHES
  *
  *   This is the maximum number of patches that must be placed into
- *   the monitor page tables so that two pages of the host GDT and the
- *   crosspage can be accessed during worldswitch.
+ *   the monitor page tables so that the host GDT and the crosspage
+ *   can be accessed during worldswitch.
  *
  *----------------------------------------------------------------------
  */
-#define MAX_SWITCH_PT_PATCHES 3
+#define MAX_SWITCH_PT_PATCHES 2
 
 /*----------------------------------------------------------------------
  *
@@ -214,12 +210,30 @@ struct VMMPageTablePatch {
    uint32   level;              /* [0, 4]  (maximal size: 3 bits) */
    uint32   pteIdx;             /* Index of the PTE in the page table. */
    uint64   pteGlobalIdx;       /* Global index of the PTE in 'level'. */
+   LPN      lpn;                /* Logical page number mapped by patch. */
    VM_PDPTE pte;                /* PTE.                                */
 }
 #include "vmware_pack_end.h"
 VMMPageTablePatch;
 
 #define MODULECALL_NUM_ARGS  4
+
+/*
+ * The cross page contains tiny stacks upon which interrupt and exception
+ * handlers in the switch path may temporarily run.  Each stack must be
+ * large enough for the sum of:
+ *
+ * - 1 #DB exception frame (5 * uint64)
+ * - 1 #NMI exception frame (5 * uint64)
+ * - 1 #MCE exception frame (5 * uint64)
+ * - the largest stack use instantaneously possible by #MCE handling code
+ * - the largest stack use instantaneously possible by #NMI handling code
+ * - the largest stack use instantaneously possible by #DB handling code
+ * - one high-water uint32 used to detect stack overflows when debugging
+ *
+ * 184 bytes is slightly more than enough as of 2015/03/17 -- fjacobs.
+ */
+#define TINY_STACK_SIZE      184
 
 /*
  *----------------------------------------------------------------------
@@ -233,72 +247,71 @@ VMMPageTablePatch;
 typedef
 #include "vmware_pack_begin.h"
 struct VMCrossPageData {
+   uint32   version;           // CROSSPAGE_VERSION
+   uint32   vmmonVersion;      // VMMON_VERSION
+
    /*
-    * A tiny stack upon which interrupt and exception handlers in the switch
-    * path temporarily run.  Keep the end 16-byte aligned.  This stack must
-    * be large enough for the sum of:
-    *
-    * - 1 #DB exception frame (5 * uint64)
-    * - 1 #NMI exception frame (5 * uint64)
-    * - 1 #MCE exception frame (5 * uint64)
-    * - the largest stack use instantaneously possible by #MCE handling code
-    * - the largest stack use instantaneously possible by #NMI handling code
-    * - the largest stack use instantaneously possible by #DB handling code
-    * - one high-water uint32 used to detect stack overflows when debugging
-    * - remaining pad bytes to align to 16 bytes
-    *
-    * 184 bytes is slightly more than enough as of 2015/03/17 -- fjacobs.
+    * The following stacks and contexts are ordered for performance and code
+    * simplicity.  Both HostToVmm and VmmToHost strictly require this ordering.
+    * For any change to this data, both functions must be updated.
+    * Use VMX86_UCCOST to measure performance when changing the layout.
     */
-   uint32   tinyStack[46];
 
-   uint64   hostCR3;
-   uint32   crosspageMA;
-
-   uint8    hostDRSaved;        // Host DR spilled to hostDR[x].
-   uint8    hostDRInHW;         // 0 -> shadowDR in h/w, 1 -> hostDR in h/w.
-                                //   contains host-sized DB,NMI,MCE entries
-   uint16   hostSS;
-   uint64   hostRSP;
-   uint64   hostDR[8];
+   /* A tiny stack and the host context. */
+   uint64   hostTinyStack[TINY_STACK_SIZE / sizeof(uint64)];
+   uint64   hostCR3; /* Edge of context saved/restored in assembly. */
    uint64   hostRBX;
+   uint64   hostRBP;
    uint64   hostRSI;
    uint64   hostRDI;
-   uint64   hostRBP;
    uint64   hostR12;
    uint64   hostR13;
    uint64   hostR14;
    uint64   hostR15;
+   uint64   hostRSP;
+   uint16   hostSS;  /* Edge of context saved/restored in assembly. */
+   uint16   hostDS;  /* Not saved/restored in assembly switch */
+   uint16   hostES;  /* Not saved/restored in assembly switch */
+   uint16   hostPad;
+
+   /* A tiny stack and the monitor context. */
+   uint64   monTinyStack[TINY_STACK_SIZE / sizeof(uint64)];
+   uint64   monCR3; /* Edge of context saved/restored in assembly. */
+   uint64   monRBX;
+   uint64   monRBP;
+   uint64   monR12;
+   uint64   monR13;
+   uint64   monR14;
+   uint64   monR15;
+   uint64   monRSP;
+   uint16   monSS;  /* Edge of context saved/restored in assembly. */
+   uint16   monDS;  /* Not saved/restored in assembly switch */
+   uint16   monES;  /* Not saved/restored in assembly switch */
+   uint16   monPad;
+
+   uint64   crosspageMA;
+
+   uint64   hostDR[8];
    LA64     hostCrossPageLA;   // where host has crosspage mapped
    uint16   hostInitial64CS;
-   uint16   _pad0[3];
+   uint8    hostDRSaved;       // Host DR spilled to hostDR[x].
+   uint8    hostDRInHW;        // 0 -> shadowDR in h/w, 1 -> hostDR in h/w.
+   uint32   _pad0;
 
    uint64   wsCR0;
    uint64   wsCR4;
 
    DTR64    crossGDTHKLADesc;   // always uses host kernel linear address
    uint16   _pad1[3];
-   DTR64    mon64GDTR;
-   uint16   mon64ES;
-   uint16   mon64SS;
-   uint16   mon64DS;
-   uint64   mon64CR3;
-   uint64   mon64RBX;
-   uint64   mon64RSP;
-   uint64   mon64RBP;
-   uint64   mon64RSI;
-   uint64   mon64RDI;
-   uint64   mon64R12;
-   uint64   mon64R13;
-   uint64   mon64R14;
-   uint64   mon64R15;
-   uint64   mon64RIP;
-   Task64   monTask64;          /* vmm64's task */
+   DTR64    monGDTR;
+   uint16   _pad2[3];
+   /* A hardcoded value for monitor %rip which facilitates backtraces. */
+   uint64   monRIP;
+   Task64   monTask;          /* vmm's task */
 
    VMMPageTablePatch vmmPTP[MAX_SWITCH_PT_PATCHES]; /* page table patch */
-   LA64              vmm64CrossPageLA;
-   LA64              vmm64CrossGDTLA;   // where crossGDT mapped by PT patch
-                                        //  64-bit host: host kernel linear
-                                        // address
+   LA64              vmmCrossPageLA;
+   LA64              vmmCrossGDTLA;   // where crossGDT is mapped by PT patch
 
    /*
     * The monitor may requests up to two actions when returning to the
@@ -318,11 +331,11 @@ struct VMCrossPageData {
    int            userCallType;
    uint32         pcpuNum;   /* Used as extra module call arg within vmmon. */
 
-   VCPUSet        yieldVCPUs;
-
 #if !defined(VMX86_SERVER)
    uint64 ucTimeStamps[UCCOST_MAX];
 #endif
+
+   SwitchedMSRState switchedMSRState;
 
    /*
     * The values in the shadow debug registers must match those in the
@@ -333,8 +346,11 @@ struct VMCrossPageData {
    SharedUReg64     shadowDR[8];
    uint8            shadowDRInHW; // bit n set iff %DRn == shadowDR[n]
 
-   SwitchedMSRState switchedMSRState;
-   uint8            _pad2[7];
+   /* TRUE if no bits are set in yieldVCPUs, FALSE otherwise. */
+   Bool             yieldVCPUsIsEmpty;
+   uint8            _pad3[6];
+
+   VCPUSet          yieldVCPUs;
 
    /*
     * Adjustment for machines where the hardware TSC does not run
@@ -357,22 +373,22 @@ struct VMCrossPageData {
     * restart RunVM call, nobody else should look at it.
     */
    Bool     moduleCallInterrupted;
-   uint8    _pad3[6];
+   uint8    _pad4[6];
 
    DTR64    switchHostIDTR;   // baseLA = switchHostIDT's host kernel LA
-   uint16   _pad4[3];
-   DTR64    switchMonIDTR;    // baseLA = switchMonIDT's monitor LA
    uint16   _pad5[3];
+   DTR64    switchMonIDTR;    // baseLA = switchMonIDT's monitor LA
+   uint16   _pad6[3];
 
    /*
     * Descriptors and interrupt tables for switchNMI handlers.  Each
     * IDT has only enough space for the hardware exceptions; they are
     * sized to accommodate 64-bit descriptors.
     */
-   uint8 switchHostIDT[sizeof(Gate64) * NUM_EXCEPTIONS]; // hostCS:hostVA
-   uint8 switchMonIDT[sizeof(Gate64) * NUM_EXCEPTIONS];  // monCS:monVA
-
+   Gate64 switchHostIDT[NUM_EXCEPTIONS];      // hostCS:hostVA
+   Gate64 switchMonIDT[NUM_EXCEPTIONS];       // monCS:monVA
    volatile Bool wsException[NUM_EXCEPTIONS]; // Tracks faults in worldswitch.
+   uint8         _pad7[4];
    uint64        wsUD2;                       // IP of ud2 instr or 0 if unset.
    uint64        specCtrl; /* host MSR_SPEC_CTRL value before world switch. */
 }
@@ -389,13 +405,19 @@ VMCrossPageData;
  *
  *----------------------------------------------------------------------
  */
+
+#define CODE_BLOCK_SIZE (PAGE_SIZE - sizeof(VMCrossPageData) - \
+                         (2 + NUM_EXCEPTIONS) * CP_STUB_SIZE)
+
 typedef
 #include "vmware_pack_begin.h"
 struct VMCrossPageCode {
-   uint16        size;           // Size of the code module.
-   uint32        vmmonVersion;   // VMMON_VERSION
-   CodeOffsets   offsets;        // Offsets to handlers.
-   uint8         codeBlock[512]; // Code for worldswitch and fault handling.
+   uint8         toVmmFunc[CP_STUB_SIZE];    // Fixed-position stubs to jump
+   uint8         toHostFunc[CP_STUB_SIZE];   // to world switch functions
+   uint8         gateStubs[NUM_EXCEPTIONS *
+                           CP_STUB_SIZE];    // Stubs for crossIDT.
+   uint8         codeBlock[CODE_BLOCK_SIZE]; // Code for worldswitch and
+                                             // fault handling.
 }
 #include "vmware_pack_end.h"
 VMCrossPageCode;
@@ -408,10 +430,10 @@ VMCrossPageCode;
  *
  *      Data structure shared between the monitor and the module
  *      that is used for crossing between the two.
- *      Accessible as vm->cross (kernel module) and CROSS_PAGE
+ *      Accessible as vm->crosspage (kernel module) and CROSS_PAGE
  *      (monitor)
  *
- *      Exactly one page long
+ *      Must be exactly one page long.
  *
  *----------------------------------------------------------------------
  */
@@ -419,19 +441,13 @@ VMCrossPageCode;
 typedef
 #include "vmware_pack_begin.h"
 struct VMCrossPage {
-   uint32          version;         /* 4 bytes. Must be at offset zero. */
-   uint32          crosspage_size;  /* 4 bytes. Must be at offset 4.    */
    VMCrossPageData crosspageData;
    VMCrossPageCode crosspageCode;
-   uint8           _pad[PAGE_SIZE - (sizeof(uint32) /* version */        +
-                                     sizeof(uint32) /* crosspage_size */ +
-                                     sizeof(VMCrossPageData)             +
-                                     sizeof(VMCrossPageCode))];
 }
 #include "vmware_pack_end.h"
 VMCrossPage;
 
-#define CROSSPAGE_VERSION_BASE 0xbfc /* increment by 1 */
+#define CROSSPAGE_VERSION_BASE 0xc09 /* increment by 1 */
 #define CROSSPAGE_VERSION    ((CROSSPAGE_VERSION_BASE << 1) + WS_INTR_STRESS)
 
 #if !defined(VMX86_SERVER) && defined(VMM)

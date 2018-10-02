@@ -48,7 +48,11 @@ typedef uint8  NUMA_MemRangeID;
  */
 #define NUMA_MAX_NODES              64
 #define NUMA_MAX_CPUS_PER_NODE      (vmx86_server ? MAX_PCPUS : 32)
-#define NUMA_MAX_MEM_RANGES         (vm_arm_64 ? 128 : 64)
+#ifdef VMKBOOT
+#define NUMA_MAX_MEM_RANGES         64
+#else
+#define NUMA_MAX_MEM_RANGES         256
+#endif
 #define INVALID_NUMANODE            ((NUMA_Node)-1)
 #define NUMA_NODE_MASK_ANY          ((NUMA_NodeMask)-1)
 #define NUMA_NODE_MASK_NONE         ((NUMA_NodeMask)0)
@@ -69,5 +73,11 @@ typedef struct NUMA_MemRangesList {
    uint64        numMemRanges;
    NUMA_MemRange memRange[NUMA_MAX_MEM_RANGES];
 } NUMA_MemRangesList;
+
+
+typedef struct NUMA_MemRangesListRef {
+   uint64        numMemRanges;
+   const NUMA_MemRange *memRange;
+} NUMA_MemRangesListRef;
 
 #endif // _NUMA_DEFS_H

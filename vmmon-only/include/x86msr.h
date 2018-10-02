@@ -42,6 +42,7 @@
 extern "C" {
 #endif
 
+#define SIZEOF_X86_MSR     8
 
 /*
  * Results of calling rdmsr(msrNum) on all logical processors.
@@ -82,6 +83,7 @@ MSRQuery;
 #define MSR_PLATFORM_ID       0x00000017
 #define MSR_APIC_BASE         0x0000001b
 #define MSR_SMI_COUNT         0x00000034 // Intel Nehalem Family
+#define MSR_CORE_THREAD_COUNT 0x00000035 // Intel Nehalem Family +
 #define MSR_FEATCTL           0x0000003a
 #define MSR_TSC_ADJUST        0x0000003b
 #define MSR_SPEC_CTRL         0x00000048
@@ -119,11 +121,10 @@ MSRQuery;
 #define MSR_ARCH_CAPABILITIES_IBRS_ALL            (1ULL << 1)
 #define MSR_ARCH_CAPABILITIES_RSBA                (1ULL << 2)
 
-#define MSR_FLUSH_CMD                        0x10b
-#define MSR_FLUSH_CMD_FLUSH_L1D              1
 
 #define MSR_SPEC_CTRL_IBRS                        (1UL << 0)
 #define MSR_SPEC_CTRL_STIBP                       (1UL << 1)
+
 #define MSR_PRED_CMD_IBPB                         (1UL << 0)
 
 #define MSR_MISC_FEATURES_ENABLES            0x140
@@ -388,6 +389,17 @@ typedef enum {
 #define MSR_SGX_SVN_STATUS_SINIT_SVN     CONST64U(0xff0000)
 #define MSR_SGX_SVN_STATUS_RSVD          CONST64U(0xffffffffff00fffe)
 
+/*
+ * SGX Flexible Launch Control MSRs.
+ * These MSRs store hash of Launch Enclave's public key.
+ */
+#define MSR_SGXLEPUBKEYHASH0  0x0000008c
+#define MSR_SGXLEPUBKEYHASH1  0x0000008d
+#define MSR_SGXLEPUBKEYHASH2  0x0000008e
+#define MSR_SGXLEPUBKEYHASH3  0x0000008f
+
+#define NUM_SGXLEPUBKEYHASH_MSRs (4)
+
 /* MSR_CR_PAT power-on value */
 #define MSR_CR_PAT_DEFAULT   0x0007040600070406ULL
 
@@ -426,6 +438,7 @@ typedef enum {
 #define MSR_FEATCTL_VMXE     0x00000004
 #define MSR_FEATCTL_SENTERP  0x00007F00
 #define MSR_FEATCTL_SENTERE  0x00008000
+#define MSR_FEATCTL_FLCE     0x00020000
 #define MSR_FEATCTL_SGXE     0x00040000
 #define MSR_FEATCTL_LMCE     0x00100000
 
@@ -478,6 +491,8 @@ typedef enum {
 #define MSR_GH_PSTATE4           0xc0010068  // P-state 4
 #define MSR_GH_COFVID_CONTROL    0xc0010070  // COFVID Control Register
 #define MSR_GH_COFVID_STATUS     0xc0010071  // COFVID Status Register
+
+#define MSR_AMD_MCA_INTR_CFG     0xc0000410  // MCA Interrupt Configuration
 
 /* SVM related MSRs */
 #define MSR_VM_CR                  0xc0010114
@@ -601,6 +616,8 @@ typedef enum {
 
 #define MTRR_MASK_VALID       0x800
 
+typedef unsigned char MTRRType;
+
 #define MTRR_TYPE_UC          0
 #define MTRR_TYPE_WC          1
 #define MTRR_TYPE_WT          4
@@ -609,6 +626,13 @@ typedef enum {
 /* PAT Memory Type Only */
 /* UC- is equivalent to UC, except that the MTRR values take precedence */
 #define MTRR_TYPE_UCM         7
+
+/*
+ * This value is marked as reserved in the Intel manual. We use it to
+ * specify that type is unknown as it is very unlikely that Intel will
+ * use this value. Note that linux is taking the same liberty.
+ */
+#define MTRR_TYPE_UNKNOW     0xff
 
 /*
  * PERF_STATUS bits

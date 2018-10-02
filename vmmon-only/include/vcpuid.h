@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014, 2016 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014, 2016-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -50,9 +50,9 @@ typedef uint32 Vcpuid;                 // VCPU number
 #define BOOT_VCPU_ID     0
 #define IS_BOOT_VCPUID(vcpuid)  ((vcpuid) == BOOT_VCPU_ID)
 
-#define MAX_VCPUS      192
-
+#define MAX_VCPUS            2048
 #define MAX_CORES_PER_SOCKET   64
+#define MAX_VCPU_SOCKETS      128
 
 #ifdef VMM
 #include "vcpuset.h"

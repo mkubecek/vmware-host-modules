@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014,2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -97,6 +97,7 @@ extern PTSCInfo ptscInfo;
 Bool PTSC_Init(uint64 tscHz);
 VmAbsoluteTS PTSC_InitialCount(const char *module,
                                const char *option,
+                               Bool stress,
                                VmIntervalTS freq,
                                VmAbsoluteTS defaultCnt);
 Bool PTSC_HasPerfectlySynchronizedTSCs(void);

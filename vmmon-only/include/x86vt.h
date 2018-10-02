@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2004-2016 VMware, Inc. All rights reserved.
+ * Copyright (C) 2004-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -286,7 +286,7 @@ enum {
    VMX_CPU2(INVPCID,            12)                      \
    VMX_CPU2(VMFUNC,             13)                      \
    VMX_CPU2(VMCS_SHADOW,        14)                      \
-   VMX_CPU2(ENCL,               15)                      \
+   VMX_CPU2(ENCLS,              15)                      \
    VMX_CPU2(RDSEED,             16)                      \
    VMX_CPU2(PML,                17)                      \
    VMX_CPU2(EPT_VIOL_VE,        18)                      \
@@ -640,7 +640,7 @@ enum {
 #define VT_HOLDOFF_MOVSS       0x00000002
 #define VT_HOLDOFF_SMI         0x00000004
 #define VT_HOLDOFF_NMI         0x00000008
-#define VT_HOLDOFF_ENCLAVE     0x00000010
+#define VT_ENCLAVE_INTR        0x00000010
 #define VT_HOLDOFF_INST        (VT_HOLDOFF_STI | VT_HOLDOFF_MOVSS)
 #define VT_HOLDOFF_RSV         0xFFFFFFE0
 
@@ -668,6 +668,7 @@ enum {
 #define VT_EPT_QUAL_GUEST_RW           (1 << 10)
 #define VT_EPT_QUAL_GUEST_NX           (1 << 11)
 #define VT_EPT_QUAL_NMIUNMASK          (1 << 12)
+#define VT_EPT_QUAL_SYNTH_PML_FULL     (1 << 31)
 
 
 /* IOIO Qualification */
@@ -753,6 +754,10 @@ enum {
 #define VT_TSQUAL_JMP   2
 #define VT_TSQUAL_GATE  3
 
+/* PML Constants */
+#define VT_MAX_PML_INDEX   511
+#define VT_PML_ENTRY_MASK  (~(QWORD(0, PAGE_MASK)))
+
 typedef union {
    struct {
       unsigned selVal:16;
@@ -814,6 +819,23 @@ typedef union {
    } bits;
    uint32 flat;
 } VTIOQualifier;
+
+#define VT_APICACCESSQUAL_TYPE_LINEAR_READ  0
+#define VT_APICACCESSQUAL_TYPE_LINEAR_WRITE 1
+#define VT_APICACCESSQUAL_TYPE_LINEAR_INSTR 2
+#define VT_APICACCESSQUAL_TYPE_LINEAR_EVENT 3
+#define VT_APICACCESSQUAL_TYPE_PHYS_EVENT   10
+#define VT_APICACCESSQUAL_TYPE_PHYS_INSTR   15
+
+/* APIC Access intercept qualifier */
+typedef union {
+   struct {
+      uint64 offset:12;
+      uint64 type  :4;
+      uint64 rsvd  :48;
+   } bits;
+   uint64 flat;
+} VTAPICAccessQualifier;
 
 #define VT_IINFO_SCALE1    0
 #define VT_IINFO_SCALE2    1
@@ -1081,11 +1103,8 @@ VT_SupportedCPU(void)
                                       __GET_MSR(MSR_VMX_TRUE_EXIT_CTLS),
                                       __GET_MSR(MSR_VMX_BASIC));
    } else {
-      return VT_SupportedFromFeatures(__GET_MSR(MSR_VMX_PINBASED_CTLS),
-                                      __GET_MSR(MSR_VMX_PROCBASED_CTLS),
-                                      __GET_MSR(MSR_VMX_ENTRY_CTLS),
-                                      __GET_MSR(MSR_VMX_EXIT_CTLS),
-                                      __GET_MSR(MSR_VMX_BASIC));
+      /* Bug 1914425 - VMM no longer supports CPUs without TRUE_xxx_CTLS */
+      return FALSE;
    }
 }
 
@@ -1140,6 +1159,5 @@ VT_ConfigMSRNum(unsigned index)
    ASSERT(index < NUM_VMX_MSRS);
    return MSR_VMX_BASIC + index;
 }
-
 
 #endif /* _X86VT_H_ */
