@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -42,6 +42,7 @@
 #include "driver_vmcore.h"
 #include "usercalldefs.h"
 #include "cpuid.h"
+#include "vmmblob.h"
 
 /*
  *----------------------------------------------------------------------
@@ -72,10 +73,12 @@ Vmx86_RunVM(VMDriver *vm,   // IN:
             Vcpuid vcpuid)  // IN:
 {
    uint32           retval    = MODULECALL_USERRETURN;
-   VMCrossPageData *crosspage = &vm->crosspage[vcpuid]->crosspageData;
+   VMCrossPageData *crosspage;
    int              bailValue = 0;
 
-   ASSERT(crosspage && CPUID_HostSupportsHV());
+   ASSERT(vcpuid < vm->numVCPUs && CPUID_HostSupportsHV());
+   crosspage = &vm->crosspage[vcpuid]->crosspageData;
+   ASSERT(crosspage);
 
    /*
     * Check if we were interrupted by signal.
@@ -98,13 +101,13 @@ Vmx86_RunVM(VMDriver *vm,   // IN:
        * Wake up anything that was waiting for this vcpu to run
        */
 
-      if ((VCPUSet_IsEmpty(&crosspage->yieldVCPUs) &&
+      if ((crosspage->yieldVCPUsIsEmpty &&
            crosspage->moduleCallType != MODULECALL_COSCHED) ||
           crosspage->moduleCallType == MODULECALL_SEMAWAIT) {
          HostIF_WakeUpYielders(vm, vcpuid);
       }
 
-      if (!VCPUSet_IsEmpty(&crosspage->yieldVCPUs) &&
+      if (!crosspage->yieldVCPUsIsEmpty &&
           crosspage->moduleCallType != MODULECALL_COSCHED &&
           crosspage->moduleCallType != MODULECALL_SEMAWAIT) {
          Vmx86_YieldToSet(vm, vcpuid, &crosspage->yieldVCPUs, 0, TRUE);
@@ -150,6 +153,12 @@ skipTaskSwitch:;
          break;
       }
 
+      case MODULECALL_ALLOC_ANON_LOW_PAGE: {
+         // Return via 64-bit args[0] (may return INVALID_MPN).
+         crosspage->args[0] = Vmx86_AllocLowPage(vm, FALSE);
+         break;
+      }
+
       case MODULECALL_SEMAWAIT: {
          retval = HostIF_SemaphoreWait(vm, vcpuid, crosspage->args);
 
@@ -177,10 +186,13 @@ skipTaskSwitch:;
          break;
       }
 
+      case MODULECALL_ONE_IPI: {
+         Vcpuid v = (Vcpuid)crosspage->args[0];
+         HostIF_OneIPI(vm, v);
+         break;
+      }
       case MODULECALL_IPI: {
-         HostIFIPIMode mode;
-         mode = HostIF_IPI(vm, &crosspage->vcpuSet);
-         retval = (mode != IPI_NONE);
+         HostIF_IPI(vm, &crosspage->vcpuSet);
          break;
       }
 
@@ -258,6 +270,26 @@ skipTaskSwitch:;
          Vcpuid targetVcpuid = (Vcpuid)crosspage->args[0];
          retval = Vmx86_GetPageRoot(vm, targetVcpuid, &mpn);
          crosspage->args[0] = mpn;
+      } break;
+
+      case MODULECALL_GET_MON_IPI_VECTOR: {
+         retval = HostIF_GetMonitorIPIVector();
+      } break;
+
+      case MODULECALL_GET_HV_IPI_VECTOR: {
+         retval = HostIF_GetHVIPIVector();
+      } break;
+
+      case MODULECALL_GET_HOST_TIMER_VECTORS: {
+         uint8 v0, v1;
+         HostIF_GetTimerVectors(&v0, &v1);
+         crosspage->args[0] = v0;
+         crosspage->args[1] = v1;
+      } break;
+
+      case MODULECALL_BOOTSTRAP_CLEANUP: {
+         VmmBlob_Cleanup(vm->blobInfo);
+         vm->blobInfo = NULL;
       } break;
 
       default:

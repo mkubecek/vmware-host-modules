@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -177,6 +177,8 @@ static struct {
    put_page(pfn_to_page(_pfn));                          \
 } while (0)
 
+static void UnlockEntry(void *clientData, MemTrackEntry *entryPtr);
+
 uint8 monitorIPIVector;
 uint8 hvIPIVector;
 
@@ -340,6 +342,7 @@ Bool
 HostIF_PrepareWaitForThreads(VMDriver *vm,     // IN:
                              Vcpuid currVcpu)  // IN:
 {
+   ASSERT(currVcpu < vm->numVCPUs);
    set_current_state(TASK_INTERRUPTIBLE);
    vm->vmhost->vcpuSemaTask[currVcpu] = current;
    return FALSE;
@@ -392,6 +395,7 @@ void
 HostIF_CancelWaitForThreads(VMDriver *vm,     // IN:
                             Vcpuid currVcpu)  // IN:
 {
+   ASSERT(currVcpu < vm->numVCPUs);
    vm->vmhost->vcpuSemaTask[currVcpu] = NULL;
    set_current_state(TASK_RUNNING);
 }
@@ -430,17 +434,19 @@ HostIF_WakeUpYielders(VMDriver *vm,     // IN:
     * fully coherent snapshot, as long as the subset copy-and-remove is atomic
     * so no VCPU added is lost entirely.
     */
-
+   ASSERT(currVcpu < vm->numVCPUs);
    VCPUSet_Empty(&req);
-   FOR_EACH_SUBSET_IN_SET(subIdx) {
+   FOR_EACH_POPULATED_SUBSET_IN_SET(subIdx, vm->numVCPUs) {
       subset = VCPUSet_AtomicReadWriteSubset(&vm->crosscallWaitSet[currVcpu],
                                              0, subIdx);
       VCPUSet_UnionSubset(&req, subset, subIdx);
-   } ROF_EACH_SUBSET_IN_SET();
+   } ROF_EACH_POPULATED_SUBSET_IN_SET();
 
    preempt_disable();
    while ((vcpuid = VCPUSet_FindFirst(&req)) != VCPUID_INVALID) {
-      struct task_struct *t = vm->vmhost->vcpuSemaTask[vcpuid];
+      struct task_struct *t;
+      ASSERT(vcpuid < vm->numVCPUs);
+      t = vm->vmhost->vcpuSemaTask[vcpuid];
       VCPUSet_Remove(&req, vcpuid);
       if (t && (t->state & TASK_INTERRUPTIBLE)) {
          wake_up_process(t);
@@ -909,39 +915,171 @@ HostIF_FreeLockedPages(VMDriver *vm,         // IN: VM instance pointer
 /*
  *----------------------------------------------------------------------
  *
+ * HostIF_AllocLowPage --
+ *
+ *      Allocate a zeroed locked low page.
+ *
+ * Results:
+ *      Allocated MPN on success. INVALID_MPN on failure.
+ *
+ *----------------------------------------------------------------------
+ */
+
+MPN
+HostIF_AllocLowPage(VMDriver *vm) //  IN: VM instance pointer
+{
+   unsigned int gfpFlag;
+   struct page* pg;
+   MPN mpn = INVALID_MPN;
+
+#ifdef GFP_DMA32
+   gfpFlag = GFP_USER | GFP_DMA32;
+#else
+   gfpFlag = GFP_USER | GFP_DMA;
+#endif
+
+   pg = alloc_page(gfpFlag);
+
+   if (pg != NULL) {
+      void *addr;
+      VMHost *vmh;
+
+      // zero page
+      addr = kmap(pg);
+      memset(addr, 0, PAGE_SIZE);
+      kunmap(pg);
+
+      mpn = (MPN)page_to_pfn(pg);
+
+      HostIF_VMLock(vm, 40);
+      vmh = vm->vmhost;
+      if (vmh->AWEPages != NULL) {
+         if (PhysTrack_Test(vmh->AWEPages, mpn)) {
+            Warning("%s: duplicate MPN %016" FMT64 "x\n", __func__, mpn);
+         }
+         PhysTrack_Add(vmh->AWEPages, mpn);
+      } else {
+         __free_page(pg);
+         mpn = INVALID_MPN;
+      }
+      HostIF_VMUnlock(vm, 40);
+   }
+   return mpn;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * HostIFFreeVMHost --
+ *
+ *      Releases the memory allocated for the host-dependent part of
+ *      the driver.
+ *
+ * Results:
+ *      None
+ *
+ * Side effects:
+ *      None
+ *
+ *----------------------------------------------------------------------
+ */
+
+static void
+HostIFFreeVMHost(VMHost *vmhost) // IN:
+{
+   ASSERT(vmhost->lockedPages == NULL &&
+          vmhost->AWEPages    == NULL &&
+          vmhost->crosspagePagesCount == 0 &&
+          !vmhost->hostAPICIsMapped);
+   Vmx86_Free(vmhost->crosspagePages);
+   Vmx86_Free(vmhost->vcpuSemaTask);
+   vmhost->crosspagePages = NULL;
+   vmhost->vcpuSemaTask   = NULL;
+   HostIF_FreeKernelMem(vmhost);
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * HostIFAllocVMHost --
+ *
+ *      Allocate memory for the host-dependent part of the driver.
+ *
+ * Results:
+ *      Pointer to allocated structure on success, NULL on error.
+ *
+ * Side effects:
+ *      None
+ *
+ *----------------------------------------------------------------------
+ */
+
+static VMHost *
+HostIFAllocVMHost(uint32 numVCPUs) // IN:
+{
+   VMHost *vmhost = Vmx86_Calloc(1, sizeof *vmhost, TRUE);
+   if (vmhost == NULL) {
+      return NULL;
+   }
+   if ((vmhost->crosspagePages =
+        Vmx86_Calloc(numVCPUs, sizeof *vmhost->crosspagePages, TRUE)) != NULL &&
+       (vmhost->vcpuSemaTask =
+        Vmx86_Calloc(numVCPUs, sizeof *vmhost->vcpuSemaTask, TRUE))   != NULL) {
+      return vmhost;
+   }
+   HostIFFreeVMHost(vmhost);
+   return NULL;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * HostIF_Init --
  *
  *      Initialize the host-dependent part of the driver.
  *
  * Results:
- *     zero on success, non-zero on error.
+ *      zero on success, non-zero on error.
  *
  * Side effects:
- *     None
+ *      None
  *
  *----------------------------------------------------------------------
  */
 
 int
-HostIF_Init(VMDriver *vm)  // IN:
+HostIF_Init(VMDriver *vm, uint32 numVCPUs)
 {
    vm->memtracker = MemTrack_Init(vm);
    if (vm->memtracker == NULL) {
       return -1;
    }
 
-   vm->vmhost = (VMHost *) HostIF_AllocKernelMem(sizeof *vm->vmhost, TRUE);
+   vm->vmhost = HostIFAllocVMHost(numVCPUs);
    if (vm->vmhost == NULL) {
-      return -1;
+      goto error;
    }
-   memset(vm->vmhost, 0, sizeof *vm->vmhost);
 
-   if (HostIFHostMemInit(vm)) {
-      return -1;
+   if (HostIFHostMemInit(vm) != 0) {
+      goto error;
    }
    MutexInit(&vm->vmhost->vmMutex, "vm");
 
    return 0;
+error:
+   if (vm->vmhost != NULL) {
+      HostIFHostMemCleanup(vm);
+      HostIFFreeVMHost(vm->vmhost);
+      vm->vmhost = NULL;
+   }
+   if (vm->memtracker != NULL) {
+      MemTrack_Cleanup(vm->memtracker, UnlockEntry, vm);
+      vm->memtracker = NULL;
+   }
+   return -1;
 }
 
 
@@ -1310,6 +1448,7 @@ HostIF_FreeAllResources(VMDriver *vm) // IN
       vm->memtracker = NULL;
    }
    if (vm->vmhost) {
+      ASSERT(vm->vmhost->crosspagePagesCount <= vm->numVCPUs);
       for (cnt = vm->vmhost->crosspagePagesCount; cnt > 0; ) {
          struct page* p = vm->vmhost->crosspagePages[--cnt];
          UnmapCrossPage(p, vm->crosspage[cnt]);
@@ -1321,7 +1460,7 @@ HostIF_FreeAllResources(VMDriver *vm) // IN
          vm->hostAPIC.base = NULL;
          vm->vmhost->hostAPICIsMapped = FALSE;
       }
-      HostIF_FreeKernelMem(vm->vmhost);
+      HostIFFreeVMHost(vm->vmhost);
       vm->vmhost = NULL;
    }
 }
@@ -1908,15 +2047,10 @@ HostIF_CopyToUser(VA64 dst,         // OUT
  *
  * HostIF_MapCrossPage --
  *
- *    Obtain kernel pointer to crosspage.
- *
- *    We must return a VA that is obtained through a kernel mapping, so that
- *    the mapping never goes away (see bug 29753).
- *
- *    However, the LA corresponding to that VA must not overlap with the
- *    monitor (see bug 32922). The userland code ensures that by only
- *    allocating cross pages from low memory. For those pages, the kernel
- *    uses a permanent mapping, instead of a temporary one with a high LA.
+ *    Map the cross page in the kernel address space given a user VA.  The
+ *    kernel mapping must not overlap the monitor's 64MB VA space (bug 32922).
+ *    In practice, the host kernel does not return mappings in that range.
+ *    This is checked in TaskCreatePTPatch() which gracefully fails if it must.
  *
  * Results:
  *    The kernel virtual address on success
@@ -1942,7 +2076,7 @@ HostIF_MapCrossPage(VMDriver *vm, // IN
    }
    vPgAddr = (VA) MapCrossPage(page);
    HostIF_VMLock(vm, 27);
-   if (vm->vmhost->crosspagePagesCount >= MAX_INITBLOCK_CPUS) {
+   if (vm->vmhost->crosspagePagesCount >= vm->numVCPUs) {
       HostIF_VMUnlock(vm, 27);
       UnmapCrossPage(page, (void*)vPgAddr);
 
@@ -1962,7 +2096,8 @@ HostIF_MapCrossPage(VMDriver *vm, // IN
  *
  * HostIF_AllocKernelPages --
  *
- *      Allocates and maps a set of locked pages.
+ *      Allocates and maps a set of locked pages. The pages might not
+ *      be physically contiguous.
  *
  * Results:
  *      On success: Host kernel virtual address of the first page.
@@ -1981,27 +2116,16 @@ void *
 HostIF_AllocKernelPages(unsigned numPages, // IN: Number of pages
                         MPN     *mpns)     // OUT: Array of MPNs
 {
-   MPN startMPN;
-   struct page *pages;
    unsigned i;
-   void *ptr;
+   void *ptr = vmalloc(numPages * PAGE_SIZE);
 
-   for (i = 0; (1 << i) < numPages; i++) { }
-   /* Allocates physically contiguous pages. */
-   pages = alloc_pages(GFP_KERNEL, i);
-
-   if (pages == NULL) {
+   if (ptr == NULL) {
       return NULL;
    }
-
-   startMPN = page_to_pfn(pages);
-
+   ASSERT((PtrToVA64(ptr) & (PAGE_SIZE - 1)) == 0);
    for (i = 0; i < numPages; i++) {
-      mpns[i] = startMPN + i;
+      mpns[i] = vmalloc_to_pfn((uint8 *)ptr + i * PAGE_SIZE);
    }
-   ptr = (void *)page_address(pages);
-   ASSERT(!(PtrToVA64(ptr) & (PAGE_SIZE - 1))); /* Page-aligned */
-
    return ptr;
 }
 
@@ -2026,10 +2150,7 @@ void
 HostIF_FreeKernelPages(unsigned numPages, // IN: Number of pages
                        void    *ptr)      // IN: Kernel VA of first page
 {
-   unsigned i;
-
-   for (i = 0; (1 << i) < numPages; i++) { }
-   free_pages((VA)ptr, i);
+   vfree(ptr);
 }
 
 
@@ -2331,6 +2452,80 @@ HostIF_APICInit(VMDriver *vm,   // IN:
 
 
 /*
+ *----------------------------------------------------------------------
+ *
+ * HostIF_GetTimerVectors --
+ *
+ *      Determine which vectors the host might be using for timer
+ *      interrupts.
+ *
+ * Results:
+ *      The host-specific timer interrupt vectors.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+void
+HostIF_GetTimerVectors(uint8 *v0, // OUT:
+                       uint8 *v1) // OUT:
+{
+   *v0 = 0xef; // APIC
+   *v1 = 0x20; // PIC
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * HostIF_GetMonitorIPIVector --
+ *
+ *      Return a dedicated vector the monitor can use for sending
+ *      IPIs.
+ *
+ * Results:
+ *     The vector determined by HostIF_APICInit.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+uint8
+HostIF_GetMonitorIPIVector(void)
+{
+   return monitorIPIVector;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * HostIF_GetHVIPIVector --
+ *
+ *      Return a dedicated vector the monitor can use for posted
+ *      interrupts.
+ *
+ * Results:
+ *     The vector determined by HostIF_APICInit.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+uint8
+HostIF_GetHVIPIVector(void)
+{
+   return hvIPIVector;
+}
+
+
+/*
  *-----------------------------------------------------------------------------
  *
  * HostIF_SemaphoreWait --
@@ -2358,6 +2553,8 @@ HostIF_SemaphoreWait(VMDriver *vm,   // IN:
    int waitFD = args[0];
    int timeoutms = args[2];
    uint64 value;
+
+   ASSERT(vcpuid < vm->numVCPUs);
 
    file = vmware_fget(waitFD);
    if (file == NULL) {
@@ -2449,13 +2646,13 @@ void
 HostIF_SemaphoreForceWakeup(VMDriver *vm,       // IN:
                             const VCPUSet *vcs) // IN:
 {
-   FOR_EACH_VCPU_IN_SET(vcs, vcpuid) {
+   FOR_EACH_VCPU_IN_SET_WITH_MAX(vcs, vcpuid, vm->numVCPUs) {
       struct task_struct *t = vm->vmhost->vcpuSemaTask[vcpuid];
       vm->vmhost->vcpuSemaTask[vcpuid] = NULL;
       if (t && (t->state & TASK_INTERRUPTIBLE)) {
          wake_up_process(t);
       }
-   } ROF_EACH_VCPU_IN_SET();
+   } ROF_EACH_VCPU_IN_SET_WITH_MAX();
 }
 
 
@@ -2537,37 +2734,53 @@ HostIF_SemaphoreSignal(uint64 *args)  // IN:
 /*
  *----------------------------------------------------------------------
  *
+ * HostIF_OneIPI --
+ *
+ *    If the passed VCPU thread is on some CPU in the system,
+ *    attempt to hit it with an IPI.
+ *
+ * Result:
+ *    None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+void
+HostIF_OneIPI(VMDriver *vm,                // IN:
+              Vcpuid v)                    // IN:
+{
+   uint32 targetHostCpu;
+
+   ASSERT(v < vm->numVCPUs);
+   targetHostCpu = Atomic_Read32(&vm->currentHostCpu[v]);
+   if (targetHostCpu != INVALID_PCPU) {
+      ASSERT(targetHostCpu < MAX_PCPUS);
+      arch_send_call_function_single_ipi(targetHostCpu);
+   }
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * HostIF_IPI --
  *
  *    If the passed VCPU threads are on some CPUs in the system,
  *    attempt to hit them with an IPI.
  *
- *    On older Linux systems we do a broadcast.
- *
  * Result:
- *    The mode used to send IPIs.
+ *    None.
  *
  *----------------------------------------------------------------------
  */
 
-HostIFIPIMode
+void
 HostIF_IPI(VMDriver *vm,                // IN:
            const VCPUSet *ipiTargets)   // IN:
 {
-   HostIFIPIMode mode = IPI_NONE;
-
-   ASSERT(vm);
-
-   FOR_EACH_VCPU_IN_SET(ipiTargets, v) {
-      uint32 targetHostCpu = vm->currentHostCpu[v];
-      if (targetHostCpu != INVALID_PCPU) {
-         ASSERT(targetHostCpu < MAX_PCPUS);
-         arch_send_call_function_single_ipi(targetHostCpu);
-         mode = IPI_UNICAST;
-      }
-   } ROF_EACH_VCPU_IN_SET();
-
-   return mode;
+   FOR_EACH_VCPU_IN_SET_WITH_MAX(ipiTargets, v, vm->numVCPUs) {
+      HostIF_OneIPI(vm, v);
+   } ROF_EACH_VCPU_IN_SET_WITH_MAX();
 }
 
 
@@ -2749,14 +2962,6 @@ HostIFCheckTrackedMPN(VMDriver *vm, // IN: The VM instance
       }
    }
    HostIF_VMUnlock(vm, 32);
-
-   if (vmx86_debug) {
-      /*
-       * The monitor may have old KSeg mappings to pages which it no longer
-       * owns.  Minimize customer noise by only logging this for developers.
-       */
-      Log("%s: MPN %" FMT64 "x not owned by this VM\n", __FUNCTION__, mpn);
-   }
    return FALSE;
 }
 

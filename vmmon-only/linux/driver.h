@@ -53,8 +53,8 @@ struct VMDriver;
 /* 16 pages (64KB) looks as a good limit for one allocation */
 #define VMMON_MAX_LOWMEM_PAGES  16
 
-typedef struct VMLinux {
-   struct VMLinux *next;
+typedef struct Device {
+   struct Device   *next;
    struct VMDriver *vm;
 
    /*
@@ -66,7 +66,7 @@ typedef struct VMLinux {
    struct semaphore lock4Gb;
    unsigned int size4Gb;
    struct page *pages4Gb[VMMON_MAX_LOWMEM_PAGES];
-} VMLinux;
+} Device;
 
 
 /*
@@ -82,7 +82,7 @@ typedef struct VMXLinuxState {
    struct miscdevice misc;
    char deviceName[VM_DEVICE_NAME_SIZE];
    char buf[LINUXLOG_BUFFER_SIZE];
-   VMLinux *head;
+   Device *head;
 
    struct task_struct *fastClockThread;
    unsigned fastClockRate;

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -59,14 +59,7 @@
 
 #define CROSSCALL_SLEEP_US 1000
 
-/* Return value for HostIF_IPI. */
-typedef enum {
-   IPI_NONE,      // No IPI was sent.
-   IPI_UNICAST,   // Unicast IPIs were sent.
-   IPI_BROADCAST  // A broadcast IPI was sent to all PCPUs.
-} HostIFIPIMode;
-
-EXTERN int   HostIF_Init(VMDriver *vm);
+EXTERN int   HostIF_Init(VMDriver *vm, uint32 numVCPUs);
 EXTERN int   HostIF_LookupUserMPN(VMDriver *vm, VA64 uAddr, MPN *mpn);
 EXTERN void *HostIF_MapCrossPage(VMDriver *vm, VA64 uAddr);
 
@@ -96,6 +89,9 @@ EXTERN Bool HostIF_VMLockIsHeld(VMDriver *vm);
 #endif
 
 EXTERN Bool  HostIF_APICInit(VMDriver *vm, Bool setVMPtr, Bool probe);
+EXTERN uint8 HostIF_GetMonitorIPIVector(void);
+EXTERN uint8 HostIF_GetHVIPIVector(void);
+EXTERN void  HostIF_GetTimerVectors(uint8 *v0, uint8 *v1);
 
 EXTERN int   HostIF_SemaphoreWait(VMDriver *vm,
                                   Vcpuid vcpuid,
@@ -104,7 +100,8 @@ EXTERN int   HostIF_SemaphoreWait(VMDriver *vm,
 EXTERN int   HostIF_SemaphoreSignal(uint64 *args);
 
 EXTERN void  HostIF_SemaphoreForceWakeup(VMDriver *vm, const VCPUSet *vcs);
-EXTERN HostIFIPIMode HostIF_IPI(VMDriver *vm, const VCPUSet *vcs);
+EXTERN void  HostIF_IPI(VMDriver *vm, const VCPUSet *vcs);
+EXTERN void  HostIF_OneIPI(VMDriver *vm, Vcpuid v);
 
 EXTERN uint32 HostIF_GetCurrentPCPU(void);
 EXTERN void HostIF_CallOnEachCPU(void (*func)(void *), void *data);
@@ -119,6 +116,7 @@ EXTERN int HostIF_AllocLockedPages(VMDriver *vm, VA64 addr,
 EXTERN int HostIF_FreeLockedPages(VMDriver *vm, VA64 addr,
                                   unsigned int numPages, Bool kernelMPNBuffer);
 EXTERN MPN HostIF_GetNextAnonPage(VMDriver *vm, MPN mpn);
+EXTERN MPN HostIF_AllocLowPage(VMDriver *vm);
 
 EXTERN int HostIF_ReadPhysical(VMDriver *vm, MA ma, VA64 addr,
                                Bool kernelBuffer, size_t len);

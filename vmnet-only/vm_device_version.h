@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998,2005-2012,2014-2016 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998,2005-2012,2014-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -98,7 +98,16 @@
 #define PCI_DEVICE_VMI_INTERFACE        0x00
 #define PCI_DEVICE_VMI_REVISION         0x01
 
-#define PCI_DEVICE_ID_VMWARE_DUMMY      0x0809
+/*
+ * Device IDs for the PCI passthru test device:
+ *
+ * 0x0809 is for old fashioned PCI with MSI.
+ * 0x080A is for PCI express with MSI-X.
+ * 0x080B is for PCI express with configurable BARs.
+ */
+#define PCI_DEVICE_ID_VMWARE_PCI_TEST   0x0809
+#define PCI_DEVICE_ID_VMWARE_PCIE_TEST1 0x080A
+#define PCI_DEVICE_ID_VMWARE_PCIE_TEST2 0x080B
 
 #define PCI_DEVICE_ID_VMWARE_VRDMA      0x0820
 #define PCI_DEVICE_ID_VMWARE_VTPM       0x0830
@@ -115,6 +124,7 @@
  */
 #define PCI_VENDOR_ID_AMD               0x1022
 #define PCI_DEVICE_ID_AMD_VLANCE        0x2000
+#define PCI_DEVICE_ID_AMD_IOMMU         0x1577
 #define PCI_VENDOR_ID_BUSLOGIC			0x104B
 #define PCI_DEVICE_ID_BUSLOGIC_MULTIMASTER_NC	0x0140
 #define PCI_DEVICE_ID_BUSLOGIC_MULTIMASTER	0x1040
@@ -153,16 +163,18 @@
 #define PCI_DEVICE_ID_INTEL_LYNXPOINT_XHCI 0x8c31
 
 /*
- * Intel Quickassist (QAT) devices:
- * - Gen 1: Cave Creek (CVC) and Coleto Creek (CLC)
- * - Gen 2: Lewisburg (LBG)
+ * Intel Volume Management Device (VMD)
  */
-#define PCI_DEVICE_ID_INTEL_QAT_CVC     0x0434
-#define PCI_DEVICE_ID_INTEL_QAT_CLC     0x0435
-#define PCI_DEVICE_ID_INTEL_QAT_LBG     0x37c8
-#define PCI_DEVICE_ID_INTEL_QAT_CVC_VF  0x0442
-#define PCI_DEVICE_ID_INTEL_QAT_CLC_VF  0x0443
-#define PCI_DEVICE_ID_INTEL_QAT_LBG_VF  0x37c9
+#define PCI_DEVICE_ID_INTEL_VMD_V1           0x201d
+
+/*
+ * Intel Quickassist (QAT) devices.
+ */
+#define PCI_DEVICE_ID_INTEL_QAT_DH895XCC     0x0435
+#define PCI_DEVICE_ID_INTEL_QAT_DH895XCC_VF  0x0443
+
+#define PCI_DEVICE_ID_INTEL_QAT_C62X         0x37c8
+#define PCI_DEVICE_ID_INTEL_QAT_C62X_VF      0x37c9
 
 /*
  * Intel FPGAs
@@ -237,8 +249,12 @@
 
 /************* SCSI implementation limits ********************************/
 #define SCSI_MAX_CONTROLLERS	 4	  // Need more than 1 for MSCS clustering
-#define	SCSI_MAX_DEVICES	 16	  // BT-958 emulates only 16
-#define PVSCSI_MAX_DEVICES       255      // 255 (including the controller)
+#define	SCSI_MAX_DEVICES         16	  // BT-958 emulates only 16
+#define PVSCSI_HWV14_MAX_DEVICES 65	  /* HWv14 And Later Supports 64 
+					   * + controller at ID 7 
+					   */
+#define PVSCSI_MAX_DEVICES       255	  // 255 (including the controller)
+#define PVSCSI_MAX_NUM_DISKS     (PVSCSI_HWV14_MAX_DEVICES - 1)
 
 /************* SATA implementation limits ********************************/
 #define SATA_MAX_CONTROLLERS   4
@@ -247,16 +263,26 @@
 #define AHCI_MAX_PORTS SATA_MAX_DEVICES
 
 /*
- * Maximum number of supported disk in a VM.
- *
- * Note: With some config options for PVSCSI, maximum number of disks could
- * be ~1K but that number is not publicly supported yet.
+ * Publicly supported maximum number of disks per VM.
  */
 #define MAX_NUM_DISKS \
    ((SATA_MAX_CONTROLLERS * SATA_MAX_DEVICES) + \
     (SCSI_MAX_CONTROLLERS * SCSI_MAX_DEVICES) + \
     (NVME_MAX_CONTROLLERS * NVME_MAX_NAMESPACES) + \
     (IDE_NUM_INTERFACES * IDE_DRIVES_PER_IF))
+
+/*
+ * Maximum number of supported disks in a VM from HWV14 or later, using PVSCSI updated max
+ * devices.  The note above still holds true, but instead of publicly supporting
+ * all devices, HWv14 simply extends the maximum support to 256 devices,
+ * instead ~244 calculated above.
+ *
+ * PVSCSI_HW_MAX_DEVICES is 65 - allowing 64 disks + controller (at ID 7)
+ * 4 * 64 = 256 devices.
+ *
+ */
+#define MAX_NUM_DISKS_HWV14 MAX(MAX_NUM_DISKS, \
+   (SCSI_MAX_CONTROLLERS * PVSCSI_MAX_NUM_DISKS))
 
 /*
  * VSCSI_BV_INTS is the number of uint32's needed for a bit vector
@@ -365,6 +391,6 @@ DEFINE_GUID(GUID_CLASS_VMWARE_USB_DEVICES,
  *
  */
 #define JEDEC_VENDOR_ID_VMWARE          0x289
-#define JEDEC_DEVICE_ID_VMWARE_NVDIMM   0x0
+#define JEDEC_DEVICE_ID_VMWARE_NVDIMM   0x1
 
 #endif /* VM_DEVICE_VERSION_H */

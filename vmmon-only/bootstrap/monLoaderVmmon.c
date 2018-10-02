@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2016-2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 2016-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -37,7 +37,10 @@
 #include "x86paging_common.h"
 #include "x86paging_64.h"
 #include "vmx86.h"
+#include "monLoader.h"
 #include "monLoaderLog.h"
+#include "vmmblob.h"
+#include "memtrack.h"
 
 typedef struct MonLoaderEnvContext {
    VMDriver *vm;
@@ -101,6 +104,7 @@ void
 MonLoaderCallout_CleanUp(MonLoaderEnvContext *ctx)
 {
    ASSERT(ctx != NULL);
+   Vmx86_CleanupVMMPages(ctx->vm);
    HostIF_FreeKernelMem(ctx);
 }
 
@@ -179,11 +183,52 @@ MonLoaderCallout_ImportPage(MonLoaderEnvContext *ctx, // IN
 }
 
 
+/*
+ *----------------------------------------------------------------------
+ *
+ * MonLoaderCallout_AllocMPN --
+ *
+ *      Allocates and maps a new VMM page for the specified VCPU.
+ *
+ * Returns:
+ *      An MPN on success, INVALID_MPN on failure.
+ *
+ * Side effects:
+ *      The allocated page is accounted for and its mapping tracked.
+ *
+ *----------------------------------------------------------------------
+ */
+
 MPN
 MonLoaderCallout_AllocMPN(MonLoaderEnvContext *ctx,  // IN
                           Vcpuid               vcpu) // IN
 {
-   NOT_IMPLEMENTED();
+   VMDriver *vm = ctx->vm;
+   MemTrackEntry *entry;
+   MPN mpn;
+   VPN vpn;
+
+   if (Vmx86_AllocLockedPages(vm, (VA64)&mpn, 1, TRUE, FALSE) != 1) {
+      Log("Failed to allocate page\n");
+      return INVALID_MPN;
+   }
+   vpn = Vmx86_MapPage(mpn);
+   if (vpn == 0) {
+      Log("Failed to map MPN 0x%"FMT64"x\n", mpn);
+      Vmx86_FreeLockedPages(vm, (VA64)&mpn, 1, TRUE);
+      return INVALID_MPN;
+   }
+   HostIF_VMLock(vm, 41);
+   entry = MemTrack_Add(vm->vmmTracker, vpn, mpn);
+   HostIF_VMUnlock(vm, 41);
+   if (entry == NULL) {
+      Log("Failed to track mapping from VPN 0x%"FMTVPN"x to MPN 0x%"FMT64"x\n",
+          vpn, mpn);
+      Vmx86_UnmapPage(vpn);
+      Vmx86_FreeLockedPages(vm, (VA64)&mpn, 1, TRUE);
+      return INVALID_MPN;
+   }
+   return mpn;
 }
 
 
@@ -227,15 +272,61 @@ MonLoaderCallout_MapMPNInPTE(MonLoaderEnvContext *ctx, // IN
 }
 
 
+/*
+ *----------------------------------------------------------------------
+ *
+ * MonLoaderCallout_FillPage --
+ *
+ *      Fills a page with a pattern, given the MPN of the page.
+ *
+ * Returns:
+ *      TRUE on success, FALSE if a mapping of the page was not found or
+ *      invalid.
+ *
+ * Side effects:
+ *      The page is filled.
+ *
+ *----------------------------------------------------------------------
+ */
+
 Bool
 MonLoaderCallout_FillPage(MonLoaderEnvContext *ctx,     // IN
                           uint8                pattern, // IN
                           MPN                  mpn,     // IN
                           Vcpuid               vcpu)    // IN
 {
-   NOT_IMPLEMENTED();
+   VMDriver *vm = ctx->vm;
+   MemTrackEntry *entry;
+
+   HostIF_VMLock(vm, 42);
+   entry = MemTrack_LookupMPN(vm->vmmTracker, mpn);
+   HostIF_VMUnlock(vm, 42);
+   if (entry == NULL || entry->mpn != mpn || entry->vpn == 0) {
+      Log("Failed to look up MPN 0x%"FMT64"x\n", mpn);
+      return FALSE;
+   }
+   memset((void *)VPN_2_VA(entry->vpn), pattern, PAGE_SIZE);
+   return TRUE;
 }
 
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * MonLoaderCallout_CopyFromBlob --
+ *
+ *     Copies contents of up to PAGE_SIZE length from the blob at a
+ *     given offset into the page specified by the given MPN. Zero-fills
+ *     the remaining space.
+ *
+ * Returns:
+ *      TRUE on success, FALSE on failure.
+ *
+ * Side effects:
+ *      The page is filled with blob contents.
+ *
+ *----------------------------------------------------------------------
+ */
 
 Bool
 MonLoaderCallout_CopyFromBlob(MonLoaderEnvContext *ctx,        // IN
@@ -244,7 +335,30 @@ MonLoaderCallout_CopyFromBlob(MonLoaderEnvContext *ctx,        // IN
                               MPN                  mpn,        // IN
                               Vcpuid               vcpu)       // IN
 {
-   NOT_IMPLEMENTED();
+   MemTrackEntry *entry;
+   VMDriver *vm = ctx->vm;
+   uint64 blobSize = VmmBlob_GetSize(vm);
+   uint8 *blob = VmmBlob_GetPtr(vm);
+   uint8 *buf;
+
+   if (copySize > PAGE_SIZE || copySize == 0 || blobSize < copySize ||
+       blobOffset > blobSize - copySize) {
+      Log("Invalid VMM blob copy parameters: blobOffset 0x%"FMT64"x, "
+          "copySize 0x%"FMTSZ"x, blobSize 0x%"FMT64"x\n", blobOffset, copySize,
+          blobSize);
+      return FALSE;
+   }
+   HostIF_VMLock(vm, 44);
+   entry = MemTrack_LookupMPN(vm->vmmTracker, mpn);
+   HostIF_VMUnlock(vm, 44);
+   if (entry == NULL || entry->vpn == 0) {
+      Log("Failed to look up MPN 0x%"FMT64"x\n", mpn);
+      return FALSE;
+   }
+   buf = (uint8 *)VPN_2_VA(entry->vpn);
+   memcpy(buf, blob + blobOffset, copySize);
+   memset(buf + copySize, 0, PAGE_SIZE - copySize);
+   return TRUE;
 }
 
 
@@ -322,15 +436,14 @@ MonLoaderGetSharedRegionMPN(MonLoaderEnvContext *ctx,
    if (pgOffset >= s->numPages) {
       return INVALID_MPN;
    }
-
    addr = VPN_2_VA(s->baseVpn) + pgOffset * PAGE_SIZE;
-   HostIF_VMLock(ctx->vm, 38);
+   HostIF_VMLock(ctx->vm, 43);
    if (HostIF_LookupUserMPN(ctx->vm, addr, &mpn) != PAGE_LOOKUP_SUCCESS) {
-      HostIF_VMUnlock(ctx->vm, 38);
+      HostIF_VMUnlock(ctx->vm, 43);
       Log("Failed to lookup MPN for shared region VA %"FMTVA"x\n", addr);
       return INVALID_MPN;
    }
-   HostIF_VMUnlock(ctx->vm, 38);
+   HostIF_VMUnlock(ctx->vm, 43);
    return mpn;
 }
 
@@ -357,7 +470,11 @@ MonLoaderCallout_GetSharedUserPage(MonLoaderEnvContext *ctx,
                                    unsigned page,   // IN
                                    Vcpuid vcpu)     // IN
 {
-   return MonLoaderGetSharedRegionMPN(ctx, subIndex, vcpu, page);
+   if (subIndex == MONLOADER_HEADER_IDX) {
+      return VmmBlob_GetHeaderMpn(ctx->vm);
+   } else {
+      return MonLoaderGetSharedRegionMPN(ctx, subIndex, vcpu, page);
+   }
 }
 
 
@@ -393,11 +510,29 @@ MonLoaderCallout_IsPrivileged(MonLoaderEnvContext *ctx) // IN
    return TRUE;
 }
 
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * MonLoaderCallout_GetBlobMpn --
+ *
+ *      Returns the MPN backing the given VMM blob offset.
+ *
+ * Returns:
+ *      An MPN, or INVALID_MPN
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
 MPN
 MonLoaderCallout_GetBlobMpn(MonLoaderEnvContext *ctx,    // IN
                             uint64               offset) // IN
 {
-   return INVALID_MPN;
+   ASSERT((offset & (PAGE_SIZE - 1)) == 0);
+   return VmmBlob_GetMpn(ctx->vm, BYTES_2_PAGES(offset));
 }
 
 Bool

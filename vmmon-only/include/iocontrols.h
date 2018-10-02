@@ -44,6 +44,7 @@
 #include "pageLock_defs.h"
 #include "numa_defs.h"
 #include "bootstrap_vmm.h"
+#include "contextinfo.h"
 
 #if defined __cplusplus
 extern "C" {
@@ -138,13 +139,12 @@ PtrToVA64(void const *ptr) // IN
  * vmcore, and rest-of-bora. The vmmon driver is largely outside
  * vmcore and vmcore imports functionality from vmmon. Addition,
  * deletion or modification of an iocontrol used only by rest-of-bora
- * does not break vmcore compatibility. 
+ * does not break vmcore compatibility.
  *
  * See bora/doc/vmcore details.
- *
  */
 
-#define VMMON_VERSION           (331 << 16 | 0)
+#define VMMON_VERSION           (360 << 16 | 0)
 #define VMMON_VERSION_MAJOR(v)  ((uint32) (v) >> 16)
 #define VMMON_VERSION_MINOR(v)  ((uint16) (v))
 
@@ -158,8 +158,8 @@ PtrToVA64(void const *ptr) // IN
 #else
 #define MAX_VMS 64
 #endif
-/* 
- * MsgWaitForMultipleObjects doesn't scale well enough on Win32. 
+/*
+ * MsgWaitForMultipleObjects doesn't scale well enough on Win32.
  * Allocate with MAX_VMS so static buffers are large, but do
  * admissions control with this value on Win32 until we check
  * scalability (probably in authd).
@@ -231,13 +231,10 @@ enum IOCTLCmd {
    IOCTLCMD(UNLOCK_PAGE_BY_MPN),
     /* AWE calls */
    IOCTLCMD(ALLOC_LOCKED_PAGES),
-   IOCTLCMD(FREE_LOCKED_PAGES),
    IOCTLCMD(GET_NEXT_ANON_PAGE),
 
    IOCTLCMD(GET_ALL_MSRS),
 
-   IOCTLCMD(COUNT_PRESENT_PAGES),
-  
    IOCTLCMD(GET_REFERENCE_CLOCK_HZ),
    IOCTLCMD(INIT_PSEUDO_TSC),
    IOCTLCMD(CHECK_PSEUDO_TSC),
@@ -247,6 +244,7 @@ enum IOCTLCmd {
 
    IOCTLCMD(GET_IPI_VECTORS),
    IOCTLCMD(SEND_IPI),
+   IOCTLCMD(SEND_ONE_IPI),
 
    /*
     * Keep host-specific calls at the end so they can be undefined
@@ -269,8 +267,8 @@ enum IOCTLCmd {
    IOCTLCMD(FREE_CONTIG_PAGES),
    IOCTLCMD(HARD_LIMIT_MONITOR_STATUS), // used by vmauthd on Windows
    IOCTLCMD(CHANGE_HARD_LIMIT),         // used by vmauthd on Windows
-   IOCTLCMD(GET_KERNEL_PROC_ADDRESS),
-   IOCTLCMD(READ_VA64),
+   IOCTLCMD(READ_DISASM_PROC_BINARY),
+   IOCTLCMD(CHECK_CANDIDATE_VA64),
    IOCTLCMD(SET_MEMORY_PARAMS),
    IOCTLCMD(REMEMBER_KHZ_ESTIMATE),
    IOCTLCMD(REMAP_SCATTER_LIST),
@@ -288,6 +286,7 @@ enum IOCTLCmd {
 #endif
 
    IOCTLCMD(GET_UNAVAIL_PERF_CTRS),
+   IOCTLCMD(GET_MONITOR_CONTEXT),
    // Must be last.
    IOCTLCMD(LAST)
 };
@@ -322,6 +321,7 @@ enum IOCTLCmd {
 #define IOCTL_VMX86_INIT_VM             VMIOCTL_BUFFERED(INIT_VM)
 #define IOCTL_VMX86_RUN_VM              VMIOCTL_NEITHER(RUN_VM)
 #define IOCTL_VMX86_SEND_IPI            VMIOCTL_NEITHER(SEND_IPI)
+#define IOCTL_VMX86_SEND_ONE_IPI        VMIOCTL_BUFFERED(SEND_ONE_IPI)
 #define IOCTL_VMX86_GET_IPI_VECTORS     VMIOCTL_BUFFERED(GET_IPI_VECTORS)
 #define IOCTL_VMX86_LOOK_UP_MPN         VMIOCTL_BUFFERED(LOOK_UP_MPN)
 #define IOCTL_VMX86_LOCK_PAGE           VMIOCTL_BUFFERED(LOCK_PAGE)
@@ -346,11 +346,12 @@ enum IOCTLCmd {
 #define IOCTL_VMX86_LOCK_PAGE_NEW       VMIOCTL_BUFFERED(LOCK_PAGE_NEW)
 #define IOCTL_VMX86_UNLOCK_PAGE_BY_MPN  VMIOCTL_BUFFERED(UNLOCK_PAGE_BY_MPN)
 #define IOCTL_VMX86_ALLOC_LOCKED_PAGES  VMIOCTL_BUFFERED(ALLOC_LOCKED_PAGES)
-#define IOCTL_VMX86_FREE_LOCKED_PAGES   VMIOCTL_BUFFERED(FREE_LOCKED_PAGES)
 #define IOCTL_VMX86_GET_NEXT_ANON_PAGE  VMIOCTL_BUFFERED(GET_NEXT_ANON_PAGE)
 
-#define IOCTL_VMX86_GET_KERNEL_PROC_ADDRESS  VMIOCTL_BUFFERED(GET_KERNEL_PROC_ADDRESS)
-#define IOCTL_VMX86_READ_VA64           VMIOCTL_BUFFERED(READ_VA64)
+#define IOCTL_VMX86_READ_DISASM_PROC_BINARY \
+                                      VMIOCTL_BUFFERED(READ_DISASM_PROC_BINARY)
+#define IOCTL_VMX86_CHECK_CANDIDATE_VA64 VMIOCTL_BUFFERED(CHECK_CANDIDATE_VA64)
+
 #define IOCTL_VMX86_SET_MEMORY_PARAMS   VMIOCTL_BUFFERED(SET_MEMORY_PARAMS)
 
 #define IOCTL_VMX86_REMEMBER_KHZ_ESTIMATE VMIOCTL_BUFFERED(REMEMBER_KHZ_ESTIMATE)
@@ -362,6 +363,7 @@ enum IOCTLCmd {
 #define IOCTL_VMX86_CHECK_PSEUDO_TSC         VMIOCTL_BUFFERED(CHECK_PSEUDO_TSC)
 #define IOCTL_VMX86_GET_PSEUDO_TSC           VMIOCTL_NEITHER(GET_PSEUDO_TSC)
 #define IOCTL_VMX86_GET_UNAVAIL_PERF_CTRS    VMIOCTL_NEITHER(GET_UNAVAIL_PERF_CTRS)
+#define IOCTL_VMX86_GET_MONITOR_CONTEXT      VMIOCTL_BUFFERED(GET_MONITOR_CONTEXT)
 #define IOCTL_VMX86_REMAP_SCATTER_LIST VMIOCTL_BUFFERED(REMAP_SCATTER_LIST)
 #define IOCTL_VMX86_UNMAP_SCATTER_LIST VMIOCTL_BUFFERED(UNMAP_SCATTER_LIST)
 #endif
@@ -396,18 +398,18 @@ VMLockPage;
 
 typedef struct VMAPICInfo {
    uint32 flags;
-} VMAPICInfo; 
+} VMAPICInfo;
 
-#define VMX86_DRIVER_VCPUID_OFFSET	1000
+#define VMX86_DRIVER_VCPUID_OFFSET 1000
 
 
 /*
  * We keep track of 3 different limits on the number of pages we can lock.
  * The host limit is determined at driver load time (in windows only) to
  * make sure we do not starve the host by locking too many pages.
- * The static limit is user defined in the UI and the dynamic limit is 
+ * The static limit is user defined in the UI and the dynamic limit is
  * set by authd's hardLimitMonitor code (windows only), which queries
- * host load and adjusts the limit accordingly.  We lock the minimum of 
+ * host load and adjusts the limit accordingly.  We lock the minimum of
  * all these values at any given time.
  */
 typedef struct LockedPageLimit {
@@ -464,7 +466,7 @@ typedef struct VMMemMgmtInfoPatch {
  */
 
 typedef struct VMMemInfoArgs {
-   uint64          currentTime;        // Host time in secs of the call. 
+   uint64          currentTime;        // Host time in secs of the call.
    uint32          minVmMemPct;        // % of vm that must fit in memory
    uint32          globalMinAllocation;// pages that must fit in maxLockedPages
    uint32          numLockedPages;     // total locked pages by all vms
@@ -491,13 +493,6 @@ typedef struct VMMPNList {
    VA64      mpnList;    // IN: User VA of an array of 64-bit MPNs.
 } VMMPNList;
 
-typedef struct VARange {
-   VA64     addr;
-   VA64     bv;
-   unsigned len;
-   uint32   pad;
-} VARange;
-
 typedef struct VMMUnlockPageByMPN {
    MPN       mpn;
    VA64      uAddr;         /* IN: User VA of the page (optional). */
@@ -507,11 +502,6 @@ typedef struct VMMReadWritePage {
    MPN          mpn;   // IN
    VA64         uAddr; // IN: User VA of a PAGE_SIZE-large buffer.
 } VMMReadWritePage;
-
-struct passthrough_iorange {
-   unsigned short ioBase;   /* Base of range to pass through. */
-   unsigned short numPorts; /* Length of range. */
-};
 
 /*
  * Data structure for the INIT_PSEUDO_TSC and CHECK_PSEUDO_TSC.
@@ -539,14 +529,9 @@ typedef struct PTSCCheckParams {
 
 typedef struct IPIVectors {
    /*
-    * Vector(s) the host uses for its own IPIs; we use this as a performance
-    * hint.
-    */
-   uint8 hostIPIVectors[2];
-   /* 
     * Vectors we have allocated or stolen for the monitor interrupts.
     */
-   uint8 monitorIPIVector; 
+   uint8 monitorIPIVector;
    uint8 hvIPIVector;
 } IPIVectors;
 
@@ -558,6 +543,7 @@ typedef struct IPIVectors {
 typedef struct VMCreateBlock {
    VA64               bsBlob;        // IN: User VA of the VMM bootstrap blob.
    uint32             bsBlobSize;    // IN: Size of VMM bootstrap blob.
+   uint32             numVCPUs;      // IN: Number of VCPUs.
    uint16             vmid;          // OUT: VM ID for the created VM.
 } VMCreateBlock;
 
@@ -581,6 +567,14 @@ typedef struct VMProcessBootstrapBlock {
    VA64           ptRootVAs[MAX_VCPUS];  // IN: User VA of PT roots.
    VMSharedRegion shRegions[ML_SHARED_REGIONS_MAX]; // IN: Shared regions.
 } VMProcessBootstrapBlock;
+
+/*
+ * Arguments for VMM context retrieval.
+ */
+typedef union {
+   Vcpuid vcpuid;     // IN
+   Context64 context; // OUT
+} VMMonContext;
 
 #if defined __linux__
 

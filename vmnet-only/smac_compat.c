@@ -56,6 +56,11 @@
 
 #ifdef VMX86_DEVEL
 #define DBG 1
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0)
+#define read_skb_users(skb) atomic_read(&skb->users)
+#else
+#define read_skb_users(skb) refcount_read(&skb->users)
+#endif
 #else
 #undef DBG
 #endif /* VMX86_DEVEL */
@@ -405,7 +410,7 @@ SMACL_PrintSkb(struct sk_buff *skb,          // IN: sk_buff structure
    LOG(4, (KERN_DEBUG "pkt_type %x truesize %u protocol %u\n",
             skb->pkt_type, skb->truesize, skb->protocol));
    LOG(4, (KERN_DEBUG "users %d, tail %p, end %p\n",
-            atomic_read(&skb->users), compat_skb_tail_pointer(skb),
+            read_skb_users(skb), compat_skb_tail_pointer(skb),
             compat_skb_end_pointer(skb)));
 #if 0
 #define C skb->mac.raw

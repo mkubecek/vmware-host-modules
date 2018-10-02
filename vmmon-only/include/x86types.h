@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2003-2016 VMware, Inc. All rights reserved.
+ * Copyright (C) 2003-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -86,11 +86,12 @@ typedef uint16 Selector;
  */
 
 
+#define RSP_NUM_ENTRIES 3
 #define IST_NUM_ENTRIES 8
 #pragma pack(push, 1)
 typedef struct Task64 {
    uint32     reserved0;
-   uint64     rsp[3];   // Stacks for CPL 0-2.
+   uint64     rsp[RSP_NUM_ENTRIES];   // Stacks for CPL 0-2.
    uint64     ist[IST_NUM_ENTRIES];   // ist[0] is reserved.
    uint64     reserved1;
    uint16     reserved2;

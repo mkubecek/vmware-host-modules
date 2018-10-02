@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2015-2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 2015-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -59,9 +59,10 @@
  * ML_CONTENT_COPY: Allocates new MPNs, maps them and copies from the specified
  * source.
  *
- * ML_CONTENT_SHARE: Memory provided by user or host kernel and mapped into the
- * monitor address space.  The subIndex field specifies which region, as
- * multiple regions may be shared for each source.
+ * ML_CONTENT_SHARE: Memory provided by user, host kernel, or VMM blob,
+ * and mapped into the monitor address space.  The subIndex field
+ * specifies which region, as multiple regions may be shared for each
+ * source.
  *
  * Processing
  * ==========
@@ -188,7 +189,7 @@ typedef struct {
 
 /* Packed for easy consumption by bootstrap-offsets.pl. */
 #pragma pack(push, 1)
-typedef struct {
+typedef struct MonLoaderHeader {
    uint64         magic;
    uint32         entrySize;
    uint32         count;
@@ -204,29 +205,29 @@ typedef struct {
 
 /* Environment context structure, defined by the environment. */
 struct MonLoaderEnvContext;
-typedef struct MonLoaderEnvContext MonLoaderEnvContext;
 
 /* Callout prototypes */
-MPN  MonLoaderCallout_AllocMPN(MonLoaderEnvContext *, Vcpuid);
-void MonLoaderCallout_CleanUp(MonLoaderEnvContext *);
-Bool MonLoaderCallout_CopyFromBlob(MonLoaderEnvContext *, uint64, size_t, MPN,
-                                   Vcpuid);
-Bool MonLoaderCallout_FillPage(MonLoaderEnvContext *, uint8, MPN, Vcpuid);
-MPN  MonLoaderCallout_GetPageRoot(MonLoaderEnvContext *, Vcpuid);
-Bool MonLoaderCallout_GetPTE(MonLoaderEnvContext *, MPN, unsigned, Vcpuid,
-                             PT_L1E *);
-Bool MonLoaderCallout_ImportPage(MonLoaderEnvContext *, MPN, Vcpuid);
-Bool MonLoaderCallout_Init(void *, MonLoaderEnvContext **);
-Bool MonLoaderCallout_MapMPNInPTE(MonLoaderEnvContext *, MPN, unsigned, uint64,
-                                  MPN, Vcpuid);
-MPN  MonLoaderCallout_GetSharedUserPage(MonLoaderEnvContext *, uint64, unsigned,
-                                        Vcpuid);
-MPN  MonLoaderCallout_GetSharedHostPage(MonLoaderEnvContext *, uint64, unsigned,
-                                        Vcpuid);
-Bool MonLoaderCallout_IsPrivileged(MonLoaderEnvContext *);
-Bool MonLoaderCallout_SetEntrypoint(MonLoaderEnvContext *, uint16, VA64, uint16,
-                                    VA64);
-MPN  MonLoaderCallout_GetBlobMpn(MonLoaderEnvContext *, uint64);
+MPN  MonLoaderCallout_AllocMPN(struct MonLoaderEnvContext *, Vcpuid);
+void MonLoaderCallout_CleanUp(struct MonLoaderEnvContext *);
+Bool MonLoaderCallout_CopyFromBlob(struct MonLoaderEnvContext *, uint64,
+                                   size_t, MPN, Vcpuid);
+Bool MonLoaderCallout_FillPage(struct MonLoaderEnvContext *, uint8, MPN,
+                               Vcpuid);
+MPN  MonLoaderCallout_GetPageRoot(struct MonLoaderEnvContext *, Vcpuid);
+Bool MonLoaderCallout_GetPTE(struct MonLoaderEnvContext *, MPN, unsigned,
+                             Vcpuid, PT_L1E *);
+Bool MonLoaderCallout_ImportPage(struct MonLoaderEnvContext *, MPN, Vcpuid);
+Bool MonLoaderCallout_Init(void *, struct MonLoaderEnvContext **);
+Bool MonLoaderCallout_MapMPNInPTE(struct MonLoaderEnvContext *, MPN, unsigned,
+                                  uint64, MPN, Vcpuid);
+MPN  MonLoaderCallout_GetSharedUserPage(struct MonLoaderEnvContext *, uint64,
+                                        unsigned, Vcpuid);
+MPN  MonLoaderCallout_GetSharedHostPage(struct MonLoaderEnvContext *, uint64,
+                                        unsigned, Vcpuid);
+Bool MonLoaderCallout_IsPrivileged(struct MonLoaderEnvContext *);
+Bool MonLoaderCallout_SetEntrypoint(struct MonLoaderEnvContext *, uint16, VA64,
+                                    uint16, VA64);
+MPN  MonLoaderCallout_GetBlobMpn(struct MonLoaderEnvContext *, uint64);
 
 typedef enum MonLoaderError {
    ML_OK = 0,
@@ -259,7 +260,7 @@ typedef enum MonLoaderError {
 
 
 /* A subindex above shared area subindices for sharing of MonLoaderHeader. */
-#define MONLOADER_HEADER_IDX (NUM_SHARED_AREAS + 1)
+#define MONLOADER_HEADER_IDX 6
 
 
 MonLoaderError MonLoader_Process(MonLoaderHeader *header, unsigned numVCPUs,

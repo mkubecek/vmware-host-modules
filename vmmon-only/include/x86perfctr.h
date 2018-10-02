@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2012,2014-2016 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2012,2014-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -45,6 +45,7 @@
 #define PERFCTR_NEHALEM_NUM_FIXED_COUNTERS       3
 #define PERFCTR_SANDYBRIDGE_NUM_GEN_COUNTERS     8 /* When HT is disabled */
 #define PERFCTR_CORE_NUM_ARCH_EVENTS             7
+#define PERFCTR_CORE_NUM_FIXED_COUNTERS          3
 #define PERFCTR_PENTIUM4_VAL_MASK                0xffffffffffLL
 #define PERFCTR_AMD_VAL_MASK                     0xffffffffffffLL
 #define PERF_EVENT_NAME_LEN                      64
@@ -109,10 +110,15 @@
 /* AMD Performance Counter MSR Definitions */
 #define PERFCTR_AMD_PERFEVTSEL0_ADDR             0xC0010000
 #define PERFCTR_AMD_PERFCTR0_ADDR                0xC0010004
+/* AMD with PerfCtrExtCore (PERFCORE) support MSR Definitions */
 #define PERFCTR_AMD_EXT_BASE_ADDR                0xC0010200
 #define PERFCTR_AMD_EXT_EVENTSEL                 0
 #define PERFCTR_AMD_EXT_CTR                      1
 #define PERFCTR_AMD_EXT_MSR_STRIDE               2
+#define PERFCTR_AMD_AMD_EXT_CNTR_BASE_ADDR \
+        (PERFCTR_AMD_EXT_BASE_ADDR + PERFCTR_AMD_EXT_CTR)
+#define PERFCTR_AMD_AMD_EXT_EVSL_BASE_ADDR \
+        (PERFCTR_AMD_EXT_BASE_ADDR + PERFCTR_AMD_EXT_EVENTSEL)
 
 /* AMD Clocks */
 #define PERFCTR_AMD_CPU_CLK_UNHALTED                           0x76
@@ -847,7 +853,7 @@ PerfCtr_PTAvailable(void)
    __GET_CPUID(0, &regs);
    if (CPUID_IsVendorIntel(&regs)) {
       __GET_CPUID2(7, 0, &regs);
-      return (regs.ecx & CPUID_INTERNAL_MASK_PT) != 0;
+      return (regs.ebx & CPUID_INTERNAL_MASK_PT) != 0;
    }
    return FALSE;
 }

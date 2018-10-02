@@ -144,9 +144,6 @@ VersionedAtomic_BeginWrite(VersionedAtomic *versions) // IN
    /*
     * The write to 'versions->v0' must be observed by all other OS CPUs before
     * the write(s) to the shared data.
-    *
-    * On arm64, this barrier is Full System, which is probably too strong:
-    * Inner Shareable (== all OS CPUs) should work just fine.
     */
    SMP_W_BARRIER_W();
 }
@@ -176,9 +173,6 @@ VersionedAtomic_EndWrite(VersionedAtomic *versions) // IN
    /*
     * The write(s) to the shared data must be observed by all other OS CPUs
     * before the write to 'versions->v1'.
-    *
-    * On arm64, this barrier is Full System, which is probably too strong:
-    * Inner Shareable (== all OS CPUs) should work just fine.
     */
    SMP_W_BARRIER_W();
 
@@ -223,10 +217,6 @@ VersionedAtomic_BeginTryRead(VersionedAtomic const *versions) // IN
    /*
     * The read from 'versions->v1' must happen on this CPU before the read(s)
     * from the shared data.
-    *
-    * On arm64, this barrier is Full System, which is probably too strong:
-    * Inner Shareable (== all OS CPUs) should work just fine, and maybe
-    * Non-shareable (== current CPU) would work too.
     */
    SMP_R_BARRIER_R();
 
@@ -262,10 +252,6 @@ VersionedAtomic_EndTryRead(VersionedAtomic const *versions, // IN
    /*
     * The read(s) from the shared data must happen on this CPU before the read
     * from 'versions->v0'.
-    *
-    * On arm64, this barrier is Full System, which is probably too strong:
-    * Inner Shareable (== all OS CPUs) should work just fine, and maybe
-    * Non-shareable (== current CPU) would work too.
     */
    SMP_R_BARRIER_R();
 

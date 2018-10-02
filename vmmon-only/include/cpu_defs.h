@@ -42,7 +42,7 @@
 typedef uint32 PCPU;
 #define INVALID_PCPU		((PCPU) -1)
 
-#define MAX_PCPUS       576
+#define MAX_PCPUS       1024
 #define MAX_PCPUS_BITS  10  // MAX_PCPUS <= (1 << MAX_PCPUS_BITS)
 #define MAX_PCPUS_MASK  ((1 << MAX_PCPUS_BITS) - 1)
 

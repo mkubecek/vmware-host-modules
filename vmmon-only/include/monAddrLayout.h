@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2005,2007,2009,2013,2015 VMware, Inc. All rights reserved.
+ * Copyright (C) 2005-2017 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -19,7 +19,7 @@
 /*
  * monAddrLayout.h --
  *
- *    Address layout of the monitor
+ *    Address layout of the monitor.
  */
 
 #ifndef _MON_ADDR_LAYOUT_H
@@ -33,25 +33,25 @@
 
 #pragma pack(push, 1)
 typedef struct VMM64_AddrLayout {
-   /* 
+   /*
     *All address are VPNs and all lengths are numPages
     */
    uint64 monBase;            // MONITOR_BASE_VPN
-   uint64 mmuRootStart;       // MMU_ROOT_START
-   uint32 mmuRootLen;         // MMU_ROOT_LEN
-   uint64 mmuL3Start;         // MMU_L3_START
-   uint32 mmuL3Len;           // MMU_L3_LEN
-   uint64 mmuL2Start;         // MMU_L2_START
-   uint32 mmuL2Len;           // MMU_L2_LEN
-   uint64 monPageTableStart;  // MON_PAGE_TABLE_START
-   uint32 monPageTableLen;    // MON_PAGE_TABLE_LEN
+   uint64 monL4Start;         // MON_PAGE_TABLE_L4_START
+   uint32 monL4Len;           // MON_PAGE_TABLE_L4_LEN
+   uint64 monL3Start;         // MON_PAGE_TABLE_L3_START
+   uint32 monL3Len;           // MON_PAGE_TABLE_L3_LEN
+   uint64 monL2Start;         // MON_PAGE_TABLE_L2_START
+   uint32 monL2Len;           // MON_PAGE_TABLE_L2_LEN
+   uint64 monL1Start;         // MON_PAGE_TABLE_L1_START
+   uint32 monL1Len;           // MON_PAGE_TABLE_L1_LEN
 #ifndef VMX86_SERVER
    uint64 monCpStart;         // CROSS_PAGE_START
 #endif
 } VMM64_AddrLayout;
 #pragma pack(pop)
 
-#define VMM_SCRATCHAS_FIRST_L4OFF   1
-#define VMM_SCRATCHAS_LAST_L4OFF  127
+#define VMM_MONAS_FIRST_L4OFF   1
+#define VMM_MONAS_LAST_L4OFF  127
 
 #endif

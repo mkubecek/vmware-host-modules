@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2002-2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 2002-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -19,7 +19,7 @@
 /*
  * vcpuset.h --
  *
- *	ADT for a set of VCPUs.  Implemented as an array of bitmasks.
+ *      ADT for a set of VCPUs.  Implemented as an array of bitmasks.
  *
  */
 
@@ -80,18 +80,35 @@
 
 extern VCPUSet  vcpuSetFull;
 
-#define FOR_EACH_VCPU_IN_SET(_vcpuSet, _v)                                    \
-   do {                                                                       \
-      Vcpuid  _v;                                                             \
-      VCPUSet __vcs;                                                          \
-      VCPUSet_Copy(&__vcs, _vcpuSet);                                         \
-      while ((_v = VCPUSet_FindFirst(&__vcs)) != VCPUID_INVALID) {            \
-         VCPUSet_Remove(&__vcs, _v);
+#define FOR_EACH_VCPU_IN_SET_WITH_MAX(_vcpuSet, _v, _numVcpus)                 \
+   do {                                                                        \
+      Vcpuid _v;                                                               \
+      const VCPUSet *__vcs = (_vcpuSet);                                       \
+      unsigned _subsetIdx = 0;                                                 \
+      uint64 _subset = VCPUSet_Subset(__vcs, _subsetIdx);                      \
+      unsigned _maxSubsets = VCS_VCPUID_SUBSET_IDX((_numVcpus) - 1) + 1;       \
+      ASSERT(_maxSubsets <= VCS_SUBSET_COUNT);                                 \
+      while ((_v = VCPUSet_FindFirstInSubset(__vcs, &_subset, &_subsetIdx,     \
+                                             _maxSubsets)) != VCPUID_INVALID) {\
 
-#define ROF_EACH_VCPU_IN_SET()                                                \
-      }                                                                       \
+#define ROF_EACH_VCPU_IN_SET_WITH_MAX()                                 \
+      }                                                                 \
    } while (0)
 
+
+#define FOR_EACH_VCPU_IN_SET(_vcpuSet, _v)                              \
+   FOR_EACH_VCPU_IN_SET_WITH_MAX(_vcpuSet, _v, MAX_VCPUS)
+
+#define ROF_EACH_VCPU_IN_SET()                                          \
+      }                                                                 \
+   } while (0)
+
+#define FOR_EACH_VCPU_IN_POPULATED_VCPUS(_vcpuSet, _v)                  \
+   FOR_EACH_VCPU_IN_SET_WITH_MAX(_vcpuSet, _v, NumVCPUs())
+
+#define ROF_EACH_VCPU_IN_POPULATED_VCPUS()                              \
+      }                                                                 \
+   } while (0)
 
 #define FOR_EACH_SUBSET_IN_SET(_setIndex)                                     \
    do {                                                                       \
@@ -113,10 +130,10 @@ extern VCPUSet  vcpuSetFull;
    } while (0)
 
 
-#define FOR_EACH_POPULATED_SUBSET_IN_SET(_setIndex)                           \
+#define FOR_EACH_POPULATED_SUBSET_IN_SET(_setIndex, _numVcpus)                \
    do {                                                                       \
       int _setIndex;                                                          \
-      int _maxSubsets = VCS_VCPUID_SUBSET_IDX(NumVCPUs() - 1);                \
+      int _maxSubsets = VCS_VCPUID_SUBSET_IDX(_numVcpus - 1);                 \
       for (_setIndex = 0; _setIndex <= _maxSubsets; _setIndex++) {
 
 #define ROF_EACH_POPULATED_SUBSET_IN_SET()                                    \
@@ -128,7 +145,7 @@ extern VCPUSet  vcpuSetFull;
  *----------------------------------------------------------------------
  *
  * VCPUSet_Empty --
- *      
+ *
  *      Clear all bits in a VCPUSet.
  *
  *----------------------------------------------------------------------
@@ -147,7 +164,7 @@ VCPUSet_Empty(VCPUSet *vcs)
  *----------------------------------------------------------------------
  *
  * VCPUSet_IsEmpty --
- *      
+ *
  *      Return TRUE iff a VCPUSet has no bits set.
  *
  *----------------------------------------------------------------------
@@ -192,7 +209,7 @@ VCPUSet_Full(void)
  *----------------------------------------------------------------------
  *
  * VCPUSet_Copy --
- *      
+ *
  *      Copy one VCPUSet's contents to another.
  *
  *----------------------------------------------------------------------
@@ -211,7 +228,7 @@ VCPUSet_Copy(VCPUSet *dest, const VCPUSet *src)
  *----------------------------------------------------------------------
  *
  * VCPUSet_Equals --
- *      
+ *
  *      Compare two VCPUSets, return TRUE iff their contents match.
  *
  *----------------------------------------------------------------------
@@ -233,7 +250,7 @@ VCPUSet_Equals(const VCPUSet *vcs1, const VCPUSet *vcs2)
  *----------------------------------------------------------------------
  *
  * VCPUSet_IsMember --
- *      
+ *
  *      Return TRUE iff the given Vcpuid is present in a VCPUSet.
  *
  *----------------------------------------------------------------------
@@ -252,7 +269,7 @@ VCPUSet_IsMember(const VCPUSet *vcs, Vcpuid v)
  *----------------------------------------------------------------------
  *
  * VCPUSet_AtomicIsMember --
- *      
+ *
  *      Return TRUE iff the given Vcpuid is present in a VCPUSet.
  *
  *----------------------------------------------------------------------
@@ -273,7 +290,7 @@ VCPUSet_AtomicIsMember(VCPUSet *vcs, Vcpuid v)
  *
  * VCPUSet_FindFirst --
  * VCPUSet_FindLast --
- *      
+ *
  *      Find the first (lowest-numbered) or last (highest-numbered)
  *      Vcpuid in a VCPUSet.
  *
@@ -312,9 +329,53 @@ VCPUSet_FindLast(const VCPUSet *vcs)
 /*
  *----------------------------------------------------------------------
  *
+ * VCPUSet_FindFirstInSubset --
+ *
+ *      Find the first (lowest-numbered) Vcpuid in the given subset of a
+ *      VCPUSet object.  It is required that *subset is initialized to
+ *      a subset of *vcs and *subsetIdx must hold the index of the subset
+ *      stored in *subset.
+ *
+ * Results:
+ *      Vcpuid if at least one is present in a set.
+ *      VCPUID_INVALID if the set is empty.
+ *
+ * Side effects:
+ *      This function is intended to be used for iterating over all bits
+ *      of a VCPUSet, it will modify *subset to clear the bit associated
+ *      with the returned Vcpuid (if any).  The *subsetIdx argument may
+ *      also be updated.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static INLINE Vcpuid
+VCPUSet_FindFirstInSubset(const VCPUSet *vcs, uint64 *subset,
+                          unsigned *subsetIdx, unsigned maxSubsets)
+{
+   ASSERT(*subsetIdx < maxSubsets && maxSubsets <= VCS_SUBSET_COUNT);
+   do {
+      if (*subset != 0) {
+         int bit;
+         bit = lssb64_0(*subset);
+         *subset &= ~(CONST64U(1) << bit);
+         return bit + (*subsetIdx << VCS_SUBSET_SHIFT);
+      }
+      ++*subsetIdx;
+      if (*subsetIdx < maxSubsets) {
+         *subset = vcs->subset[*subsetIdx];
+      }
+   } while (*subsetIdx < maxSubsets);
+   return VCPUID_INVALID;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * VCPUSet_Remove --
  * VCPUSet_AtomicRemove --
- *      
+ *
  *      Remove or atomically remove a single Vcpuid from a VCPUSet.
  *
  *----------------------------------------------------------------------
@@ -371,7 +432,7 @@ VCPUSet_RemoveSet(VCPUSet *dest, const VCPUSet *src)
  *
  * VCPUSet_Include --
  * VCPUSet_AtomicInclude --
- *      
+ *
  *      Add or atomically add a single Vcpuid to a VCPUSet.
  *
  *----------------------------------------------------------------------
@@ -394,12 +455,33 @@ VCPUSet_AtomicInclude(VCPUSet *vcs, Vcpuid v)
 }
 
 
+/*
+ *----------------------------------------------------------------------
+ *
+ * VCPUSet_AtomicTestInclude  --
+ *
+ *      Atomically add a single Vcpuid to a VCPUSet, and
+ *      return TRUE iff the given Vcpuid was present in the VCPUSet.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static INLINE Bool
+VCPUSet_AtomicTestInclude(VCPUSet *vcs, Vcpuid v)
+{
+   volatile uint64 *subset = &vcs->subset[VCS_VCPUID_SUBSET_IDX(v)];
+   ASSERT(v < MAX_VCPUS);
+   return Atomic_TestSetBit64(Atomic_VolatileToAtomic64(subset),
+                              v & VCS_SUBSET_MASK);
+}
+
+
 #if defined(VMM) && !defined(MONITOR_APP)
 /*
  *----------------------------------------------------------------------
  *
  * VCPUSet_PackCareful --
- *      
+ *
  *      Pack a VCPUSet into the bytes at "ptr".
  *
  *----------------------------------------------------------------------
@@ -416,7 +498,7 @@ VCPUSet_PackCareful(unsigned numVCPUs, const VCPUSet *vcs, void *ptr)
  *----------------------------------------------------------------------
  *
  * VCPUSet_UnpackCareful --
- *      
+ *
  *      Unpack a VCPUSet from the bytes at "ptr".
  *
  *----------------------------------------------------------------------
@@ -483,7 +565,7 @@ VCPUSet_Populate(VCPUSet *vcs, unsigned numVCPUs)
  *----------------------------------------------------------------------
  *
  * VCPUSet_Subset --
- *      
+ *
  *      Return the specified subset of a VCPUSet.
  *
  *----------------------------------------------------------------------
@@ -502,7 +584,7 @@ VCPUSet_Subset(const VCPUSet *vcs,
  *----------------------------------------------------------------------
  *
  * VCPUSet_SubsetPtr --
- *      
+ *
  *      Return a pointer to the specified subset of a VCPUSet.
  *
  *----------------------------------------------------------------------
@@ -520,7 +602,7 @@ VCPUSet_SubsetPtr(VCPUSet *vcs, unsigned subset)
  *----------------------------------------------------------------------
  *
  * VCPUSet_IsSupersetOrEqual --
- *      
+ *
  *      Return TRUE iff vcs1 contains a superset of the VCPUs in vcs2
  *      or vcs1 and vcs2 contain exactly the same VCPUs.
  *
@@ -543,7 +625,7 @@ VCPUSet_IsSupersetOrEqual(const VCPUSet *vcs1, const VCPUSet *vcs2)
  *----------------------------------------------------------------------
  *
  * VCPUSet_IsSubsetOrEqual --
- *      
+ *
  *      Return TRUE iff vcs1 contains a subset of the VCPUs in vcs2
  *      or vcs1 and vcs2 contain exactly the same VCPUs.
  *
@@ -561,7 +643,7 @@ VCPUSet_IsSubsetOrEqual(const VCPUSet *vcs1, const VCPUSet *vcs2)
  *----------------------------------------------------------------------
  *
  * VCPUSet_MakeSingleton --
- *      
+ *
  *      Add a single Vcpuid to a VCPUSet and remove all others.
  *
  *----------------------------------------------------------------------
@@ -578,27 +660,31 @@ VCPUSet_MakeSingleton(VCPUSet *vcs, Vcpuid v)
 /*
  *----------------------------------------------------------------------
  *
- * VCPUSet_IsSingleton --
- *      
- *      Return TRUE iff vcs contains exactly one VCPU.
+ * VCPUSet_FindSingleton --
+ *
+ *      Return the VCPU in the set iff vcs contains exactly one VCPU.
+ *      Return VCPUID_INVALID otherwise.
  *
  *----------------------------------------------------------------------
  */
 
-static INLINE Bool
-VCPUSet_IsSingleton(const VCPUSet *vcs)
+static INLINE Vcpuid
+VCPUSet_FindSingleton(const VCPUSet *vcs)
 {
-   Bool foundOnce = FALSE;
+   uint64 foundSub = 0;
+   uint32 foundIdx;
    FOR_EACH_SUBSET_IN_SET(idx) {
       uint64 sub = vcs->subset[idx];
       if (sub != 0) {
-         if (foundOnce || (sub & (sub - 1)) != 0) {
-            return FALSE;
+         if (foundSub != 0 || (sub & (sub - 1)) != 0) {
+            return VCPUID_INVALID;
          }
-         foundOnce = TRUE;
+         foundSub = sub;
+         foundIdx = idx;
       }
    } ROF_EACH_SUBSET_IN_SET();
-   return foundOnce;
+   return foundSub != 0 ? lssb64_0(foundSub) + (foundIdx << VCS_SUBSET_SHIFT) :
+                          VCPUID_INVALID;
 }
 
 
@@ -622,7 +708,7 @@ VCPUSet_IsFull(const VCPUSet *vcs)
  *----------------------------------------------------------------------
  *
  * VCPUSet_AtomicReadWriteSubset --
- *      
+ *
  *      For the nth aligned 64-VCPU subset of a VCPU set, atomically
  *      read then write.  Return the contents read.  Set 0 is VCPUs
  *      0-63 and set 1 is VCPUs 64-127.
@@ -667,7 +753,7 @@ VCPUSet_Size(const VCPUSet *vcs)
  *----------------------------------------------------------------------
  *
  * VCPUSet_UnionSubset --
- *      
+ *
  *      Given an 64-bit value and a subset number, add the VCPUs
  *      represented to the set.
  *
@@ -686,7 +772,7 @@ VCPUSet_UnionSubset(VCPUSet *vcs, uint64 vcpus, unsigned n)
  *----------------------------------------------------------------------
  *
  * VCPUSet_SubtractSubset --
- *      
+ *
  *      Given an 64-bit value and a subset number, remove the VCPUs
  *      represented in the subset from the set.
  *
@@ -705,7 +791,7 @@ VCPUSet_SubtractSubset(VCPUSet *vcs, uint64 vcpus, unsigned n)
  *----------------------------------------------------------------------
  *
  * VCPUSet_AtomicUnionSubset --
- *      
+ *
  *      Given a 64-bit value and a subset number, atomically add
  *      the VCPUs represented to the set.
  *
@@ -725,7 +811,7 @@ VCPUSet_AtomicUnionSubset(VCPUSet *vcs, uint64 vcpus, unsigned n)
  *----------------------------------------------------------------------
  *
  * VCPUSet_Invert --
- *      
+ *
  *      Makes all non-present valid VCPUs in a set present and all
  *      VCPUs present non-present.
  *
@@ -746,7 +832,7 @@ VCPUSet_Invert(VCPUSet *vcs)
  *----------------------------------------------------------------------
  *
  * VCPUSet_Intersection
- *      
+ *
  *      Given two VCPUSets, populate the destination set with only the
  *      VCPUs common to both.
  *
@@ -766,7 +852,7 @@ VCPUSet_Intersection(VCPUSet *dest, const VCPUSet *src)
  *----------------------------------------------------------------------
  *
  * VCPUSet_LogFormat --
- *      
+ *
  *      Given a buffer of at least VCS_BUF_SIZE to fill, write into it a
  *      string suitable for use in Log() or LOG().
  *      Returns the buffer which was passed as an argument, after
