@@ -1092,8 +1092,9 @@ TaskSetCrossGDTVMM(BSVMM_GDTInit *gdt)
  * TaskSetCrossGDTHost --
  *
  *      Initializes the host portion of the crossGDT by copying it directly
- *      from the host kernel's GDT. We assume that all the host segments we
- *      will ever need come from the first page of the host's GDT.
+ *      from the host kernel's GDT. We assume that all the host segments
+ *      we will ever need come from the first page of the host's GDT and
+ *      precede the lowest segment needed by the monitor.
  *
  * Results:
  *      TRUE on success, FALSE otherwise.
@@ -1105,17 +1106,30 @@ TaskSetCrossGDTVMM(BSVMM_GDTInit *gdt)
  */
 
 static void
-TaskSetCrossGDTHost(void)
+TaskSetCrossGDTHost(const BSVMM_GDTInit *gdt)
 {
    unsigned len;
    DTR64 hostGDT;
+   unsigned i;
+   /* Copy descriptors up to at most the size of the CrossGDT. */
+   unsigned minVMMIndex = sizeof(CrossGDT) / sizeof(Descriptor);
+
    /*
     * All copied host segment descriptors will come from the first page of
-    * the host kernel GDT.
+    * the host kernel GDT and precede the first monitor segment descriptor.
     */
+   ASSERT_ON_COMPILE(sizeof(CrossGDT) % sizeof(Descriptor) == 0);
    ASSERT(HostIF_GlobalLockIsHeld());
+   for (i = 0; i < ARRAYSIZE(gdt->entries); i++) {
+      const BSVMM_GDTInitEntry *entry = &gdt->entries[i];
+      if (entry->present == 1) {
+         minVMMIndex = MIN(entry->index, minVMMIndex);
+      }
+   }
    TaskSaveGDT(&hostGDT);
-   len = MIN((unsigned)hostGDT.limit + 1, sizeof(CrossGDT));
+   /* PR 2142795: Only copy up to at most the monitor's first descriptor. */
+   len = MIN((unsigned)hostGDT.limit + 1, minVMMIndex * sizeof(Descriptor));
+   ASSERT(len <= sizeof(CrossGDT));
    memcpy(crossGDT->gdtes, (void*)HOST_KERNEL_LA_2_VA((LA)hostGDT.offset), len);
 }
 
@@ -1157,7 +1171,7 @@ Task_CreateCrossGDT(BSVMM_GDTInit *gdt)
          return FALSE;
       }
       memset(crossGDT, 0, sizeof *crossGDT);
-      TaskSetCrossGDTHost();
+      TaskSetCrossGDTHost(gdt);
    }
 
    populatedCrossGDT = TaskSetCrossGDTVMM(gdt);
