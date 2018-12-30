@@ -192,6 +192,17 @@ static unsigned long compat_totalram_pages(void)
 #endif
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+static void do_gettimeofday(struct timeval *tv)
+{
+	struct timespec64 now;
+
+	ktime_get_real_ts64(&now);
+	tv->tv_sec = now.tv_sec;
+	tv->tv_usec = now.tv_nsec / 1000;
+}
+#endif
+
 /*
  *-----------------------------------------------------------------------------
  *
