@@ -35,6 +35,7 @@
 #include "compat_version.h"
 #include "compat_module.h"
 #include "compat_page.h"
+#include "compat_timekeeping32.h"
 
 #include "usercalldefs.h"
 

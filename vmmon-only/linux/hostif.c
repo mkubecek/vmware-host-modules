@@ -100,6 +100,7 @@
 #include "vmmonInt.h"
 #include "versioned_atomic.h"
 #include "compat_poll.h"
+#include "compat_timekeeping32.h"
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 #   define global_zone_page_state global_page_state
