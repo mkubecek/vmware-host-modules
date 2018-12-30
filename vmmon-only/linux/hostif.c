@@ -240,6 +240,15 @@ static struct {
 uint8 monitorIPIVector;
 uint8 hvIPIVector;
 
+static unsigned long compat_totalram_pages(void)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+	return totalram_pages;
+#else
+	return totalram_pages();
+#endif
+}
+
 /*
  *-----------------------------------------------------------------------------
  *
@@ -1602,14 +1611,7 @@ unsigned int
 HostIF_EstimateLockedPageLimit(const VMDriver* vm,                // IN
 			       unsigned int currentlyLockedPages) // IN
 {
-   /*
-    * This variable is available and exported to modules,
-    * since at least 2.6.0.
-    */
-
-   extern unsigned long totalram_pages;
-
-   unsigned int totalPhysicalPages = totalram_pages;
+   unsigned int totalPhysicalPages = compat_totalram_pages();
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 28)
    return MemDefaults_CalcMaxLockedPages(totalPhysicalPages);
