@@ -85,6 +85,12 @@ extern unsigned int  vnet_max_qlen;
 #   define compat_kunmap(page) kunmap((page).p)
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0) && defined(VERIFY_WRITE)
+	#define write_access_ok(addr, size) access_ok(VERIFY_WRITE, addr, size)
+#else
+	#define write_access_ok(addr, size) access_ok(addr, size)
+#endif
+
 /*
  *-----------------------------------------------------------------------------
  *
@@ -142,7 +148,7 @@ VNetUserIfMapPtr(VA uAddr,        // IN: pointer to user memory
                  struct page **p, // OUT: locked page
                  void **ptr)      // OUT: kernel mapped pointer
 {
-   if (!access_ok(VERIFY_WRITE, (void *)uAddr, size) ||
+   if (!write_access_ok((void *)uAddr, size) ||
        (((uAddr + size - 1) & ~(PAGE_SIZE - 1)) !=
         (uAddr & ~(PAGE_SIZE - 1)))) {
       return -EINVAL;
