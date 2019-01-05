@@ -203,6 +203,12 @@ static void do_gettimeofday(struct timeval *tv)
 }
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0) && defined(VERIFY_WRITE)
+	#define write_access_ok(addr, size) access_ok(VERIFY_WRITE, addr, size)
+#else
+	#define write_access_ok(addr, size) access_ok(addr, size)
+#endif
+
 /*
  *-----------------------------------------------------------------------------
  *
@@ -3419,7 +3425,7 @@ HostIF_MapUserMem(VA addr,                  // IN: User memory virtual address
 
    ASSERT(handle);
 
-   if (!access_ok(VERIFY_WRITE, p, size)) {
+   if (!write_access_ok(p, size)) {
       printk(KERN_ERR "%s: Couldn't verify write to uva 0x%p with size %"
              FMTSZ"u\n", __func__, p, size);
 
