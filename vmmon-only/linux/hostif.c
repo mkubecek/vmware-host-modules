@@ -2287,7 +2287,7 @@ isVAReadable(VA r)  // IN:
    int ret;
    
    old_fs = get_fs();
-   set_fs(get_ds());
+   set_fs(KERNEL_DS);
    r = APICR_TO_ADDR(r, APICR_VERSION);
    ret = HostIF_CopyFromUser(&dummy, (void*)r, sizeof(dummy));
    set_fs(old_fs);
@@ -2488,7 +2488,7 @@ HostIF_SemaphoreWait(VMDriver *vm,   // IN:
    }
 
    old_fs = get_fs();
-   set_fs(get_ds());
+   set_fs(KERNEL_DS);
 
    {
       struct poll_wqueues table;
@@ -2617,7 +2617,7 @@ HostIF_SemaphoreSignal(uint64 *args)  // IN:
    }
 
    old_fs = get_fs();
-   set_fs(get_ds());
+   set_fs(KERNEL_DS);
 
    /*
     * Always write sizeof(uint64) bytes. This works fine for eventfd and
