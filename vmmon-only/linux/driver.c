@@ -73,6 +73,9 @@ static Bool LinuxDriverCheckPadding(void);
 
 struct VMXLinuxState linuxState;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
+typedef int vm_fault_t;
+#endif
 
 /*
  *----------------------------------------------------------------------
@@ -97,9 +100,9 @@ long LinuxDriver_Ioctl(struct file *filp, u_int iocmd,
 
 static int LinuxDriver_Close(struct inode *inode, struct file *filp);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
-static int LinuxDriverFault(struct vm_fault *fault);
+static vm_fault_t LinuxDriverFault(struct vm_fault *fault);
 #else
-static int LinuxDriverFault(struct vm_area_struct *vma, struct vm_fault *fault);
+static vm_fault_t LinuxDriverFault(struct vm_area_struct *vma, struct vm_fault *fault);
 #endif
 static int LinuxDriverMmap(struct file *filp, struct vm_area_struct *vma);
 
@@ -594,7 +597,7 @@ LinuxDriver_Close(struct inode *inode, // IN
  *-----------------------------------------------------------------------------
  */
 
-static int
+static vm_fault_t
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 LinuxDriverFault(struct vm_fault *fault)     //IN/OUT
 #else
