@@ -82,6 +82,9 @@ static Bool LinuxDriverCheckPadding(void);
 
 struct VMXLinuxState linuxState;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)
+typedef int vm_fault_t;
+#endif
 
 /*
  *----------------------------------------------------------------------
@@ -107,9 +110,9 @@ long LinuxDriver_Ioctl(struct file *filp, u_int iocmd,
 static int LinuxDriver_Close(struct inode *inode, struct file *filp);
 static unsigned int LinuxDriverPoll(struct file *file, poll_table *wait);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
-static int LinuxDriverFault(struct vm_fault *fault);
+static vm_fault_t LinuxDriverFault(struct vm_fault *fault);
 #elif defined(VMW_NOPAGE_2624)
-static int LinuxDriverFault(struct vm_area_struct *vma, struct vm_fault *fault);
+static vm_fault_t LinuxDriverFault(struct vm_area_struct *vma, struct vm_fault *fault);
 #else
 static struct page *LinuxDriverNoPage(struct vm_area_struct *vma,
                                       unsigned long address,
@@ -882,11 +885,11 @@ LinuxDriverPollTimeout(compat_timer_arg_t unused)  // IN:
  */
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
-static int
+static vm_fault_t
 LinuxDriverFault(struct vm_fault *fault)     //IN/OUT
 #elif defined(VMW_NOPAGE_2624)
-static int LinuxDriverFault(struct vm_area_struct *vma, //IN
-                            struct vm_fault *fault)     //IN/OUT
+static vm_fault_t LinuxDriverFault(struct vm_area_struct *vma, //IN
+				   struct vm_fault *fault)     //IN/OUT
 #else
 static struct page *LinuxDriverNoPage(struct vm_area_struct *vma, //IN
                                       unsigned long address,      //IN
