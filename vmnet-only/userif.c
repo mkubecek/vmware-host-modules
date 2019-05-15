@@ -137,15 +137,20 @@ UserifLockPage(VA addr) // IN
  */
 
 static INLINE int
-VNetUserIfMapPtr(VA uAddr,        // IN: pointer to user memory
+VNetUserIfMapPtr(VA64 uAddr,      // IN: pointer to user memory
                  size_t size,     // IN: size of data
                  struct page **p, // OUT: locked page
                  void **ptr)      // OUT: kernel mapped pointer
 {
-   if (!access_ok(VERIFY_WRITE, (void *)uAddr, size) ||
-       (((uAddr + size - 1) & ~(PAGE_SIZE - 1)) !=
-        (uAddr & ~(PAGE_SIZE - 1)))) {
+   uint8 v;
+
+   /* Check area does not straddle two pages. */
+   if ((uAddr & (PAGE_SIZE - 1)) + size > PAGE_SIZE) {
       return -EINVAL;
+   }
+   /* Check if it is user's area.  UserifLockPage() checks writability. */
+   if (copy_from_user(&v, (void *)(unsigned long)uAddr, sizeof v) != 0) {
+      return -EFAULT;
    }
 
    *p = UserifLockPage(uAddr);
@@ -158,7 +163,7 @@ VNetUserIfMapPtr(VA uAddr,        // IN: pointer to user memory
 }
 
 static INLINE int
-VNetUserIfMapUint32Ptr(VA uAddr,        // IN: pointer to user memory
+VNetUserIfMapUint32Ptr(VA64 uAddr,      // IN: pointer to user memory
                        struct page **p, // OUT: locked page
                        uint32 **ptr)    // OUT: kernel mapped pointer
 {
@@ -201,7 +206,7 @@ VNetUserIfSetupNotify(VNetUserIF *userIf, // IN
       return -EBUSY;
    }
 
-   if ((retval = VNetUserIfMapUint32Ptr((VA)vn->pollPtr, &pollPage,
+   if ((retval = VNetUserIfMapUint32Ptr(vn->pollPtr, &pollPage,
                                         &pollPtr)) < 0) {
       return retval;
    }
@@ -213,7 +218,7 @@ VNetUserIfSetupNotify(VNetUserIF *userIf, // IN
       goto error_free;
    }
 
-   if ((retval = VNetUserIfMapUint32Ptr((VA)vn->recvClusterPtr,
+   if ((retval = VNetUserIfMapUint32Ptr(vn->recvClusterPtr,
                                         &recvClusterPage,
                                         &recvClusterCount)) < 0) {
       goto error_free;

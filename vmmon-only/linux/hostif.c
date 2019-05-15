@@ -1638,9 +1638,13 @@ HostIF_EstimateLockedPageLimit(const VMDriver* vm,                // IN
     * since at least 2.6.0.
     */
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
    extern unsigned long totalram_pages;
 
    unsigned int totalPhysicalPages = totalram_pages;
+#else
+   unsigned int totalPhysicalPages = totalram_pages();
+#endif
 
    /*
     * Use the memory information linux exports as of late for a more
@@ -1741,6 +1745,49 @@ HostIF_WaitForFreePages(unsigned int timeoutMs)  // IN:
 /*
  *----------------------------------------------------------------------
  *
+ * HostIFGetTime --
+ *
+ *      Reads the current time in UPTIME_FREQ units.
+ *
+ * Results:
+ *      The uptime, in units of UPTIME_FREQ.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static uint64
+HostIFGetTime(void)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+   struct timeval tv;
+
+   do_gettimeofday(&tv);
+   return tv.tv_usec * (UPTIME_FREQ / 1000000) + tv.tv_sec * UPTIME_FREQ;
+#else
+   struct timespec64 now;
+
+   /*
+    * Use raw time used by Posix timers.  This time is not affected by
+    * NTP adjustments, so it may drift from real time and monotonic time,
+    * but it will stay in sync with other timers.
+    */
+   ktime_get_raw_ts64(&now);
+   /*
+    * UPTIME_FREQ resolution is lower than tv_nsec,
+    * so we have to do division...
+    */
+   ASSERT_ON_COMPILE(1000000000 % UPTIME_FREQ == 0);
+   return now.tv_nsec / (1000000000 / UPTIME_FREQ) + now.tv_sec * UPTIME_FREQ;
+#endif
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * HostIFReadUptimeWork --
  *
  *      Reads the current uptime.  The uptime is based on getimeofday,
@@ -1769,7 +1816,6 @@ HostIF_WaitForFreePages(unsigned int timeoutMs)  // IN:
 static uint64
 HostIFReadUptimeWork(unsigned long *j)  // OUT: current jiffies
 {
-   struct timeval tv;
    uint64 monotime, uptime, upBase, monoBase;
    int64 diff;
    uint32 version;
@@ -1784,13 +1830,12 @@ HostIFReadUptimeWork(unsigned long *j)  // OUT: current jiffies
       monoBase = uptimeState.monotimeBase;
    } while (!VersionedAtomic_EndTryRead(&uptimeState.version, version));
 
-   do_gettimeofday(&tv);
+   uptime = HostIFGetTime();
    upBase = Atomic_Read64(&uptimeState.uptimeBase);
 
    monotime = (uint64)(jifs - jifBase) * (UPTIME_FREQ / HZ);
    monotime += monoBase;
 
-   uptime = tv.tv_usec * (UPTIME_FREQ / 1000000) + tv.tv_sec * UPTIME_FREQ;
    uptime += upBase;
 
    /*
@@ -1895,13 +1940,11 @@ HostIFUptimeResyncMono(struct timer_list *timer)  // IN: ignored
 void
 HostIF_InitUptime(void)
 {
-   struct timeval tv;
+   uint64 tm;
 
    uptimeState.jiffiesBase = jiffies;
-   do_gettimeofday(&tv);
-   Atomic_Write64(&uptimeState.uptimeBase,
-                  -(tv.tv_usec * (UPTIME_FREQ / 1000000) +
-                    tv.tv_sec * UPTIME_FREQ));
+   tm = HostIFGetTime();
+   Atomic_Write64(&uptimeState.uptimeBase, -tm);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0) && !defined(timer_setup)
    init_timer(&uptimeState.timer);
@@ -3405,7 +3448,12 @@ HostIF_MapUserMem(VA addr,                  // IN: User memory virtual address
 
    ASSERT(handle);
 
-   if (!access_ok(VERIFY_WRITE, p, size)) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+   if (!access_ok(VERIFY_WRITE, p, size))
+#else
+   if (!access_ok(p, size))
+#endif
+   {
       printk(KERN_ERR "%s: Couldn't verify write to uva 0x%p with size %"
              FMTSZ"u\n", __func__, p, size);
 

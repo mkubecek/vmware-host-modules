@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -465,6 +465,9 @@ FLAG(   6,  0, ECX,  3,  1, ENERGY_PERF_BIAS,                  NO,   0, FALSE)
 #define CPUID_7_EDX_28 \
 FLAG(   7,  0, EDX, 28,  1, LEVEL7EDX_RSVD1,                    NO,  0, FALSE)
 
+/*    LEVEL, SUB-LEVEL, REG, POS, SIZE, NAME,             MON SUPP, HWV, CPL3 */
+#define CPUID_7_EDX_10 \
+FLAG(   7,  0, EDX, 10,  1, LEAF7_RSVD,                         NO,  0, FALSE)
 #define CPUID_7_EDX_31 \
 FLAG(   7,  0, EDX, 31,  1, LEVEL7EDX_RSVD2,                    NO,  0, FALSE)
 
@@ -519,6 +522,7 @@ FLAG(   7,  0, ECX, 22,  1, RDPID,                             NO,   0, TRUE)  \
 FLAG(   7,  0, ECX, 30,  1, SGX_LC,                            YES, 17, FALSE) \
 FLAG(   7,  0, EDX,  2,  1, AVX512QVNNIW,                      YES, 16, TRUE)  \
 FLAG(   7,  0, EDX,  3,  1, AVX512QFMAPS,                      YES, 16, TRUE)  \
+CPUID_7_EDX_10                                                                 \
 FLAG(   7,  0, EDX, 26,  1, IBRSIBPB,                          ANY,  9, FALSE) \
 FLAG(   7,  0, EDX, 27,  1, STIBP,                             YES,  9, FALSE) \
 CPUID_7_EDX_28                                                                 \
@@ -1432,6 +1436,8 @@ CPUIDCheck(int32 eaxIn, int32 eaxInCheck,
 #define CPUID_STEPPING_KABYLAKE_ES     0x8  // Kabylake S/H/U/Y ES
 #define CPUID_STEPPING_COFFEELAKE_A    0xA  // Coffeelake U/S/H
 #define CPUID_STEPPING_COFFEELAKE_B    0xB  // Coffeelake S/H
+#define CPUID_STEPPING_CASCADELAKE_A   0x5  // Cascade Lake A-step
+#define CPUID_STEPPING_CASCADELAKE_B1  0x7  // Cascade Lake B1-step
 
 #define CPUID_MODEL_PIII_07    7
 #define CPUID_MODEL_PIII_08    8
@@ -1656,6 +1662,15 @@ CPUID_MODEL_IS_HASWELL(uint32 v) // IN: %eax from CPUID with %eax=1.
            effectiveModel == CPUID_MODEL_HASWELL_46);
 }
 
+static INLINE Bool
+CPUID_MODEL_IS_CASCADELAKE(uint32 v) // IN: %eax from CPUID with %eax=1.
+{
+   /* Assumes the CPU manufacturer is Intel. */
+   return CPUID_FAMILY_IS_P6(v) &&
+          CPUID_EFFECTIVE_MODEL(v) == CPUID_MODEL_SKYLAKE_55 &&
+          CPUID_EFFECTIVE_STEPPING(v) >= CPUID_STEPPING_CASCADELAKE_A &&
+          CPUID_EFFECTIVE_STEPPING(v) <= CPUID_STEPPING_CASCADELAKE_B1;
+}
 
 static INLINE Bool
 CPUID_MODEL_IS_SKYLAKE(uint32 v) // IN: %eax from CPUID with %eax=1.

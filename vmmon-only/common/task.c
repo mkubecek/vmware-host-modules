@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -2909,6 +2909,18 @@ Task_Switch(VMDriver *vm,  // IN
    }
 
    if (crosspage->crosspageData.moduleCallType == MODULECALL_INTR) {
+
+      /*
+       * Newer versions of Window expect EFLAGS_AC to be set when handling an
+       * interupt - PR  2248661.
+       */
+      if ((flags & EFLAGS_AC) != 0) {
+         uintptr_t   curFlags;
+         SAVE_FLAGS(curFlags);
+         curFlags |= EFLAGS_AC;
+         RESTORE_FLAGS(curFlags);
+      }
+
       /*
        * Note we must do the RAISE_INTERRUPT before ever enabling
        * interrupts or bad things have happened (might want to know exactly

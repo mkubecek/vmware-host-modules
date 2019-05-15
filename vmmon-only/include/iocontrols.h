@@ -144,7 +144,7 @@ PtrToVA64(void const *ptr) // IN
  * See bora/doc/vmcore details.
  */
 
-#define VMMON_VERSION           (360 << 16 | 0)
+#define VMMON_VERSION           (361 << 16 | 0)
 #define VMMON_VERSION_MAJOR(v)  ((uint32) (v) >> 16)
 #define VMMON_VERSION_MINOR(v)  ((uint16) (v))
 
@@ -276,6 +276,7 @@ enum IOCTLCmd {
 #endif
 
 #if defined __APPLE__
+   IOCTLCMD(GET_NUM_RESPONDING_CPUS),
    IOCTLCMD(ALLOC_LOW_PAGES),
    IOCTLCMD(INIT_DRIVER),
    IOCTLCMD(BLUEPILL),

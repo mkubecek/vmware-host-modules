@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998,2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -29,7 +29,7 @@
 #define INCLUDE_ALLOW_VMCORE
 #include "includeCheck.h"
 
-#if defined(WINNT_DDK)
+#if !defined (__linux__)
 /* XXX: can be more efficient based on server vs. desktop and version of Windows */
 #define PHYSTRACK_MAX_SUPPORTED_GB (2048 + 4) /* 2 TB 64-bit W2k8 + 4 GB PCI */
 #endif
