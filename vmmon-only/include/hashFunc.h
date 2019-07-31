@@ -251,6 +251,7 @@ static INLINE ub8 hash2(register const ub8 *k, /* the key */
   {
     /* c is reserved for the length */
   case  2: b+=k[1];
+	   /* fall through */
   case  1: a+=k[0];
     /* case 0: nothing left to add */
   }
