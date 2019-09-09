@@ -150,7 +150,7 @@ test build).
 When using a downloaded tarball, simply run
 
   tar -cf vmmon.tar vmmon-only
-  tar -cf vmnet.tar vmmon-only
+  tar -cf vmnet.tar vmnet-only
 
 to create the tarballs. In this case, there is no protection against
 unwanted local changes.
