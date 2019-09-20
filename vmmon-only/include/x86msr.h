@@ -797,7 +797,9 @@ typedef struct MSRQuery {
 
 /* MSR for forcing RTM abort to recover PMC3 (see PR 2333817) */
 /* See SKZ87 in intel 335901-009 6th-gen-x-series-spec-update.pdf */
+#ifndef MSR_TSX_FORCE_ABORT
 #define MSR_TSX_FORCE_ABORT                      0x0000010f
+#endif
 #define MSR_TSX_FORCE_ABORT_RTM_BIT_INDEX        0
 
 /*
