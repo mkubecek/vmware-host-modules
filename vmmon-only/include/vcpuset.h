@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2002-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 2002-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -112,7 +112,7 @@ extern VCPUSet  vcpuSetFull;
 
 #define FOR_EACH_SUBSET_IN_SET(_setIndex)                                     \
    do {                                                                       \
-      int _setIndex;                                                          \
+      unsigned _setIndex;                                                     \
       for (_setIndex = 0; _setIndex < VCS_SUBSET_COUNT; _setIndex++) {
 
 #define ROF_EACH_SUBSET_IN_SET()                                              \
@@ -122,8 +122,8 @@ extern VCPUSet  vcpuSetFull;
 
 #define FOR_EACH_SUBSET_IN_SET_COUNTDOWN(_setIndex)                           \
    do {                                                                       \
-      int _setIndex;                                                          \
-      for (_setIndex = VCS_SUBSET_COUNT - 1; _setIndex >= 0; _setIndex--) {
+      unsigned _setIndex = VCS_SUBSET_COUNT;                                  \
+      while (_setIndex-- > 0) {
 
 #define ROF_EACH_SUBSET_IN_SET_COUNTDOWN()                                    \
       }                                                                       \
@@ -132,8 +132,8 @@ extern VCPUSet  vcpuSetFull;
 
 #define FOR_EACH_POPULATED_SUBSET_IN_SET(_setIndex, _numVcpus)                \
    do {                                                                       \
-      int _setIndex;                                                          \
-      int _maxSubsets = VCS_VCPUID_SUBSET_IDX(_numVcpus - 1);                 \
+      unsigned _setIndex;                                                     \
+      unsigned _maxSubsets = VCS_VCPUID_SUBSET_IDX(_numVcpus - 1);            \
       for (_setIndex = 0; _setIndex <= _maxSubsets; _setIndex++) {
 
 #define ROF_EACH_POPULATED_SUBSET_IN_SET()                                    \
@@ -307,7 +307,7 @@ VCPUSet_FindFirst(const VCPUSet *vcs)
    FOR_EACH_SUBSET_IN_SET(idx) {
       uint64 subset = vcs->subset[idx];
       if (subset != 0) {
-         return lssb64_0(subset) + (idx << VCS_SUBSET_SHIFT);
+         return lssb64(subset) - 1 + (idx << VCS_SUBSET_SHIFT);
       }
    } ROF_EACH_SUBSET_IN_SET();
    return VCPUID_INVALID;
@@ -319,7 +319,7 @@ VCPUSet_FindLast(const VCPUSet *vcs)
    FOR_EACH_SUBSET_IN_SET_COUNTDOWN(idx) {
       uint64 subset = vcs->subset[idx];
       if (subset != 0) {
-         return mssb64_0(subset) + (idx << VCS_SUBSET_SHIFT);
+         return mssb64(subset) - 1 + (idx << VCS_SUBSET_SHIFT);
       }
    } ROF_EACH_SUBSET_IN_SET_COUNTDOWN();
    return VCPUID_INVALID;
@@ -356,8 +356,7 @@ VCPUSet_FindFirstInSubset(const VCPUSet *vcs, uint64 *subset,
    ASSERT(*subsetIdx < maxSubsets && maxSubsets <= VCS_SUBSET_COUNT);
    do {
       if (*subset != 0) {
-         int bit;
-         bit = lssb64_0(*subset);
+         unsigned bit = (unsigned)lssb64_0(*subset);
          *subset &= ~(CONST64U(1) << bit);
          return bit + (*subsetIdx << VCS_SUBSET_SHIFT);
       }
@@ -672,7 +671,7 @@ static INLINE Vcpuid
 VCPUSet_FindSingleton(const VCPUSet *vcs)
 {
    uint64 foundSub = 0;
-   uint32 foundIdx;
+   uint32 foundIdx = 0;
    FOR_EACH_SUBSET_IN_SET(idx) {
       uint64 sub = vcs->subset[idx];
       if (sub != 0) {
@@ -683,8 +682,11 @@ VCPUSet_FindSingleton(const VCPUSet *vcs)
          foundIdx = idx;
       }
    } ROF_EACH_SUBSET_IN_SET();
-   return foundSub != 0 ? lssb64_0(foundSub) + (foundIdx << VCS_SUBSET_SHIFT) :
-                          VCPUID_INVALID;
+   if (foundSub != 0) {
+      return lssb64(foundSub) - 1 + (foundIdx << VCS_SUBSET_SHIFT);
+   } else {
+      return VCPUID_INVALID;
+   }
 }
 
 
@@ -863,27 +865,27 @@ VCPUSet_Intersection(VCPUSet *dest, const VCPUSet *src)
 
 #ifdef VCS_SNPRINTF
 static INLINE char *
-VCPUSet_LogFormat(char *buf, const int size, const VCPUSet *vcs)
+VCPUSet_LogFormat(char *buf, size_t size, const VCPUSet *vcs)
 {
-   int offset = 0;
-   Vcpuid highest = VCPUSet_FindLast(vcs);
-   int idx = (highest == VCPUID_INVALID) ? 0 : highest / 8;
+   unsigned offset  = 0;
+   Vcpuid   highest = VCPUSet_FindLast(vcs);
+   unsigned idx     = (highest == VCPUID_INVALID) ? 0 : highest / 8;
+
    ASSERT(size >= VCS_BUF_SIZE);
 #define VCS_LOGF(...)                                                   \
    {                                                                    \
       int ret = VCS_SNPRINTF(buf + offset, size - offset, __VA_ARGS__); \
-      ASSERT(0 <= ret && ret < size - offset);                          \
-      offset += ret;                                                    \
+      ASSERT(0 <= ret && size >= offset && ret < (int)(size - offset)); \
+      offset += (unsigned)ret;                                          \
    }
    /* Print the leading value with no zero-extension. */
-   VCS_LOGF("%#x", ((unsigned char *)vcs)[idx--]);
+   VCS_LOGF("%#x", ((unsigned char *)vcs)[idx]);
 
-   while (idx >= 0) {
+   while (idx-- > 0) {
       if ((idx + 1) % (VCS_SUBSET_WIDTH / 8) == 0) {
          VCS_LOGF(".");
       }
       VCS_LOGF("%02x", ((unsigned char *)vcs)[idx]);
-      idx--;
    }
    return buf;
 }

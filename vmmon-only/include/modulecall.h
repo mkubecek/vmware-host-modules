@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -42,8 +42,8 @@
 #include "mon_assert.h"
 
 #define NUM_EXCEPTIONS   20     /* EXC_DE ... EXC_XF. */
-#define CP_STUB_SIZE 16     /* A relative jmp instruction (5 bytes)
-                               padded to the next 16 byte boundary. */
+#define CP_STUB_SIZE     16     /* A relative jmp instruction (5 bytes)
+                                   padded to the next 16 byte boundary. */
 
 #define MODULECALL_TABLE                                                      \
    MC(INTR)                                                                   \
@@ -66,7 +66,10 @@
    MC(GET_MON_IPI_VECTOR)                                                     \
    MC(GET_HV_IPI_VECTOR)                                                      \
    MC(GET_HOST_TIMER_VECTORS)                                                 \
-   MC(BOOTSTRAP_CLEANUP)
+   MC(BOOTSTRAP_CLEANUP)                                                      \
+   MC(GET_SHARED_AREA)                                                        \
+   MC(GET_STAT_VARS)                                                          \
+   MC(GET_NUM_PTP_PAGES)
 
 /*
  *----------------------------------------------------------------------
@@ -292,7 +295,8 @@ struct VMCrossPageData {
    uint64   crosspageMA;
 
    uint64   hostDR[8];
-   LA64     hostCrossPageLA;   // where host has crosspage mapped
+   LA64     crossPageLA;       // where host/PTP map the cross page
+   LA64     crossGDTLA;        // where host/PTP map the cross GDT
    uint16   hostInitial64CS;
    uint8    hostDRSaved;       // Host DR spilled to hostDR[x].
    uint8    hostDRInHW;        // 0 -> shadowDR in h/w, 1 -> hostDR in h/w.
@@ -310,8 +314,6 @@ struct VMCrossPageData {
    Task64   monTask;          /* vmm's task */
 
    VMMPageTablePatch vmmPTP[MAX_SWITCH_PT_PATCHES]; /* page table patch */
-   LA64              vmmCrossPageLA;
-   LA64              vmmCrossGDTLA;   // where crossGDT is mapped by PT patch
 
    /*
     * The monitor may requests up to two actions when returning to the
@@ -391,6 +393,7 @@ struct VMCrossPageData {
    uint8         _pad7[4];
    uint64        wsUD2;                       // IP of ud2 instr or 0 if unset.
    uint64        specCtrl; /* host MSR_SPEC_CTRL value before world switch. */
+   uint8         _pad8[8];
 }
 #include "vmware_pack_end.h"
 VMCrossPageData;
@@ -447,16 +450,13 @@ struct VMCrossPage {
 #include "vmware_pack_end.h"
 VMCrossPage;
 
-#define CROSSPAGE_VERSION_BASE 0xc09 /* increment by 1 */
+#define CROSSPAGE_VERSION_BASE 0xc0c /* increment by 1 */
 #define CROSSPAGE_VERSION    ((CROSSPAGE_VERSION_BASE << 1) + WS_INTR_STRESS)
 
 #if !defined(VMX86_SERVER) && defined(VMM)
-#define CROSS_PAGE  ((VMCrossPage * const) VPN_2_VA(CROSS_PAGE_START))
+#define CROSS_PAGE             ((VMCrossPage * const)VPN_2_VA(CROSS_PAGE_START))
 #define VMM_SWITCH_SHARED_DATA ((VMCrossPageData *)&CROSS_PAGE->crosspageData)
 #endif
-
-#define NULLPAGE_LINEAR_START  (MONITOR_LINEAR_START + \
-                                PAGE_SIZE * CPL0_GUARD_PAGE_START)
 
 #define MX_WAITINTERRUPTED     3
 #define MX_WAITTIMEDOUT        2

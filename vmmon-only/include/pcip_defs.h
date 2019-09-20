@@ -55,11 +55,15 @@ typedef enum PCIPassthruVectorIndex {
 } PCIPassthruVectorIndex;
 
 typedef enum PCIPassthru_IntrType {
-   PCIPASSTHRU_INTR_NONE   = 0x00,
-   PCIPASSTHRU_INTR_IOAPIC = 0x01,
-   PCIPASSTHRU_INTR_MSI    = 0x02,
-   PCIPASSTHRU_INTR_MSIX   = 0x04,
+   PCIPASSTHRU_INTR_NONE    = 0x00,
+   PCIPASSTHRU_INTR_IOAPIC  = 0x01,
+   PCIPASSTHRU_INTR_MSI     = 0x02,
+   PCIPASSTHRU_INTR_MSIX    = 0x04,
+   PCIPASSTHRU_INTR_MSI_INT = 0x08,
 } PCIPassthru_IntrType;
+
+#define PCIPASSTHRU_INTR_MSI_COMBINED                   \
+   (PCIPASSTHRU_INTR_MSI | PCIPASSTHRU_INTR_MSI_INT)
 
 typedef struct FPTIntrProxyInfo {
    uint32            adapterIndex;

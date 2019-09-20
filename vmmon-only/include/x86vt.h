@@ -159,10 +159,10 @@
 #define VT_ENCODING_RSVD               0xffff9000
 
 /*
- * The highest index of any currently defined field is 25, for
- * TSC_MULTIPLIER.
+ * The highest index of any currently defined field is 27, for
+ * ENCLV_EXITING_BITMAP.
  */
-#define VT_ENCODING_MAX_INDEX                  25
+#define VT_ENCODING_MAX_INDEX                  27
 
 enum {
 #define VMCS_FIELD(_name, _val, ...) VT_VMCS_##_name = _val,
@@ -293,7 +293,9 @@ enum {
    VMX_CPU2(PT_SUPPRESS_NR_BIT, 19)                      \
    VMX_CPU2(XSAVES,             20)                      \
    VMX_CPU2(EPT_MBX,            22)                      \
-   VMX_CPU2(TSC_SCALING,        25)
+   VMX_CPU2(TSC_SCALING,        25)                      \
+   VMX_CPU2(ENCLV,              28)                      \
+   VMX_CPU2(EPC_VIRT_EXT,       29)
 
 #define VMX_PROCBASED_CTLS2_CAP                          \
         VMX_PROCBASED_CTLS2_CAP_NDA                      \
@@ -687,6 +689,12 @@ enum {
 #define VT_GUESTFAIL_QUAL_NMI          3
 #define VT_GUESTFAIL_QUAL_LINK         4
 
+/* SGX conflict VM-exit Qualification Codes */
+#define VT_SGX_TRACKING_RESOURCE_CONFLICT     0
+#define VT_SGX_TRACKING_REFERENCE_CONFLICT    1
+#define VT_SGX_EPC_PAGE_CONFLICT_EXCEPTION    2
+#define VT_SGX_EPC_PAGE_CONFLICT_ERROR        3
+
 /* VMX abort indicators. */
 
 #define VT_VMX_ABORT_GUEST_MSRS        1
@@ -710,7 +718,8 @@ enum {
 #define VT_REQUIRED_PINBASED_CTLS                      \
    (VT_PINBASED_CTLS_DEFAULT1                        | \
     VT_VMCS_PIN_VMEXEC_CTL_EXTINT_EXIT               | \
-    VT_VMCS_PIN_VMEXEC_CTL_NMI_EXIT)
+    VT_VMCS_PIN_VMEXEC_CTL_NMI_EXIT                  | \
+    VT_VMCS_PIN_VMEXEC_CTL_VNMI)
 
 #define VT_REQUIRED_PROCBASED_CTLS                     \
    (VT_PROCBASED_CTLS_DEFAULT1                       | \
@@ -726,6 +735,7 @@ enum {
     VT_VMCS_CPU_VMEXEC_CTL_LDCR8                     | \
     VT_VMCS_CPU_VMEXEC_CTL_STCR8                     | \
     VT_VMCS_CPU_VMEXEC_CTL_TPR_SHADOW                | \
+    VT_VMCS_CPU_VMEXEC_CTL_VNMI_WINDOW               | \
     VT_VMCS_CPU_VMEXEC_CTL_MONITOR)
 
 #define VT_REQUIRED_EXIT_CTLS                          \
@@ -1075,7 +1085,7 @@ VT_MBXSupportedFromFeatures(uint64 secondary)
 static INLINE Bool
 VT_EnabledCPU(void)
 {
-   return VT_EnabledFromFeatures(__GET_MSR(MSR_FEATCTL));
+   return VT_EnabledFromFeatures(X86MSR_GetMSR(MSR_FEATCTL));
 }
 
 
@@ -1096,16 +1106,14 @@ VT_EnabledCPU(void)
 static INLINE Bool
 VT_SupportedCPU(void)
 {
-   if (__GET_MSR(MSR_VMX_BASIC) & MSR_VMX_BASIC_TRUE_CTLS) {
-      return VT_SupportedFromFeatures(__GET_MSR(MSR_VMX_TRUE_PINBASED_CTLS),
-                                      __GET_MSR(MSR_VMX_TRUE_PROCBASED_CTLS),
-                                      __GET_MSR(MSR_VMX_TRUE_ENTRY_CTLS),
-                                      __GET_MSR(MSR_VMX_TRUE_EXIT_CTLS),
-                                      __GET_MSR(MSR_VMX_BASIC));
-   } else {
-      /* Bug 1914425 - VMM no longer supports CPUs without TRUE_xxx_CTLS */
-      return FALSE;
-   }
+
+   /* Bug 1914425 - VMM no longer supports CPUs without TRUE_xxx_CTLS */
+   return (X86MSR_GetMSR(MSR_VMX_BASIC) & MSR_VMX_BASIC_TRUE_CTLS) != 0 &&
+          VT_SupportedFromFeatures(X86MSR_GetMSR(MSR_VMX_TRUE_PINBASED_CTLS),
+                                   X86MSR_GetMSR(MSR_VMX_TRUE_PROCBASED_CTLS),
+                                   X86MSR_GetMSR(MSR_VMX_TRUE_ENTRY_CTLS),
+                                   X86MSR_GetMSR(MSR_VMX_TRUE_EXIT_CTLS),
+                                   X86MSR_GetMSR(MSR_VMX_BASIC));
 }
 
 #endif /* } !defined(USERLEVEL) */

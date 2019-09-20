@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2013 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2013,2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -28,6 +28,7 @@
 
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
+#include <linux/if_vlan.h>
 #include <linux/mm.h>
 #include "compat_skbuff.h"
 #include <linux/sockios.h>
@@ -43,6 +44,22 @@
 #include "compat_netdevice.h"
 #include "vmnetInt.h"
 
+
+/*
+ * Default min MTU value as defined by kernel versions >= 4.10.0.
+ * Use the same value for earlier versions of the kernel which do not
+ * enforce a minimum MTU size.
+ */
+#define VMNET_MIN_MTU 68
+#define VMNET_MAX_MTU (ETHER_MAX_JUMBO_FRAME_LEN - \
+                      (ETH_HLEN + VLAN_HLEN + ETH_FCS_LEN))
+
+#ifdef RHEL_RELEASE_CODE
+#if (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7, 5) && \
+     RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(8, 0))
+#define ndo_change_mtu ndo_change_mtu_rh74
+#endif
+#endif /* RHEL_RELEASE_CODE */
 
 typedef struct VNetNetIF {
    VNetPort                port;
@@ -64,6 +81,11 @@ static int  VNetNetifSetMAC(struct net_device *dev, void *addr);
 static void VNetNetifSetMulticast(struct net_device *dev);
 static int  VNetNetIfProcRead(char *page, char **start, off_t off,
                               int count, int *eof, void *data);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)) && \
+    (defined(HAVE_NET_DEVICE_OPS) || defined(HAVE_CHANGE_MTU))
+static int VNetNetifChangeMtu(struct net_device *dev, int new_mtu);
+#endif
+
 
 /*
  *----------------------------------------------------------------------
@@ -84,7 +106,7 @@ static int  VNetNetIfProcRead(char *page, char **start, off_t off,
 static void
 VNetNetIfSetup(struct net_device *dev)  // IN:
 {
-#if !COMPAT_LINUX_VERSION_CHECK_LT(3, 1, 0) || defined(HAVE_NET_DEVICE_OPS)
+#ifdef HAVE_NET_DEVICE_OPS
    static const struct net_device_ops vnetNetifOps = {
       .ndo_init = VNetNetifProbe,
       .ndo_open = VNetNetifOpen,
@@ -97,12 +119,23 @@ VNetNetIfSetup(struct net_device *dev)  // IN:
 #else
       .ndo_set_rx_mode = VNetNetifSetMulticast,
 #endif
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
+      .ndo_change_mtu = VNetNetifChangeMtu,
+#endif
    };
+#endif /* HAVE_NET_DEVICE_OPS */
+
+   /* Turns on IFF_BROADCAST, IFF_MULTICAST. */
+   ether_setup(dev);
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
+   /* Set the maximum allowed MTU value. */
+   dev->max_mtu = VMNET_MAX_MTU;
 #endif
 
-   ether_setup(dev); // turns on IFF_BROADCAST, IFF_MULTICAST
-#if COMPAT_LINUX_VERSION_CHECK_LT(3, 1, 0) && !defined(HAVE_NET_DEVICE_OPS) 
+#ifdef HAVE_NET_DEVICE_OPS
+   dev->netdev_ops = &vnetNetifOps;
+#else
    dev->init = VNetNetifProbe;
    dev->open = VNetNetifOpen;
    dev->hard_start_xmit = VNetNetifStartXmit;
@@ -110,9 +143,10 @@ VNetNetIfSetup(struct net_device *dev)  // IN:
    dev->get_stats = VNetNetifGetStats;
    dev->set_mac_address = VNetNetifSetMAC;
    dev->set_multicast_list = VNetNetifSetMulticast;
-#else
-   dev->netdev_ops = &vnetNetifOps;
-   #endif /* HAVE_NET_DEVICE_OPS */
+#ifdef HAVE_CHANGE_MTU
+   dev->change_mtu = VNetNetifChangeMtu;
+#endif /* HAVE_CHANGE_MTU */
+#endif /* HAVE_NET_DEVICE_OPS */
 
 }
 
@@ -528,6 +562,38 @@ void
 VNetNetifSetMulticast(struct net_device *dev) // IN: unused
 {
 }
+
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)) && \
+    (defined(HAVE_NET_DEVICE_OPS) || defined(HAVE_CHANGE_MTU))
+/*
+ *----------------------------------------------------------------------
+ *
+ * VNetNetifChangeMtu --
+ *
+ *      Changes the current MTU value of a given vmnet interface.
+ *
+ * Results:
+ *      Returns zero on success, or invalid argument error if an incorrect
+ *      MTU size is being set.
+ *
+ * Side effects:
+ *      None.
+ *----------------------------------------------------------------------
+ */
+
+int
+VNetNetifChangeMtu(struct net_device *dev, // IN/OUT: assigning the mtu member.
+                   int new_mtu)            // IN:     new mtu value.
+{
+   if (new_mtu < VMNET_MIN_MTU || new_mtu > VMNET_MAX_MTU) {
+      return -EINVAL;
+   }
+
+   dev->mtu = new_mtu;
+   return 0;
+}
+#endif
 
 
 /*

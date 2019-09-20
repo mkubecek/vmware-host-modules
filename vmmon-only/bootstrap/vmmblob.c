@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2017-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 2017-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -31,7 +31,8 @@
 #include "vmmblob.h"
 #include "monLoader.h"
 
-#define VMMBLOB_SIZE_MAX (12 * 1024 * 1024)
+#define VMMBLOB_SIZE_MAX (22 * 1024 * 1024) /* Ensure enough space for
+                                             * obj build with * GCOV_VMM=1. */
 
 /*
  *----------------------------------------------------------------------

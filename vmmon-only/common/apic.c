@@ -65,7 +65,7 @@ APIC_GetMA(void)
     * Check if X2 APIC mode is enabled.
     */
 
-   if ((__GET_MSR(MSR_APIC_BASE) & APIC_MSR_X2APIC_ENABLED) != 0) {
+   if ((X86MSR_GetMSR(MSR_APIC_BASE) & APIC_MSR_X2APIC_ENABLED) != 0) {
       return (MA)-1;
    }
 
@@ -75,7 +75,7 @@ APIC_GetMA(void)
     */
 
    // Mask out goo in the low 12 bits, which is unrelated to the address.
-   result = __GET_MSR(MSR_APIC_BASE) & ~MASK64(PAGE_SHIFT);
+   result = X86MSR_GetMSR(MSR_APIC_BASE) & ~MASK64(PAGE_SHIFT);
 
    /*
     * On Intel, the high bits are reserved so we mask.
@@ -122,7 +122,7 @@ APIC_Read(const APICDescriptor *desc, // IN
           int regNum)                 // IN
 {
    if (desc->isX2) {
-      return (uint32 )__GET_MSR(MSR_X2APIC_BASE + regNum);
+      return (uint32)X86MSR_GetMSR(MSR_X2APIC_BASE + regNum);
    } else {
       return desc->base[regNum][0];
    }
@@ -182,7 +182,7 @@ APIC_Write(const APICDescriptor *desc, // IN
            uint32 val)                 // IN
 {
    if (desc->isX2) {
-      __SET_MSR(MSR_X2APIC_BASE + regNum, val);
+      X86MSR_SetMSR(MSR_X2APIC_BASE + regNum, val);
    } else {
       desc->base[regNum][0] = val;
    }
@@ -210,7 +210,7 @@ uint64
 APIC_ReadICR(const APICDescriptor *desc) // IN
 {
    if (desc->isX2) {
-      return __GET_MSR(MSR_X2APIC_BASE + APICR_ICRLO);
+      return X86MSR_GetMSR(MSR_X2APIC_BASE + APICR_ICRLO);
    } else {
       uint32 icrHi = desc->base[APICR_ICRHI][0];
       uint32 icrLo = desc->base[APICR_ICRLO][0];
@@ -244,7 +244,7 @@ APIC_WriteICR(const APICDescriptor *desc, // IN
 {
    if (desc->isX2) {
       uint64 icr = (uint64) id << 32 | icrLo;
-      __SET_MSR(MSR_X2APIC_BASE + APICR_ICRLO, icr);
+      X86MSR_SetMSR(MSR_X2APIC_BASE + APICR_ICRLO, icr);
    } else {
       ASSERT(!(id & ~(APIC_ICRHI_DEST_MASK >> APIC_ICRHI_DEST_OFFSET)));
       desc->base[APICR_ICRHI][0] = id << APIC_ICRHI_DEST_OFFSET;

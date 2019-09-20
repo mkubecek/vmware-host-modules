@@ -25,23 +25,7 @@
 #ifndef _MONLOADER_LOG_H_
 #define _MONLOADER_LOG_H_
 
-#ifdef VMX86_VMX
-
-#define LOGLEVEL_MODULE main
-#include "loglevel_vmcore.h"
-/*
- * Redefine LOG() to match the vmkernel calling convention.
- */
-#undef LOG_BYNAME
-#undef LOG
-
-#define LOG_BYNAME(_mod, _min, _fmt, ...) \
-        (DOLOG_BYNAME(_mod, _min) ? Log(_fmt "\n", ## __VA_ARGS__) : (void) 0)
-
-#define LOG(_min, _fmt, ...) \
-        LOG_BYNAME(LOGLEVEL_MODULE, _min, _fmt, ## __VA_ARGS__)
-
-#elif defined VMKERNEL
+#if defined VMKERNEL
 
 #define LOGLEVEL_MODULE MonLoader
 #include "log.h"
@@ -59,7 +43,7 @@ do {                                                 \
    }                                                 \
 } while (0)
 
-#else /* !defined VMX86_VMX && !defined VMKERNEL && !defined VMMON */
+#else /* !defined VMKERNEL && !defined VMMON */
 #error MonLoader cannot be built as part of this environment
 #endif
 

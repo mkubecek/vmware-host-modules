@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014, 2016-2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014, 2016-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -42,7 +42,6 @@
 extern "C" {
 #endif
 
-
 typedef uint32 Vcpuid;                 // VCPU number
 
 #define VCPUID_INVALID  (~0U)
@@ -54,17 +53,11 @@ typedef uint32 Vcpuid;                 // VCPU number
 #define MAX_CORES_PER_SOCKET   64
 #define MAX_VCPU_SOCKETS      128
 
-#ifdef VMM
-#include "vcpuset.h"
-
-/* In VMM, CurVcpuid() is available everywhere. */
-extern const Vcpuid      curVcpuid;
-extern const VCPUSet     curVcpuidSet;
-#define CurVcpuid()         (curVcpuid)
-#define CurVcpuidSet()      (&curVcpuidSet)
-#define IS_BOOT_VCPU()      IS_BOOT_VCPUID(CurVcpuid())
-
-#endif  /* VMM */
+/*
+ * There are several properties of the VM which change at the 128 VCPU
+ * boundary.  EFI firmware, x2APIC, and IOMMU are required among others.
+ */
+#define MAX_SMALL_VM_VCPUS 128
 
 #if defined __cplusplus
 } // extern "C"

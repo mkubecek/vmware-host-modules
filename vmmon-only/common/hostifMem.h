@@ -29,9 +29,10 @@
 #define INCLUDE_ALLOW_VMMON
 #define INCLUDE_ALLOW_VMCORE
 #include "includeCheck.h"
+#include "vm_basic_types.h"
 
 
-void *HostIF_AllocKernelMem(size_t size, int nonPageable);
+void *HostIF_AllocKernelMem(size_t size, Bool nonPageable);
 void  HostIF_FreeKernelMem(void *ptr);
 
 #endif // ifdef _HOSTIFMEM_H_

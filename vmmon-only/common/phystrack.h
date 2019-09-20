@@ -44,6 +44,7 @@ EXTERN void PhysTrack_Add(struct PhysTracker *, MPN);
 EXTERN void PhysTrack_Remove(struct PhysTracker *, MPN);
 EXTERN Bool PhysTrack_Test(const struct PhysTracker *, MPN);
 EXTERN MPN PhysTrack_GetNext(const struct PhysTracker *, MPN);
+EXTERN PageCnt PhysTrack_GetNumTrackedPages(const struct PhysTracker *);
 
 #endif
 

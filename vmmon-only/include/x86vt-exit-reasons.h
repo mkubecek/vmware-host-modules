@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2016 VMware, Inc. All rights reserved.
+ * Copyright (C) 2016-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -92,6 +92,12 @@ VT_EXIT(RDSEED,               61)
 VT_EXIT(PML_LOGFULL,          62)
 VT_EXIT(XSAVES,               63)
 VT_EXIT(XRSTORS,              64)
-
+VT_EXIT(VMEXIT65,             65)
+VT_EXIT(VMEXIT66,             66)
+VT_EXIT(VMEXIT67,             67)
+VT_EXIT(VMEXIT68,             68)
+VT_EXIT(VMEXIT69,             69)
+VT_EXIT(ENCLV,                70)
+VT_EXIT(SGX_CONFLICT,         71)
 /* Bump this up if you add an exit reason. */
-#define VT_NUM_EXIT_REASONS   65
+#define VT_NUM_EXIT_REASONS   72

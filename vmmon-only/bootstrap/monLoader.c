@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2015-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 2015-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -24,14 +24,7 @@
  *      See monLoader.h for a full description.
  */
 
-#ifdef VMX86_VMX
-
-#include <string.h>
-#include <limits.h>
-#include "vmx.h"
-#include "vm_assert.h"
-
-#elif defined VMKERNEL
+#if defined VMKERNEL
 
 #include "vmkernel.h"
 #include "libc.h"
@@ -57,15 +50,15 @@
 
 #include "vm_assert.h"
 
-#else /* !defined VMX86_VMX && !defined VMKERNEL && !defined VMMON */
+#else /* !defined VMKERNEL && !defined VMMON */
 #error MonLoader cannot be built as part of this environment
 #endif
 
 #include "vm_basic_types.h"
 #include "monLoader.h"
 #include "vcpuid.h"
-#include "x86types.h"
-#include "x86paging_64.h"
+#include "vm_pagetable.h"
+#include "address_defs.h"
 #include "monLoaderLog.h"
 
 #define CANONICAL_MASK MASK64(36)
@@ -74,12 +67,6 @@
 #define L3EArrayIdx(b,v) ((unsigned)((((v) - (b)) & CANONICAL_MASK) >> 27))
 #define L2EArrayIdx(b,v) ((unsigned)((((v) - (b)) & CANONICAL_MASK) >> 18))
 #define L1EArrayIdx(b,v) ((unsigned)((((v) - (b)) & CANONICAL_MASK) >> 9))
-
-/*
- * Import address space from VMX rather than building it.  Once monitor loading
- * is removed from VMX entirely, code to import will be deleted.
- */
-#define IMPORT_AS_FROM_VMX (TRUE)
 
 /* The maximum (canonical-address) VPN */
 #define VPN_MAX MASK64(52)
@@ -111,13 +98,9 @@ typedef struct MonLoaderContext {
       VPN          ASLastVPN;   /* last VPN in the address space (inclusive) */
       uint64       ASPTEFlags;  /* PTE flags for L4->L1 connection. */
       Vcpuid       currentVCPU;
-      Bool         ASImported;  /* Was this AS imported or created anew? */
       Bool         hasAddrSpace;
    } vcpu;
 } MonLoaderContext;
-
-
-static const Bool importFromVMX = IMPORT_AS_FROM_VMX;
 
 
 /*
@@ -192,7 +175,7 @@ MonLoaderIsMapped(MonLoaderContext *ctx,    // IN/OUT
    if (ret != ML_OK) {
       return ret;
    }
-   *mapped = PTE_PRESENT(pte);
+   *mapped = ML_PERM_PRESENT(pte);
    return ML_OK;
 }
 
@@ -283,12 +266,37 @@ MonLoaderMapMPN(MonLoaderContext *ctx,    // IN/OUT
 /*
  *----------------------------------------------------------------------
  *
+ * MonLoaderBuildsPtLevel --
+ *
+ *      Determines whether MonLoader allocates and maps the page table(s) for
+ *      the monitor at the given level.
+ *
+ * Result:
+ *      TRUE if MonLoader creates the page table at the given level, FALSE
+ *      otherwise.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+static Bool
+MonLoaderCreatesPtLevel(PT_Level level)
+{
+   ASSERT(level >= PT_LEVEL_STOP && level <= PT_MAX_LEVELS);
+   return FALSE;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * MonLoaderCreateAddressSpace --
  *
- *      Creates or (if importAS is set) verifies an address space.  The VPN
- *      range specified by firstVPN and size is used to determine page counts
- *      at each page table level to map every page.  Sufficient pages are then
- *      allocated or verified.
+ *      Creates or verifies an address space.  The VPN range specified by
+ *      firstVPN and size is used to determine page counts at each page table
+ *      level to map every page.  Sufficient pages are then allocated or
+ *      verified.
  *
  * Result:
  *      ML_OK if successful, some other value on error.
@@ -302,8 +310,7 @@ static MonLoaderError
 MonLoaderCreateAddressSpace(MonLoaderContext *ctx,      // IN/OUT
                             VPN               firstVPN, // IN
                             uint64            flags,    // IN
-                            uint64            monPages, // IN
-                            Bool              importAS) // IN
+                            uint64            monPages) // IN
 {
    Vcpuid vcpu = ctx->vcpu.currentVCPU;
    VPN lastVPN = firstVPN + monPages - 1;
@@ -329,11 +336,13 @@ MonLoaderCreateAddressSpace(MonLoaderContext *ctx,      // IN/OUT
    ctx->vcpu.ASFirstVPN = firstVPN;
    ctx->vcpu.ASLastVPN = lastVPN;
    ctx->vcpu.ASPTEFlags = flags;
-   ctx->vcpu.ASImported = importAS;
 
    ptMPNs = &ctx->vcpu.ptMPNs;
 
-   if (importAS) {
+   if (MonLoaderCreatesPtLevel(PT_LEVEL_4)) {
+      NOT_IMPLEMENTED();
+   } else {
+      /* Verify the VMX's allocation. */
       mpn = MonLoaderCallout_GetPageRoot(ctx->envCtx, vcpu);
       if (mpn == INVALID_MPN) {
          return ML_ERROR_CALLOUT_PAGEROOT_GET;
@@ -341,13 +350,13 @@ MonLoaderCreateAddressSpace(MonLoaderContext *ctx,      // IN/OUT
       LOG(5, "%s: vcpu %u page root=0x%"FMT64"x\n", __FUNCTION__, vcpu, mpn);
       ptMPNs->L4MPNs[0] = mpn;
       MonLoaderCallout_ImportPage(ctx->envCtx, mpn, vcpu);
-   } else {
-      NOT_IMPLEMENTED();
    }
    ptMPNs->L4MPNCount = 1;
 
    for (i = 0; i < L3MPNsNeeded; i++) {
-      if (importAS) {
+      if (MonLoaderCreatesPtLevel(PT_LEVEL_3)) {
+         NOT_IMPLEMENTED();
+      } else {
          VPN monVPN = firstVPN + i * PT_PAGES_PER_L4E;
          unsigned L4Off = PT_LPN_2_L4OFF(monVPN);
          PT_L1E pte;
@@ -357,20 +366,20 @@ MonLoaderCreateAddressSpace(MonLoaderContext *ctx,      // IN/OUT
          }
          LOG(5, "%s: monVPN=0x%"FMTVPN"x: L4E=0x%"FMT64"x\n", __FUNCTION__,
                  monVPN, pte);
-         mpn = LM_PTE_2_PFN(pte);
+         mpn = ML_PTE_2_PFN(pte);
          if (mpn == INVALID_MPN || !ML_PERMS_MATCH(pte, flags)) {
             return ML_ERROR_PAGE_TABLE_IMPORT;
          }
          MonLoaderCallout_ImportPage(ctx->envCtx, mpn, vcpu);
-      } else {
-         NOT_IMPLEMENTED();
       }
       ptMPNs->L3MPNs[i] = mpn;
    }
    ptMPNs->L3MPNCount = L3MPNsNeeded;
       
    for (i = 0; i < L2MPNsNeeded; i++) {
-      if (importAS) {
+      if (MonLoaderCreatesPtLevel(PT_LEVEL_2)) {
+         NOT_IMPLEMENTED();
+      } else {
          VPN monVPN = firstVPN + i * PT_PAGES_PER_L3E;
          unsigned L3Off = PT_LPN_2_L3OFF(monVPN);
          unsigned L3Page = L3EArrayIdx(ctx->vcpu.ASFirstVPN, monVPN);
@@ -381,20 +390,20 @@ MonLoaderCreateAddressSpace(MonLoaderContext *ctx,      // IN/OUT
          }
          LOG(5, "%s: monVPN=0x%"FMTVPN"x: L3E=0x%"FMT64"x\n", __FUNCTION__,
                  monVPN, pte);
-         mpn = LM_PTE_2_PFN(pte);
+         mpn = ML_PTE_2_PFN(pte);
          if (mpn == INVALID_MPN || !ML_PERMS_MATCH(pte, flags)) {
             return ML_ERROR_PAGE_TABLE_IMPORT;
          }
          MonLoaderCallout_ImportPage(ctx->envCtx, mpn, vcpu);
-      } else {
-         NOT_IMPLEMENTED();
       }
       ptMPNs->L2MPNs[i] = mpn;
    }
    ptMPNs->L2MPNCount = L2MPNsNeeded;
 
    for (i = 0; i < L1MPNsNeeded; i++) {
-      if (importAS) {
+      if (MonLoaderCreatesPtLevel(PT_LEVEL_1)) {
+         NOT_IMPLEMENTED();
+      } else {
          VPN monVPN = firstVPN + i * PT_PAGES_PER_L2E;
          unsigned L2Off = PT_LPN_2_L2OFF(monVPN);
          unsigned L2Page = L2EArrayIdx(ctx->vcpu.ASFirstVPN, monVPN);
@@ -405,17 +414,15 @@ MonLoaderCreateAddressSpace(MonLoaderContext *ctx,      // IN/OUT
          }
          LOG(5, "%s: monVPN=0x%"FMTVPN"x: L2E=0x%"FMT64"x\n", __FUNCTION__,
                  monVPN, pte);
-         if (!PTE_PRESENT(pte)) {
+         if (!ML_PERM_PRESENT(pte)) {
             ptMPNs->L1MPNs[i] = INVALID_MPN;
             continue;
          }
-         mpn = LM_PTE_2_PFN(pte);
+         mpn = ML_PTE_2_PFN(pte);
          if (mpn == INVALID_MPN || !ML_PERMS_MATCH(pte, flags)) {
             return ML_ERROR_PAGE_TABLE_IMPORT;
          }
          MonLoaderCallout_ImportPage(ctx->envCtx, mpn, vcpu);
-      } else {
-         NOT_IMPLEMENTED();
       }
       ptMPNs->L1MPNs[i] = mpn;
    }
@@ -446,12 +453,12 @@ MonLoaderCreateAddressSpace(MonLoaderContext *ctx,      // IN/OUT
  */
 static MonLoaderError
 MonLoaderMapPageTables(MonLoaderContext *ctx,      // IN/OUT
-                       unsigned          level,    // IN
+                       PT_Level          level,    // IN
                        uint64            flags,    // IN
                        VPN               monVPN,   // IN
                        uint64            monPages) // IN
 {
-   Bool verify = ctx->vcpu.ASImported;
+   Bool verify = !MonLoaderCreatesPtLevel(level);
    uint64    i;
    unsigned  count;
    MPN      *ptMPNs;
@@ -460,25 +467,25 @@ MonLoaderMapPageTables(MonLoaderContext *ctx,      // IN/OUT
       if (!ctx->vcpu.hasAddrSpace) {
          return ML_ERROR_NO_ADDRSPACE;
       }
-      if (level < 1 || level > 4) {
+      if (level < PT_LEVEL_STOP || level > PT_MAX_LEVELS) {
          return ML_ERROR_ARGS;
       }
    }
 
    switch (level) {
-      case 4:
+      case PT_LEVEL_4:
          count = ctx->vcpu.ptMPNs.L4MPNCount;
          ptMPNs = ctx->vcpu.ptMPNs.L4MPNs;
          break;
-      case 3:
+      case PT_LEVEL_3:
          count = ctx->vcpu.ptMPNs.L3MPNCount;
          ptMPNs = ctx->vcpu.ptMPNs.L3MPNs;
          break;
-      case 2:
+      case PT_LEVEL_2:
          count = ctx->vcpu.ptMPNs.L2MPNCount;
          ptMPNs = ctx->vcpu.ptMPNs.L2MPNs;
          break;
-      case 1:
+      case PT_LEVEL_1:
          count = ctx->vcpu.ptMPNs.L1MPNCount;
          ptMPNs = ctx->vcpu.ptMPNs.L1MPNs;
          break;
@@ -494,11 +501,11 @@ MonLoaderMapPageTables(MonLoaderContext *ctx,      // IN/OUT
          VPN vpn = monVPN + i;
          if (verify) {
             PT_L1E l1e;
-            if (ptMPNs[i] == INVALID_MPN && level == 1) {
+            if (ptMPNs[i] == INVALID_MPN && level == PT_LEVEL_1) {
                continue;
             }
             if (MonLoaderTranslateMonVPNToL1E(ctx, vpn, &l1e) != ML_OK ||
-                LM_PTE_2_PFN(l1e) != ptMPNs[i] || !ML_PERMS_MATCH(l1e, flags)) {
+                ML_PTE_2_PFN(l1e) != ptMPNs[i] || !ML_PERMS_MATCH(l1e, flags)) {
                return ML_ERROR_PAGE_TABLE_VERIFY;
             }
          } else {
@@ -629,7 +636,7 @@ MonLoaderCopyFromBlob(MonLoaderContext *ctx,        // IN/OUT
  *      ML_OK if successful, some other value on error.
  *
  * Side effects:
- *      User pages may be mapped in.
+ *      User or host pages may be mapped in.
  *
  *----------------------------------------------------------------------
  */
@@ -660,6 +667,14 @@ MonLoaderShareWork(MonLoaderContext *ctx,        // IN/OUT
                                                   vcpu);
       }
       if (mpn == INVALID_MPN) {
+         if (subIndex == MONLOADER_HT_MAP_IDX) {
+            /*
+             * This item is tied to a vmkernel feature.
+             * When the feature is disabled, there is nothing to share.
+             */
+            ASSERT(vmx86_server);
+            return ML_OK;
+         }
          /* Partial sharing is allowed.  Return success if any occurred. */
          return i != 0 ? ML_OK : ML_ERROR_SHARE;
       }
@@ -670,45 +685,6 @@ MonLoaderShareWork(MonLoaderContext *ctx,        // IN/OUT
    }
    return ML_OK;
 }
-
-
-#ifndef VMMON
-/*
- *----------------------------------------------------------------------
- *
- * MonLoaderSetEntrypoint --
- *
- *      Calls out to set the code and stack entrypoint.
- *
- * Result:
- *      ML_OK if successful, some other value on error.
- *
- * Side effects:
- *      The monitor entrypoint for the current VCPU may be set.
- *
- *----------------------------------------------------------------------
- */
-static MonLoaderError
-MonLoaderSetEntrypoint(MonLoaderContext *ctx,           // IN
-                       uint16            codeSelector,  // IN
-                       VA64              code,          // IN
-                       uint16            stackSelector, // IN
-                       VA64              stack)         // IN
-{
-   if (VA_2_VPN(code) < ctx->vcpu.ASFirstVPN  ||
-       VA_2_VPN(code) > ctx->vcpu.ASLastVPN   ||
-       VA_2_VPN(stack) < ctx->vcpu.ASFirstVPN ||
-       VA_2_VPN(stack) > ctx->vcpu.ASLastVPN) {
-      return ML_ERROR_INVALID_VPN; /* Address is outside address space. */
-   }
-   if (MonLoaderCallout_SetEntrypoint(ctx->envCtx, codeSelector, code,
-                                      stackSelector, stack)) {
-      return ML_OK;
-   } else {
-      return ML_ERROR_CALLOUT_ENTRYPOINT;
-   }
-}
-#endif
 
 
 /*
@@ -795,7 +771,7 @@ MonLoaderShareFromBlob(MonLoaderContext *ctx,        // IN/OUT
 
    if ((blobOffset & (PAGE_SIZE - 1)) != 0 ||
        (blobSize & (PAGE_SIZE - 1)) != 0 ||
-       (flags & PTE_RW) != 0) {
+       ML_PERM_WRITEABLE(flags)) {
       return ML_ERROR_SHARE;
    }
    if (blobSize > monBytes || blobSize == 0) {
@@ -866,7 +842,7 @@ MonLoader_Process(MonLoaderHeader  *header,   // IN/OUT
       return ML_ERROR_TABLE_MISSING;
    }
 
-   if (!MonLoaderCallout_Init(args, &ctx.envCtx)) {
+   if (!MonLoaderCallout_Init(args, &ctx.envCtx, numVCPUs)) {
       return ML_ERROR_CALLOUT_INIT;
    }
    ret = ML_OK;
@@ -887,24 +863,12 @@ MonLoader_Process(MonLoaderHeader  *header,   // IN/OUT
          uint64               monBytes   = PAGES_2_BYTES(monPages);
          uint64               subIndex   = entry->subIndex;
          uint64               bspOnly    = entry->bspOnly;
-         uint64               isPriv     = vmx86_server || entry->procVmmon;
          *line = i;
 
          /*
           * The entry is specific to the bootstrap, which only runs in VCPU 0.
           */
          if (bspOnly && !IS_BOOT_VCPUID(*vcpu)) {
-            continue;
-         }
-         /*
-          * Entries marked as privileged (isPriv == TRUE) are processed
-          * by the privileged layer (VMKernel/vmmon). Others are
-          * processed by the VMX. One exception is the entry of type
-          * ML_CONTENT_ADDRSPACE: it is always processed by the VMX and,
-          * if marked as privileged, also by the privileged layer.
-          */
-         if (isPriv != MonLoaderCallout_IsPrivileged(ctx.envCtx) &&
-             (content != ML_CONTENT_ADDRSPACE || isPriv == 0)) {
             continue;
          }
          if (monPages == 0 || monVPN + monPages - 1 > VPN_MAX) {
@@ -919,8 +883,7 @@ MonLoader_Process(MonLoaderHeader  *header,   // IN/OUT
                   continue;
                }
                /* Create or verify the address space and page table MPNs. */
-               ret = MonLoaderCreateAddressSpace(&ctx, monVPN, flags, monPages,
-                                                 importFromVMX);
+               ret = MonLoaderCreateAddressSpace(&ctx, monVPN, flags, monPages);
                break;
             case ML_CONTENT_PAGETABLE_L4:
             case ML_CONTENT_PAGETABLE_L3:
@@ -988,15 +951,10 @@ MonLoader_Process(MonLoaderHeader  *header,   // IN/OUT
          }
       }
    }
-#ifndef VMMON
+#ifdef VMKERNEL
    if (ret == ML_OK) {
       if (ctx.vcpu.ASLastVPN == 0) {
          ret = ML_ERROR_NO_ADDRSPACE;
-      } else {
-         ret = MonLoaderSetEntrypoint(&ctx, header->codeSelector,
-                                      header->codeEntrypoint,
-                                      header->stackSelector,
-                                      header->stackEntrypoint);
       }
    }
 #endif

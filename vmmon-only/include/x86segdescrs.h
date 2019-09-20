@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2006-2014 VMware, Inc. All rights reserved.
+ * Copyright (C) 2006-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -65,21 +65,21 @@ typedef struct Descriptor {
 typedef 
 #include "vmware_pack_begin.h"
 struct Descriptor64 {
-   unsigned   limit_lo  : 16;   // Limit bits 15-0.
-   unsigned   base_lo   : 24;   // Base bits  23-0.
-   unsigned   type      : 4;
-   unsigned   S         : 1;
-   unsigned   DPL       : 2;
-   unsigned   present   : 1;
-   unsigned   limit_hi  : 4;    // Limit bits 19-16.
-   unsigned   AVL       : 1;
-   unsigned   reserved0 : 2;
-   unsigned   gran      : 1;
-   unsigned   base_mid  : 8;    // Base bits 31-24.
-   unsigned   base_hi   : 32;   // Base bits 63-32.
-   unsigned   reserved1 : 8;
-   unsigned   ext_attrs : 5;
-   unsigned   reserved2 : 19;
+   uint64   limit_lo  : 16;   // Limit bits 15-0.
+   uint64   base_lo   : 24;   // Base bits  23-0.
+   uint64   type      : 4;
+   uint64   S         : 1;
+   uint64   DPL       : 2;
+   uint64   present   : 1;
+   uint64   limit_hi  : 4;    // Limit bits 19-16.
+   uint64   AVL       : 1;
+   uint64   reserved0 : 2;
+   uint64   gran      : 1;
+   uint64   base_mid  : 8;    // Base bits 31-24.
+   uint64   base_hi   : 32;   // Base bits 63-32.
+   uint64   reserved1 : 8;
+   uint64   ext_attrs : 5;
+   uint64   reserved2 : 19;
 }
 #include "vmware_pack_end.h"
 Descriptor64;

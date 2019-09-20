@@ -33,7 +33,7 @@
  *
  */
 
-#ifdef linux
+#ifdef __linux__
 /* Must come before any kernel header file --hpreg */
 #   include "driver-config.h"
 #   include <linux/string.h> /* memset() in the kernel */
@@ -61,10 +61,11 @@
 #include "x86vt.h"
 #include "x86vtinstr.h"
 #include "apic.h"
-#include "x86perfctr.h"
+#include "perfctr.h"
 #include "x86paging_common.h"
 #include "x86paging_64.h"
 #include "memtrack.h"
+#include "monLoader.h"
 
 #ifdef LINUX_GDT_IS_RO
 #   include <asm/desc.h>
@@ -846,7 +847,7 @@ TaskApplyPTPatches(VMDriver *vm, VMCrossPageData *cpData)
       VMMPageTablePatch *patch = &cpData->vmmPTP[i];
       unsigned l4idx = PT_LPN_2_L4OFF(patch->lpn);
       unsigned l3idx = PT_LPN_2_L3OFF(patch->lpn);
-      PT_L4E pte;
+      PT_L4E pte = 0;
       MA ma = cpData->monCR3 + l4idx * sizeof pte; /* PTE machine address. */
 
       if (patch->level == PTP_EMPTY) {
@@ -943,8 +944,8 @@ static Bool
 TaskVerifyPTPatches(VMDriver *vm,
                     VMCrossPageData *cpData)
 {
-   LPN64 xgCPN = LA_2_LPN(cpData->vmmCrossGDTLA);
-   LPN64 xpCPN = LA_2_LPN(cpData->vmmCrossPageLA);
+   LPN64 xgCPN = LA_2_LPN(cpData->crossGDTLA);
+   LPN64 xpCPN = LA_2_LPN(cpData->crossPageLA);
    MPN   xpMPN = MA_2_MPN(cpData->crosspageMA);
    MA    cr3   = cpData->monCR3;
    return TaskVerifyPTMap(vm, cr3, xpCPN, xpMPN) &&
@@ -1092,9 +1093,8 @@ TaskSetCrossGDTVMM(BSVMM_GDTInit *gdt)
  * TaskSetCrossGDTHost --
  *
  *      Initializes the host portion of the crossGDT by copying it directly
- *      from the host kernel's GDT. We assume that all the host segments
- *      we will ever need come from the first page of the host's GDT and
- *      precede the lowest segment needed by the monitor.
+ *      from the host kernel's GDT. We assume that all the host segments we
+ *      will ever need come from the first page of the host's GDT.
  *
  * Results:
  *      TRUE on success, FALSE otherwise.
@@ -1106,30 +1106,17 @@ TaskSetCrossGDTVMM(BSVMM_GDTInit *gdt)
  */
 
 static void
-TaskSetCrossGDTHost(const BSVMM_GDTInit *gdt)
+TaskSetCrossGDTHost(void)
 {
    unsigned len;
    DTR64 hostGDT;
-   unsigned i;
-   /* Copy descriptors up to at most the size of the CrossGDT. */
-   unsigned minVMMIndex = sizeof(CrossGDT) / sizeof(Descriptor);
-
    /*
     * All copied host segment descriptors will come from the first page of
-    * the host kernel GDT and precede the first monitor segment descriptor.
+    * the host kernel GDT.
     */
-   ASSERT_ON_COMPILE(sizeof(CrossGDT) % sizeof(Descriptor) == 0);
    ASSERT(HostIF_GlobalLockIsHeld());
-   for (i = 0; i < ARRAYSIZE(gdt->entries); i++) {
-      const BSVMM_GDTInitEntry *entry = &gdt->entries[i];
-      if (entry->present == 1) {
-         minVMMIndex = MIN(entry->index, minVMMIndex);
-      }
-   }
    TaskSaveGDT(&hostGDT);
-   /* PR 2142795: Only copy up to at most the monitor's first descriptor. */
-   len = MIN((unsigned)hostGDT.limit + 1, minVMMIndex * sizeof(Descriptor));
-   ASSERT(len <= sizeof(CrossGDT));
+   len = MIN((unsigned)hostGDT.limit + 1, sizeof(CrossGDT));
    memcpy(crossGDT->gdtes, (void*)HOST_KERNEL_LA_2_VA((LA)hostGDT.offset), len);
 }
 
@@ -1171,7 +1158,7 @@ Task_CreateCrossGDT(BSVMM_GDTInit *gdt)
          return FALSE;
       }
       memset(crossGDT, 0, sizeof *crossGDT);
-      TaskSetCrossGDTHost(gdt);
+      TaskSetCrossGDTHost();
    }
 
    populatedCrossGDT = TaskSetCrossGDTVMM(gdt);
@@ -1589,8 +1576,8 @@ TaskCreatePTPatches(VMDriver    *vm,
                     uint16      *numPages)
 {
    VMCrossPageData * const cpData = &crosspage->crosspageData;
-   LPN64                   xgCPN  = LA_2_LPN(cpData->vmmCrossGDTLA);
-   LPN64                   xpCPN  = LA_2_LPN(cpData->vmmCrossPageLA);
+   LPN64                   xgCPN  = LA_2_LPN(cpData->crossGDTLA);
+   LPN64                   xpCPN  = LA_2_LPN(cpData->crossPageLA);
    MPN                     xpMPN  = MA_2_MPN(cpData->crosspageMA);
    /*
     * Set up patches that the BackToHost code will use to map the
@@ -1616,8 +1603,7 @@ TaskCreatePTPatches(VMDriver    *vm,
  *    Initialize the crosspage used to switch to the monitor task.
  *
  * Results:
- *    0 on success
- *    != 0 on failure
+ *    TRUE on success, FALSE on failure.
  *
  * Side effects:
  *    None
@@ -1625,29 +1611,28 @@ TaskCreatePTPatches(VMDriver    *vm,
  *-----------------------------------------------------------------------------
  */
 
-int
-Task_InitCrosspage(VMDriver *vm,          // IN
-                   InitBlock *initParams) // IN/OUT: Initial params from the
-                                          //         VM
+Bool
+Task_InitCrosspage(VMDriver *vm,               // IN
+                   LPN monStartLPN,            // IN
+                   LPN monEndLPN,              // IN
+                   PerVcpuPages *perVcpuPages) // IN
 {
    Vcpuid vcpuid;
    uint16 numPTPPages = 0;
 
    if (crossGDT == NULL) {
-      return 1;
+      return FALSE;
    }
-
-   initParams->crossGDTMPN = crossGDTMPN;
 
    ASSERT(0 < vm->numVCPUs && vm->numVCPUs <= MAX_VCPUS);
    for (vcpuid = 0; vcpuid < vm->numVCPUs; vcpuid++) {
-      VA64             crossPageUserAddr = initParams->crosspage[vcpuid];
+      VA64             crossPageUserAddr = perVcpuPages[vcpuid].crosspage;
       VMCrossPage     *p = HostIF_MapCrossPage(vm, crossPageUserAddr);
       VMCrossPageData *cpData;
       MPN              crossPageMPN;
 
       if (p == NULL) {
-         return 1;
+         return FALSE;
       }
       cpData = &p->crosspageData;
 
@@ -1656,7 +1641,7 @@ Task_InitCrosspage(VMDriver *vm,          // IN
           PAGE_LOOKUP_SUCCESS ||
           crossPageMPN == 0) {
          HostIF_VMUnlock(vm, 38);
-         return 1;
+         return FALSE;
       }
       HostIF_VMUnlock(vm, 38);
 
@@ -1673,39 +1658,39 @@ Task_InitCrosspage(VMDriver *vm,          // IN
          Warning("%s: crosspage version mismatch: vmmon claims %#x, must "
                  "match vmx version of %#x.\n", __FUNCTION__,
                  (int)CROSSPAGE_VERSION, cpData->version);
-         return 1;
+         return FALSE;
       }
       if (!pseudoTSC.initialized) {
          Warning("%s*: PseudoTSC has not been initialized\n", __FUNCTION__);
-         return 1;
+         return FALSE;
       }
       cpData->crosspageMA = MPN_2_MA(crossPageMPN);
-      cpData->hostCrossPageLA = (LA64)(uintptr_t)p;
-      cpData->vmmCrossPageLA = cpData->hostCrossPageLA;
-      cpData->vmmCrossGDTLA = HOST_KERNEL_VA_2_LA((VA)crossGDT);
+      cpData->crossPageLA = (LA64)(uintptr_t)p;
+      cpData->crossGDTLA = HOST_KERNEL_VA_2_LA((VA)crossGDT);
       cpData->crossGDTHKLADesc.offset = HOST_KERNEL_VA_2_LA((VA)crossGDT);
       cpData->crossGDTHKLADesc.limit  = sizeof(CrossGDT) - 1;
+      if (CPUID_HostSupportsXSave()) {
+         cpData->wsCR4 |= CR4_OSXSAVE;
+      }
+      cpData->monCR3 = MPN_2_MA(vm->ptRootMpns[vcpuid]);
 
       HostIF_VMLock(vm, 39);
-      if (!TaskCreatePTPatches(vm, p,
-                               initParams->monStartLPN,
-                               initParams->monEndLPN,
-                               &numPTPPages)) {
+      if (!TaskCreatePTPatches(vm, p, monStartLPN, monEndLPN, &numPTPPages)) {
          HostIF_VMUnlock(vm, 39);
          Warning("%s: Could not create page table patches for VCPU %d\n",
                  __FUNCTION__, vcpuid);
-         return 1;
+         return FALSE;
       }
       HostIF_VMUnlock(vm, 39);
       if (!TaskApplyPTPatches(vm, cpData)) {
          Warning("%s: Could not apply page table patches for VCPU %d\n",
                  __FUNCTION__, vcpuid);
-         return 1;
+         return FALSE;
       }
       if (!TaskVerifyPTPatches(vm, cpData)) {
          Warning("%s: Page table patches for VCPU %d failed verification\n",
                  __FUNCTION__, vcpuid);
-         return 1;
+         return FALSE;
       }
 
       /*
@@ -1733,12 +1718,12 @@ Task_InitCrosspage(VMDriver *vm,          // IN
       TaskInitHostSwitchIDT(p);
    }
    /*
-    * Report back to the VMX the number of pages allocated for this VM's
-    * page table patches.
+    * Store the number of pages allocated for this VM's page table patches so
+    * the bootstrap can account for the memory overhead later in a module call.
     */
-   initParams->numPTPPages = numPTPPages;
+   vm->numPTPPages = numPTPPages;
 
-   return 0;
+   return TRUE;
 }
 
 
@@ -2520,7 +2505,7 @@ Task_Switch(VMDriver *vm,  // IN
     * world switch.  We must be careful not to overwrite the
     * crosspages arguments when doing this though, see bug 820257.
     */
-   if (hvRootMPN == INVALID_MPN) {
+   if (hvRootMPN == INVALID_MPN && CPUID_HostSupportsHV()) {
       crosspage->crosspageData.userCallType = MODULECALL_USERCALL_NONE;
       crosspage->crosspageData.moduleCallType = MODULECALL_ALLOC_VMX_PAGE;
       crosspage->crosspageData.pcpuNum = pCPU;
@@ -2545,9 +2530,9 @@ Task_Switch(VMDriver *vm,  // IN
           * hosts IDT - PR 848701.
           */
          if (pebsAvailable) {
-            pebsMSR = __GET_MSR(IA32_MSR_PEBS_ENABLE);
+            pebsMSR = X86MSR_GetMSR(IA32_MSR_PEBS_ENABLE);
             if (pebsMSR != 0) {
-               __SET_MSR(IA32_MSR_PEBS_ENABLE, 0);
+               X86MSR_SetMSR(IA32_MSR_PEBS_ENABLE, 0);
             }
          }
 
@@ -2556,9 +2541,9 @@ Task_Switch(VMDriver *vm,  // IN
           * enabled.
           */
          if (ptAvailable) {
-            ptMSR = __GET_MSR(MSR_RTIT_CTL);
+            ptMSR = X86MSR_GetMSR(MSR_RTIT_CTL);
             if ((ptMSR & MSR_RTIT_CTL_TRACE_EN) != 0) {
-               __SET_MSR(MSR_RTIT_CTL, ptMSR & ~MSR_RTIT_CTL_TRACE_EN);
+               X86MSR_SetMSR(MSR_RTIT_CTL, ptMSR & ~MSR_RTIT_CTL_TRACE_EN);
             }
          }
 
@@ -2578,12 +2563,12 @@ Task_Switch(VMDriver *vm,  // IN
              * so that we can set CR4.VMXE to activate VMX.
              */
             uint64 bits = MSR_FEATCTL_LOCK | MSR_FEATCTL_VMXE;
-            uint64 featCtl = __GET_MSR(MSR_FEATCTL);
+            uint64 featCtl = X86MSR_GetMSR(MSR_FEATCTL);
             if ((featCtl & bits) != bits) {
                if ((featCtl & MSR_FEATCTL_LOCK) != 0) {
                   Panic("Intel VT-x is disabled and locked on CPU %d\n", pCPU);
                }
-               __SET_MSR(MSR_FEATCTL, featCtl | bits);
+               X86MSR_SetMSR(MSR_FEATCTL, featCtl | bits);
             }
          }
 
@@ -2651,12 +2636,12 @@ Task_Switch(VMDriver *vm,  // IN
          }
 
          if (CPUID_HostSupportsSVM()) {
-            efer = __GET_MSR(MSR_EFER);
+            efer = X86MSR_GetMSR(MSR_EFER);
             if ((efer & MSR_EFER_SVME) == 0) {
-               __SET_MSR(MSR_EFER, efer | MSR_EFER_SVME);
+               X86MSR_SetMSR(MSR_EFER, efer | MSR_EFER_SVME);
             }
-            foreignHSAVE = __GET_MSR(MSR_VM_HSAVE_PA);
-            __SET_MSR(MSR_VM_HSAVE_PA, MPN_2_MA(hvRootMPN));
+            foreignHSAVE = X86MSR_GetMSR(MSR_VM_HSAVE_PA);
+            X86MSR_SetMSR(MSR_VM_HSAVE_PA, MPN_2_MA(hvRootMPN));
          }
 
          /*
@@ -2721,9 +2706,9 @@ Task_Switch(VMDriver *vm,  // IN
          if (CPUID_HostSupportsSpecCtrl()) {
 #ifdef CYCLE_SPEC_CTRL
             currentSpecCtrlValue = (currentSpecCtrlValue + 1) % 4;
-            __SET_MSR(MSR_SPEC_CTRL, currentSpecCtrlValue);
+            X86MSR_SetMSR(MSR_SPEC_CTRL, currentSpecCtrlValue);
 #endif
-            crosspage->crosspageData.specCtrl = __GET_MSR(MSR_SPEC_CTRL);
+            crosspage->crosspageData.specCtrl = X86MSR_GetMSR(MSR_SPEC_CTRL);
          }
 
          DEBUG_ONLY(crosspage->crosspageData.monTinyStack[0] = 0xDEADBEEF;)
@@ -2737,11 +2722,11 @@ Task_Switch(VMDriver *vm,  // IN
 
 #ifdef CYCLE_SPEC_CTRL
          if (CPUID_HostSupportsSpecCtrl()) {
-            readSpecCtrlValue = __GET_MSR(MSR_SPEC_CTRL);
+            readSpecCtrlValue = X86MSR_GetMSR(MSR_SPEC_CTRL);
             specCtrlEqual = readSpecCtrlValue ==
                             crosspage->crosspageData.specCtrl;
             /* Do not leak cycling SPEC_CTRL value back to host. */
-            __SET_MSR(MSR_SPEC_CTRL, 0);
+            X86MSR_SetMSR(MSR_SPEC_CTRL, 0);
          }
 #endif
 
@@ -2764,9 +2749,9 @@ Task_Switch(VMDriver *vm,  // IN
          }
 
          if (CPUID_HostSupportsSVM()) {
-            __SET_MSR(MSR_VM_HSAVE_PA, foreignHSAVE);
+            X86MSR_SetMSR(MSR_VM_HSAVE_PA, foreignHSAVE);
             if ((efer & MSR_EFER_SVME) == 0) {
-               __SET_MSR(MSR_EFER, efer);
+               X86MSR_SetMSR(MSR_EFER, efer);
             }
          }
 
@@ -2840,11 +2825,11 @@ Task_Switch(VMDriver *vm,  // IN
          TaskLoadIDT(&hostIDT);
 
          if (pebsMSR != 0) {
-            __SET_MSR(IA32_MSR_PEBS_ENABLE, pebsMSR);
+            X86MSR_SetMSR(IA32_MSR_PEBS_ENABLE, pebsMSR);
          }
 
          if ((ptMSR & MSR_RTIT_CTL_TRACE_EN) != 0) {
-            __SET_MSR(MSR_RTIT_CTL, ptMSR);
+            X86MSR_SetMSR(MSR_RTIT_CTL, ptMSR);
          }
 
          TaskUpdateLatestPTSC(vm, &crosspage->crosspageData);
@@ -2912,10 +2897,10 @@ Task_Switch(VMDriver *vm,  // IN
 
       /*
        * Newer versions of Window expect EFLAGS_AC to be set when handling an
-       * interupt - PR  2248661.
+       * interrupt - PR 2248661.
        */
       if ((flags & EFLAGS_AC) != 0) {
-         uintptr_t   curFlags;
+         uintptr_t curFlags;
          SAVE_FLAGS(curFlags);
          curFlags |= EFLAGS_AC;
          RESTORE_FLAGS(curFlags);

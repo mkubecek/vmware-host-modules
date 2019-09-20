@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2006-2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 2018-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -17,45 +17,32 @@
  *********************************************************/
 
 /*
- * basic_initblock.h --
+ * statVarsVmmon.h --
  *
- *    VM initialization block.
+ *     VMMon stat vars management.
  */
 
-#ifndef _BASIC_INITBLOCK_H_
-#define _BASIC_INITBLOCK_H_
+#ifndef STAT_VARS_VMMON_H
+#define STAT_VARS_VMMON_H
 
-
-#define INCLUDE_ALLOW_USERLEVEL
-
-#define INCLUDE_ALLOW_MODULE
-#define INCLUDE_ALLOW_VMMON
-#define INCLUDE_ALLOW_VMKERNEL
-#define INCLUDE_ALLOW_VMK_MODULE
-#define INCLUDE_ALLOW_DISTRIBUTE
 #define INCLUDE_ALLOW_VMCORE
+#define INCLUDE_ALLOW_VMMON
 #include "includeCheck.h"
 
+#include "iocontrols.h"
 
-#include "vcpuid.h"
+struct VMDriver;
 
+/* The VMMon Driver stat vars area. */
+typedef struct StatVarsVmmon {
+   PageCnt pagesPerVcpu;
+   MPN *pages;
+} StatVarsVmmon;
 
-#define MAX_INITBLOCK_CPUS     MAX_VCPUS
-
-
-typedef
-#include "vmware_pack_begin.h"
-struct InitBlock {
-   uint32 magicNumber;     /* Magic number (INIT_BLOCK_MAGIC) */
-   uint32 vmInitFailurePeriod;
-   VA64   crosspage[MAX_INITBLOCK_CPUS];
-   LPN64  monStartLPN;
-   LPN64  monEndLPN;
-   MPN    crossGDTMPN;
-   uint16 numPTPPages;
-}
-#include "vmware_pack_end.h"
-InitBlock;
-
-
-#endif // _BASIC_INITBLOCK_H_
+StatVarsVmmon *StatVarsVmmon_Init(struct VMDriver *vm);
+void StatVarsVmmon_Cleanup(StatVarsVmmon *statVars);
+Bool StatVarsVmmon_RegisterVCPU(struct VMDriver *driver,
+                                VMStatVarsRegistrationBlock *block);
+MPN StatVarsVmmon_GetRegionMPN(struct VMDriver *vm, Vcpuid vcpuid,
+                               PageCnt offset);
+#endif /* STAT_VARS_VMMON_H */

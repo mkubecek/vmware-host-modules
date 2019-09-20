@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2009-2015 VMware, Inc. All rights reserved.
+ * Copyright (C) 2009-2015,2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -24,12 +24,6 @@
 
 #ifndef _HOSTIF_PRIV_H_
 #define _HOSTIF_PRIV_H_
-
-/* Functions for mapping and unmapping userspace memory. */
-struct VMMappedUserMem;
-EXTERN void  *HostIF_MapUserMem(VA addr, size_t size,
-                                struct VMMappedUserMem **handle);
-EXTERN void   HostIF_UnmapUserMem(struct VMMappedUserMem *handle);
 
 /* Uptime-related functions. */
 EXTERN void   HostIF_InitUptime(void);

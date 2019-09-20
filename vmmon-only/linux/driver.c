@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -48,12 +48,10 @@
 #include "modulecall.h"
 #include "vm_asm.h"
 #include "vmx86.h"
-#include "initblock.h"
 #include "task.h"
 #include "memtrack.h"
 #include "task.h"
 #include "cpuid.h"
-#include "cpuid_info.h"
 #include "circList.h"
 #include "x86msr.h"
 
@@ -64,6 +62,7 @@
 #include "hostif.h"
 #include "hostif_priv.h"
 #include "vmhost.h"
+#include "sharedAreaVmmon.h"
 
 static void LinuxDriverQueue(Device *device);
 static void LinuxDriverDequeue(Device *device);
@@ -96,7 +95,9 @@ long LinuxDriver_Ioctl(struct file *filp, u_int iocmd,
                        unsigned long ioarg);
 
 static int LinuxDriver_Close(struct inode *inode, struct file *filp);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
+static vm_fault_t LinuxDriverFault(struct vm_fault *fault);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 static int LinuxDriverFault(struct vm_fault *fault);
 #else
 static int LinuxDriverFault(struct vm_area_struct *vma, struct vm_fault *fault);
@@ -414,6 +415,7 @@ LinuxDriver_Open(struct inode *inode, // IN
    memset(device, 0, sizeof *device);
 
    sema_init(&device->lock4Gb, 1);
+   init_rwsem(&device->vmDriverRWSema);
 
    filp->private_data = device;
    LinuxDriverQueue(device);
@@ -443,17 +445,12 @@ LinuxDriver_Open(struct inode *inode, // IN
  */
 
 static int
-LinuxDriverAllocPages(unsigned int gfpFlag, // IN
-                      unsigned int order,   // IN
+LinuxDriverAllocPages(unsigned int order,   // IN
                       struct page **pg,     // OUT
-                      unsigned int size)    // IN
+                      PageCnt size)         // IN
 {
-   struct page* page;
-
-   page = alloc_pages(gfpFlag, order);
+   struct page* page = alloc_pages(GFP_HIGHUSER, order);
    if (page) {
-      unsigned int i;
-
       /*
        * Grab an extra reference on all pages except first one - first
        * one was already refcounted by alloc_pages.
@@ -466,9 +463,8 @@ LinuxDriverAllocPages(unsigned int gfpFlag, // IN
        * Note that this depends on Linux VM internals.  It works on all
        * kernels we care about.
        */
-
-      order = 1 << order;
-      for (i = 0; i < order; i++) {
+      PageCnt i, orderToNumPages = 1 << order;
+      for (i = 0; i < orderToNumPages; i++) {
          if (i) {
             /*
              * Debug kernels assert that page->_count is not zero when
@@ -486,17 +482,14 @@ LinuxDriverAllocPages(unsigned int gfpFlag, // IN
             put_page(page);
          } else {
             void *addr = kmap(page);
-
             memset(addr, 0, PAGE_SIZE);
             kunmap(page);
             *pg++ = page;
          }
          page++;
       }
-
       return 0;
    }
-
    return -ENOMEM;
 }
 
@@ -520,8 +513,7 @@ LinuxDriverAllocPages(unsigned int gfpFlag, // IN
 static void
 LinuxDriverDestructor4Gb(Device *device) // IN
 {
-   unsigned int pg;
-
+   PageCnt pg;
    if (!device->size4Gb) {
       return;
    }
@@ -554,10 +546,12 @@ LinuxDriver_Close(struct inode *inode, // IN
    ASSERT(device);
 
    LinuxDriverDequeue(device);
+   down_write(&device->vmDriverRWSema);
    if (device->vm != NULL) {
       Vmx86_ReleaseVM(device->vm);
       device->vm = NULL;
    }
+   up_write(&device->vmDriverRWSema);
 
    Vmx86_Close();
 
@@ -595,7 +589,12 @@ LinuxDriver_Close(struct inode *inode, // IN
  *-----------------------------------------------------------------------------
  */
 
-static int
+static
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
+vm_fault_t
+#else
+int
+#endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 LinuxDriverFault(struct vm_fault *fault)     //IN/OUT
 #else
@@ -607,7 +606,7 @@ LinuxDriverFault(struct vm_area_struct *vma, //IN
    struct vm_area_struct *vma = fault->vma;
 #endif
    Device *device = (Device *) vma->vm_file->private_data;
-   unsigned long pg;
+   PageNum pg;
    struct page* page;
 
    pg = fault->pgoff;
@@ -644,12 +643,10 @@ LinuxDriverFault(struct vm_area_struct *vma, //IN
 static int LinuxDriverAllocContig(Device *device,
                                   struct vm_area_struct *vma,
                                   unsigned long off,
-                                  unsigned long size)
+                                  PageCnt size)
 {
    unsigned long vmaOrder = VMMON_MAP_ORDER(off);
-   unsigned long vmaAllocSize;
-   unsigned int gfpFlag;
-   unsigned long i;
+   PageCnt vmaAllocSize, i;
 
    if (VMMON_MAP_RSVD(off)) {
       /* Reserved bits set... */
@@ -658,24 +655,6 @@ static int LinuxDriverAllocContig(Device *device,
    if (VMMON_MAP_OFFSET(off)) {
       /* We do not need non-zero offsets... */
       return -EINVAL;
-   }
-   switch (VMMON_MAP_MT(off)) {
-      case VMMON_MAP_MT_LOW4GB:
-#ifdef GFP_DMA32
-         gfpFlag = GFP_USER | GFP_DMA32;
-#else
-         gfpFlag = GFP_USER | GFP_DMA;
-#endif
-         break;
-      case VMMON_MAP_MT_LOW16MB:
-         gfpFlag = GFP_USER | GFP_DMA;
-         break;
-      case VMMON_MAP_MT_ANY:
-         gfpFlag = GFP_HIGHUSER;
-         break;
-      default:
-         /* Invalid memory type */
-         return -EINVAL;
    }
    if (size > VMMON_MAP_OFFSET_MASK + 1) {
       /* Size is too big to fit to our window. */
@@ -694,23 +673,18 @@ static int LinuxDriverAllocContig(Device *device,
    }
    vmaAllocSize = 1 << vmaOrder;
    for (i = 0; i < size; i += vmaAllocSize) {
-      int err;
-
-      err = LinuxDriverAllocPages(gfpFlag, vmaOrder,
-                                  device->pages4Gb + i, size - i);
+      int err = LinuxDriverAllocPages(vmaOrder, device->pages4Gb + i, size - i);
       if (err) {
          while (i > 0) {
             put_page(device->pages4Gb[--i]);
          }
          up(&device->lock4Gb);
-
          return err;
       }
    }
    device->size4Gb = size;
    up(&device->lock4Gb);
    vma->vm_ops = &vmuser_mops;
-
    return 0;
 }
 
@@ -739,7 +713,7 @@ LinuxDriverMmap(struct file *filp,
                 struct vm_area_struct *vma)
 {
    Device *device = (Device *) filp->private_data;
-   unsigned long size;
+   PageCnt size;
    int err;
 
    /* Only shared mappings */
@@ -753,17 +727,18 @@ LinuxDriverMmap(struct file *filp,
    if (size < 1) {
       return -EINVAL;
    }
+   down_read(&device->vmDriverRWSema);
    if (device->vm) {
       err = -EINVAL;
    } else {
       err = LinuxDriverAllocContig(device, vma, vma->vm_pgoff, size);
    }
+   up_read(&device->vmDriverRWSema);
    if (err) {
       return err;
    }
    /* Clear VM_IO, otherwise SuSE's kernels refuse to do get_user_pages */
    vma->vm_flags &= ~VM_IO;
-
    return 0;
 }
 
@@ -1034,26 +1009,30 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
                   unsigned long ioarg)  // IN:
 {
    Device *device = (Device *) filp->private_data;
-   int retval = 0;
+   long retval = 0;
    Vcpuid vcpuid;
    VMDriver *vm;
+   Bool needsWriteLock = iocmd == IOCTL_VMX86_CREATE_VM ||
+                         iocmd == IOCTL_VMX86_RELEASE_VM;
 
+   ASSERT_ON_COMPILE(sizeof(long) == sizeof(int64));
    if (device == NULL) {
       return -EINVAL;
    }
 
+   if (needsWriteLock) {
+      down_write(&device->vmDriverRWSema);
+   } else {
+      down_read(&device->vmDriverRWSema);
+   }
+
    vm = device->vm;
-
-   /*
-    * Validate the VM pointer for those IOCTLs that require it.
-    */
-
+   /* Validate the VM pointer for those IOCTLs that require it. */
    switch (iocmd) {
    case IOCTL_VMX86_VERSION:
    case IOCTL_VMX86_CREATE_VM:
    case IOCTL_VMX86_SET_UID:
    case IOCTL_VMX86_GET_NUM_VMS:
-   case IOCTL_VMX86_GET_TOTAL_MEM_USAGE:
    case IOCTL_VMX86_SET_HARD_LIMIT:
    case IOCTL_VMX86_GET_IPI_VECTORS:
    case IOCTL_VMX86_GET_KHZ_ESTIMATE:
@@ -1108,34 +1087,65 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
 
    case IOCTL_VMX86_PROCESS_BOOTSTRAP: {
       VMProcessBootstrapBlock *args;
+      size_t argsSz = GetVMProcessBootstrapBlockSize(vm->numVCPUs);
       VA64 uAddr;
-      Bool res;
 
       retval = HostIF_CopyFromUser(&uAddr, (VA64)ioarg, sizeof uAddr);
       if (retval != 0) {
          break;
       }
-      args = HostIF_AllocKernelMem(sizeof *args, TRUE);
+      args = HostIF_AllocKernelMem(argsSz, TRUE);
       if (args == NULL) {
          retval = -ENOMEM;
          break;
       }
-      retval = HostIF_CopyFromUser(args, uAddr, sizeof *args);
+      retval = HostIF_CopyFromUser(args, uAddr, argsSz);
       if (retval != 0) {
          HostIF_FreeKernelMem(args);
          break;
       }
-      res = Vmx86_ProcessBootstrap(vm,
-                                   args->bsBlobAddr,
-                                   args->numBytes,
-                                   args->headerOffset,
-                                   args->numVCPUs,
-                                   args->ptRootVAs,
-                                   args->shRegions);
-      if (!res) {
+      if (args->numVCPUs != vm->numVCPUs) {
+         retval = -EINVAL;
+      } else if (!Vmx86_ProcessBootstrap(vm,
+                                         args->bsBlobAddr,
+                                         args->numBytes,
+                                         args->headerOffset,
+                                         args->numVCPUs,
+                                         args->perVcpuPages,
+                                         args->shRegions)) {
          retval = -ENOMEM;
       }
       HostIF_FreeKernelMem(args);
+      break;
+   }
+
+   case IOCTL_VMX86_REGISTER_SHARED: {
+      VMSharedAreaRegistrationBlock args;
+
+      retval = HostIF_CopyFromUser(&args, (VA64)ioarg, sizeof args);
+      if (retval != 0) {
+         break;
+      }
+      if (!SharedAreaVmmon_ValidateRegionArgs(vm, &args)) {
+         retval = -EINVAL;
+         break;
+      }
+      if (!SharedAreaVmmon_RegisterRegion(vm, &args)) {
+         retval = -ENOMEM;
+      }
+      break;
+   }
+
+   case IOCTL_VMX86_REGISTER_STATVARS: {
+      VMStatVarsRegistrationBlock args;
+
+      retval = HostIF_CopyFromUser(&args, (VA64)ioarg, sizeof args);
+      if (retval != 0) {
+         break;
+      }
+      if (!StatVarsVmmon_RegisterVCPU(vm, &args)) {
+         retval = -ENOMEM;
+      }
       break;
    }
 
@@ -1143,31 +1153,6 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       device->vm = NULL;
       Vmx86_ReleaseVM(vm);
       break;
-
-   case IOCTL_VMX86_INIT_VM: {
-      InitBlock *initParams;
-      VA64 uAddr;
-
-      retval = HostIF_CopyFromUser(&uAddr, (VA64)ioarg, sizeof uAddr);
-      if (retval != 0) {
-         break;
-      }
-      initParams = HostIF_AllocKernelMem(sizeof *initParams, TRUE);
-      if (initParams == NULL) {
-         retval = -ENOMEM;
-         break;
-      }
-      retval = HostIF_CopyFromUser(initParams, uAddr, sizeof *initParams);
-      if (retval == 0) {
-         if (Vmx86_InitVM(vm, initParams) == 0) {
-            retval = HostIF_CopyToUser(uAddr, initParams, sizeof *initParams);
-         } else {
-            retval = -EINVAL;
-         }
-      }
-      HostIF_FreeKernelMem(initParams);
-      break;
-   }
 
    case IOCTL_VMX86_RUN_VM:
       vcpuid = ioarg;
@@ -1236,17 +1221,28 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       break;
    }
 
+   case IOCTL_VMX86_GET_VMM_PAGE_ROOT: {
+      VcpuPageRoot args;
+
+      retval = HostIF_CopyFromUser(&args, ioarg, sizeof args);
+      if (retval) {
+         break;
+      }
+      if (args.vcpuid >= vm->numVCPUs || vm->ptRootMpns == NULL) {
+         retval = -EINVAL;
+      } else {
+         args.pageRoot = vm->ptRootMpns[args.vcpuid];
+         retval = HostIF_CopyToUser(ioarg, &args, sizeof args);
+      }
+      break;
+   }
+
    case IOCTL_VMX86_GET_NUM_VMS:
       retval = Vmx86_GetNumVMs();
       break;
 
-   case IOCTL_VMX86_GET_TOTAL_MEM_USAGE:
-      retval = Vmx86_GetTotalMemUsage();
-      break;
-
    case IOCTL_VMX86_SET_HARD_LIMIT: {
-      int32 limit;
-
+      PageCnt limit;
       retval = HostIF_CopyFromUser(&limit, ioarg, sizeof limit);
       if (retval != 0) {
          break;
@@ -1516,6 +1512,13 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       break;
    }
 
+   case IOCTL_VMX86_GET_NUM_ANON_PAGES: {
+      PageCnt numAnonPages;
+      numAnonPages = Vmx86_GetNumAnonPages(vm);
+      retval = HostIF_CopyToUser(ioarg, &numAnonPages, sizeof numAnonPages);
+      break;
+   }
+
    case IOCTL_VMX86_READ_PAGE: {
          VMMReadWritePage req;
 
@@ -1530,6 +1533,7 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       }
 
    case IOCTL_VMX86_WRITE_PAGE: {
+#if VMX86_DEVEL
          VMMReadWritePage req;
 
          retval = HostIF_CopyFromUser(&req, ioarg, sizeof req);
@@ -1538,6 +1542,9 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
          }
          retval = HostIF_WritePhysical(vm, MPN_2_MA(req.mpn), req.uAddr, FALSE,
                                        PAGE_SIZE);
+#else
+         retval = -EINVAL;
+#endif
          break;
       }
 
@@ -1596,7 +1603,7 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       uint64 swapSize;
       retval = HostIF_CopyFromUser(&swapSize, ioarg, sizeof swapSize);
       if (retval != 0) {
-         Warning("Could not copy swap size from user, status %d\n", retval);
+         Warning("Could not copy swap size from user, status %ld\n", retval);
          break;
       }
       linuxState.swapSize = swapSize;
@@ -1629,6 +1636,11 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
    }
 
 exit:
+   if (needsWriteLock) {
+      up_write(&device->vmDriverRWSema);
+   } else {
+      up_read(&device->vmDriverRWSema);
+   }
    return retval;
 }
 

@@ -32,7 +32,7 @@
  */
 
 
-#ifdef linux
+#ifdef __linux__
 /* Must come before any kernel header file --hpreg */
 #   include "driver-config.h"
 
@@ -488,5 +488,34 @@ PhysTrack_GetNext(const PhysTracker *tracker, // IN
       p2 = 0; p3 = 0;
    }
    return INVALID_MPN;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * PhysTrack_GetNumTrackedPages --
+ *
+ *      Returns the total number of tracked pages
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+PageCnt
+PhysTrack_GetNumTrackedPages(const PhysTracker *tracker)
+{
+   PageCnt numTrackedMPNs = 0;
+   MPN nextMPN;
+   ASSERT(tracker);
+   ASSERT(HostIF_VMLockIsHeld(tracker->vm));
+   nextMPN = PhysTrack_GetNext(tracker, INVALID_MPN);
+   while (nextMPN != INVALID_MPN) {
+      numTrackedMPNs++;
+      nextMPN = PhysTrack_GetNext(tracker, nextMPN);
+   }
+   return numTrackedMPNs;
 }
 

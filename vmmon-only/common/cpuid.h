@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998, 2016-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998, 2016-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -37,6 +37,7 @@ extern CpuidVendor cpuidVendor;
 extern Bool        hostSupportsVT;
 extern Bool        hostSupportsSVM;
 extern Bool        hostHasSpecCtrl;
+extern Bool        hostSupportsXSave;
 
 void CPUID_Init(void);
 Bool CPUID_AddressSizeSupported(void);
@@ -82,6 +83,12 @@ static INLINE Bool
 CPUID_HostSupportsSpecCtrl(void)
 {
    return hostHasSpecCtrl;
+}
+
+static INLINE Bool
+CPUID_HostSupportsXSave(void)
+{
+   return hostSupportsXSave;
 }
 
 static INLINE Bool

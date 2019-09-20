@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -42,7 +42,6 @@
 #include "vm_basic_math.h"
 #include "vmx86.h"
 #include "task.h"
-#include "initblock.h"
 #include "vm_asm.h"
 #include "iocontrols.h"
 #include "hostif.h"
@@ -56,14 +55,16 @@
 #include "x86vt.h"
 #include "x86svm.h"
 #include "x86cpuid_asm.h"
-#if defined(linux)
+#if defined(__linux__)
 #include <asm/timex.h>
 #endif
-#include "x86perfctr.h"
+#include "perfctr.h"
 #include "x86vtinstr.h"
 #include "bootstrap_vmm.h"
 #include "monLoader.h"
 #include "vmmblob.h"
+#include "sharedAreaVmmon.h"
+#include "statVarsVmmon.h"
 
 PseudoTSC pseudoTSC;
 
@@ -77,14 +78,14 @@ static VMDriver *vmDriverList = NULL;
 static LockedPageLimit lockedPageLimit = {
    0,                        // host: does not need to be initialized.
    0,                        // configured: must be set by some VM as it is powered on.
-   (uint32)MAX_LOCKED_PAGES, // dynamic
+   MAX_LOCKED_PAGES,         // dynamic
 };
 
 /* Percentage of guest "paged" memory that must fit within the hard limit. */
-static unsigned minVmMemPct;
+static Percent minVmMemPct;
 
 /* Number of pages actually locked by all virtual machines */
-static unsigned numLockedPages;
+static PageCnt numLockedPages;
 
 /* Total virtual machines on this host */
 static unsigned vmCount;
@@ -141,13 +142,12 @@ typedef struct NXData {
  *----------------------------------------------------------------------
  */
 
-static INLINE unsigned
+static INLINE PageCnt
 Vmx86AdjustLimitForOverheads(const VMDriver* vm,
-                             const uint32 limit)
+                             const PageCnt limit)
 {
-   uint32 extraCost = (vm != NULL) ? vmCount * vm->memInfo.perVMOverhead : 0;
+   PageCnt extraCost = (vm != NULL) ? vmCount * vm->memInfo.perVMOverhead : 0;
    ASSERT(HostIF_GlobalLockIsHeld());
-
    return (extraCost < limit) ?  (limit - extraCost) : 0;
 }
 
@@ -176,12 +176,11 @@ Vmx86AdjustLimitForOverheads(const VMDriver* vm,
  *----------------------------------------------------------------------
  */
 
-static INLINE unsigned
+static INLINE PageCnt
 Vmx86LockedPageLimit(const VMDriver* vm)  // IN:
 {
-   uint32 overallLimit;
+   PageCnt overallLimit;
    ASSERT(HostIF_GlobalLockIsHeld());
-
    lockedPageLimit.host = HostIF_EstimateLockedPageLimit(vm, numLockedPages);
    overallLimit = MIN(MIN(lockedPageLimit.configured, lockedPageLimit.dynamic),
                       lockedPageLimit.host);
@@ -212,7 +211,7 @@ Vmx86LockedPageLimit(const VMDriver* vm)  // IN:
 
 static INLINE Bool
 Vmx86HasFreePages(VMDriver *vm,
-                  unsigned int numPages,
+                  PageCnt numPages,
                   Bool checkVM)
 {
    /*
@@ -226,10 +225,7 @@ Vmx86HasFreePages(VMDriver *vm,
           (!checkVM || HostIF_VMLockIsHeld(vm)));
 
    if (checkVM) {
-      /*
-       * Check the per-vm limit.
-       */
-
+      /* Check the per-vm limit. */
       ASSERT(HostIF_VMLockIsHeld(vm));
       if (vm->memInfo.admitted) {
          if (vm->memInfo.maxAllocation <= vm->memInfo.locked) {
@@ -239,12 +235,8 @@ Vmx86HasFreePages(VMDriver *vm,
          }
       }
    } else {
-      /*
-       * Check the global limit.
-       */
-
-      unsigned limit = Vmx86LockedPageLimit(vm);
-
+      /* Check the global limit. */
+      PageCnt limit = Vmx86LockedPageLimit(vm);
       if (limit <= numLockedPages) {
          return FALSE;
       } else if (limit - numLockedPages < numPages) {
@@ -555,7 +547,7 @@ Vmx86_Free(void *ptr)
 void *
 Vmx86_Calloc(size_t numElements, // IN
              size_t elementSize, // IN
-             int nonPageable)    // IN
+             Bool nonPageable)   // IN
 {
    size_t numBytes = numElements * elementSize;
    void *retval;
@@ -732,6 +724,14 @@ Vmx86FreeAllVMResources(VMDriver *vm)
          VmmBlob_Cleanup(vm->blobInfo);
          vm->blobInfo = NULL;
       }
+      if (vm->sharedArea != NULL) {
+         SharedAreaVmmon_Cleanup(vm->sharedArea);
+         vm->sharedArea = NULL;
+      }
+      if (vm->statVars != NULL) {
+         StatVarsVmmon_Cleanup(vm->statVars);
+         vm->statVars = NULL;
+      }
 
       HostIF_FreeAllResources(vm);
 
@@ -768,7 +768,7 @@ Vmx86FreeAllVMResources(VMDriver *vm)
 
 static Bool
 Vmx86ReserveFreePages(VMDriver *vm,
-                      unsigned int numPages,
+                      PageCnt numPages,
                       Bool ignoreLimits)
 {
    Bool retval = FALSE;
@@ -779,15 +779,14 @@ Vmx86ReserveFreePages(VMDriver *vm,
    for (retries = 3; !retval && (retries > 0); retries--) {
       HostIF_GlobalLock(17);
       HostIF_VMLock(vm, 0);
-
-      // Check VM's limit and don't wait.
+      /* Check VM's limit and don't wait. */
       retval = Vmx86HasFreePages(vm, numPages, TRUE);
       if (!retval) {
          HostIF_VMUnlock(vm, 0);
          HostIF_GlobalUnlock(17);
          break;
       } else {
-         // Wait to satisfy the global limit.
+         /* Wait to satisfy the global limit. */
          retval = Vmx86HasFreePages(vm, numPages, FALSE);
          if (retval) {
             numLockedPages += numPages;
@@ -841,7 +840,7 @@ Vmx86ReserveFreePages(VMDriver *vm,
 
 static void
 Vmx86UnreserveFreePages(VMDriver *vm,
-                        unsigned int numPages)
+                        PageCnt numPages)
 {
    ASSERT(vm);
 
@@ -879,7 +878,7 @@ static void
 Vmx86GetNX(void *clientData) // IN/OUT: A NXData *
 {
    NXData *nxData = (NXData *)clientData;
-   uint64 efer = __GET_MSR(MSR_EFER);
+   uint64 efer = X86MSR_GetMSR(MSR_EFER);
 
    Atomic_Inc32(&nxData->responded);
    if ((efer & MSR_EFER_NXE) == MSR_EFER_NXE) {
@@ -946,11 +945,6 @@ Vmx86_CreateVM(VA64 bsBlob, uint32 bsBlobSize, uint32 numVCPUs)
       return NULL;
    }
 
-   /* Disallow VM creation if HV is not available, as the VM cannot be run. */
-   if (!CPUID_HostSupportsHV()) {
-      return NULL;
-   }
-
    /* Disallow VM creation if NX is disabled on the host as VMM requires NX. */
    if (!hostUsesNX) {
       Log("NX/XD must be enabled.  Cannot create VM.\n");
@@ -970,31 +964,44 @@ Vmx86_CreateVM(VA64 bsBlob, uint32 bsBlobSize, uint32 numVCPUs)
       Atomic_Write32(&vm->currentHostCpu[v], INVALID_PCPU);
       vm->ptRootMpns[v] = INVALID_MPN;
    }
-   if (HostIF_Init(vm, numVCPUs)) {
-      goto cleanup;
-   }
-   bsBuf = HostIF_AllocKernelMem(bsBlobSize, FALSE);
-   if (bsBuf == NULL) {
-      goto cleanup;
-   }
-   if (HostIF_CopyFromUser(bsBuf, bsBlob, bsBlobSize) != 0) {
-      goto cleanup;
-   }
-   bsParams = BSVMM_Validate(bsBuf, bsBlobSize);
-   if (bsParams == NULL) {
-      Warning("Could not validate the VMM bootstrap blob");
+   if (!HostIF_Init(vm, numVCPUs)) {
       goto cleanup;
    }
 
-   if (!Task_CreateCrossGDT(&bsParams->gdtInit)) {
-      goto cleanup;
+   /* The ULM does not use the cross GDT. */
+   if (bsBlobSize != 0) {
+      bsBuf = HostIF_AllocKernelMem(bsBlobSize, FALSE);
+      if (bsBuf == NULL) {
+         goto cleanup;
+      }
+      if (HostIF_CopyFromUser(bsBuf, bsBlob, bsBlobSize) != 0) {
+         goto cleanup;
+      }
+      bsParams = BSVMM_Validate(bsBuf, bsBlobSize);
+      if (bsParams == NULL) {
+         Warning("Could not validate the VMM bootstrap blob");
+         goto cleanup;
+      }
+
+      if (!Task_CreateCrossGDT(&bsParams->gdtInit)) {
+         goto cleanup;
+      }
    }
+
    vm->ptpTracker = MemTrack_Init(vm);
    if (vm->ptpTracker == NULL) {
       goto cleanup;
    }
    vm->vmmTracker = MemTrack_Init(vm);
    if (vm->vmmTracker == NULL) {
+      goto cleanup;
+   }
+   vm->sharedArea = SharedAreaVmmon_Init(vm);
+   if (vm->sharedArea == NULL) {
+      goto cleanup;
+   }
+   vm->statVars = StatVarsVmmon_Init(vm);
+   if (vm->statVars == NULL) {
       goto cleanup;
    }
 
@@ -1015,7 +1022,9 @@ Vmx86_CreateVM(VA64 bsBlob, uint32 bsBlobSize, uint32 numVCPUs)
 
    HostIF_GlobalUnlock(0);
 
-   HostIF_FreeKernelMem(bsBuf);
+   if (bsBuf != NULL) {
+      HostIF_FreeKernelMem(bsBuf);
+   }
    return vm;
 
 cleanup:
@@ -1052,7 +1061,8 @@ cleanup:
  */
 
 static Bool
-Vmx86SetPageTableRoots(VMDriver *vm, UserVA64 *ptRootVAs, uint16 numVCPUs)
+Vmx86SetPageTableRoots(VMDriver *vm, PerVcpuPages *perVcpuPages,
+                       uint16 numVCPUs)
 {
    uint16 vcpu;
 
@@ -1060,14 +1070,16 @@ Vmx86SetPageTableRoots(VMDriver *vm, UserVA64 *ptRootVAs, uint16 numVCPUs)
       return FALSE;
    }
    for (vcpu = 0; vcpu < numVCPUs; vcpu++) {
-      if ((ptRootVAs[vcpu] & (PAGE_SIZE - 1)) != 0) {
+      VA64 ptRoot = perVcpuPages[vcpu].ptRoot;
+
+      if ((ptRoot & (PAGE_SIZE - 1)) != 0) {
          Warning("Error: page table VA %"FMT64"x is not page-aligned\n",
-                 ptRootVAs[vcpu]);
+                 ptRoot);
          return FALSE;
       }
       ASSERT(vm->ptRootMpns[vcpu] == INVALID_MPN);
       HostIF_VMLock(vm, 38);
-      if (HostIF_LookupUserMPN(vm, ptRootVAs[vcpu], &vm->ptRootMpns[vcpu]) !=
+      if (HostIF_LookupUserMPN(vm, ptRoot, &vm->ptRootMpns[vcpu]) !=
           PAGE_LOOKUP_SUCCESS) {
          HostIF_VMUnlock(vm, 38);
          Warning("Failure looking up page table root MPN for VCPU %d\n", vcpu);
@@ -1128,7 +1140,7 @@ Vmx86_ProcessBootstrap(VMDriver *vm,
                        uint32 numBytes,
                        uint32 headerOffset,
                        uint16 numVCPUs,
-                       UserVA64 *ptRootVAs,
+                       PerVcpuPages *perVcpuPages,
                        VMSharedRegion *shRegions)
 {
    VmmBlobInfo *bi = NULL;
@@ -1136,18 +1148,31 @@ Vmx86_ProcessBootstrap(VMDriver *vm,
    Vcpuid errVcpu;
    MonLoaderError ret;
    MonLoaderArgs args;
+   MonLoaderHeader *header;
 
    if (!VmmBlob_Load(bsBlobAddr, numBytes, headerOffset, &bi)) {
       Warning("Error loading VMM bootstrap blob\n");
       goto error;
    }
    vm->blobInfo = bi;
-   if (!Vmx86SetPageTableRoots(vm, ptRootVAs, numVCPUs)) {
+   header = bi->header;
+   if (!Vmx86SetPageTableRoots(vm, perVcpuPages, numVCPUs)) {
       goto error;
    }
+
+   /*
+    * Initialize the driver's part of the cross-over page used to
+    * talk to the monitor.
+    */
+   if (!Task_InitCrosspage(vm, header->monStartLPN, header->monEndLPN,
+                           perVcpuPages)) {
+      Warning("Error initializing crosspage\n");
+      goto error;
+   }
+
    args.vm = vm;
    args.shRegions = shRegions;
-   ret = MonLoader_Process(bi->header, numVCPUs, &args, &errLine, &errVcpu);
+   ret = MonLoader_Process(header, numVCPUs, &args, &errLine, &errVcpu);
    if (ret != ML_OK) {
       Warning("Error processing bootstrap: error %d at line %u, vcpu %u\n",
                ret, errLine, errVcpu);
@@ -1265,78 +1290,6 @@ Vmx86_Close(void)
       pseudoTSC.initialized = FALSE;
    }
    HostIF_GlobalUnlock(124);
-}
-
-
-/*
- *-----------------------------------------------------------------------------
- *
- * Vmx86_InitVM --
- *
- *    Initializaiton of the VM.  Expects all initial arguments
- *    to be part of the InitBlock structure.
- *
- * Results:
- *    0 on success
- *    != 0 on failure
- *
- * Side effects:
- *    Many
- *
- *-----------------------------------------------------------------------------
- */
-
-int
-Vmx86_InitVM(VMDriver *vm,          // IN
-             InitBlock *initParams) // IN/OUT: Initial params from the VM
-{
-   int retval;
-
-   if (initParams->magicNumber != INIT_BLOCK_MAGIC) {
-      Warning("Bad magic number for init block 0x%x\n",
-              initParams->magicNumber);
-
-      return 1;
-   }
-   if (vm->numVCPUs == 0 || vm->numVCPUs > MAX_VCPUS) {
-      Warning("Invalid number of VCPUs %d\n", vm->numVCPUs);
-
-      return 1;
-   }
-
-   /*
-    * Initialize the driver's part of the cross-over page used to
-    * talk to the monitor
-    */
-
-   retval = Task_InitCrosspage(vm, initParams);
-   if (retval) {
-      Warning("Task crosspage init died with retval=%d\n", retval);
-      /*
-       *  Note that any clean-up of resources will be handled during
-       *  power-off when Vmx86_ReleaseVM() is called as part of
-       *  MonitorLoop_PowerOff().
-       */
-
-      return 1;
-   }
-
-   /*
-    *  Check if we want to arbitrarily fail every N VM initializations.
-    *  Useful in testing PR 72482.
-    */
-
-   if (initParams->vmInitFailurePeriod != 0) {
-      static uint32 counter = 0;
-
-      if ((++counter) % initParams->vmInitFailurePeriod == 0) {
-         Warning("VM initialization failed on %d iteration\n", counter);
-
-         return 1;
-      }
-   }
-
-   return 0;
 }
 
 
@@ -1690,42 +1643,13 @@ Vmx86_GetNumVMs(void)
 }
 
 
-int32
-Vmx86_GetTotalMemUsage(void)
+static INLINE PageCnt
+Vmx86MinAllocationFunc(PageCnt nonpaged,
+                       PageCnt anonymous,
+                       PageCnt mainmem,
+                       Percent memPct)
 {
-   VMDriver *vm;
-   int totalmem = 0;
-
-   HostIF_GlobalLock(15);
-   vm = vmDriverList;
-
-   for (vm = vmDriverList; vm != NULL; vm = vm->nextDriver) {
-      /*
-       * The VM lock is not strictly necessary as the vm will
-       * stay on the list until we release the global lock and
-       * because of order in which "admitted" and "mainMemSize"
-       * are set when each VM is admitted.
-       */
-
-      if (vm->memInfo.admitted) {
-          totalmem += PAGES_2_MBYTES(ROUNDUP(vm->memInfo.mainMemSize,
-                                             MBYTES_2_PAGES(1)));
-      }
-   }
-
-   HostIF_GlobalUnlock(15);
-
-   return totalmem;
-}
-
-
-static INLINE unsigned
-Vmx86MinAllocationFunc(unsigned nonpaged,
-                       unsigned anonymous,
-                       unsigned mainmem,
-                       unsigned memPct)
-{
-   return RatioOf(memPct, mainmem, 100) + nonpaged + anonymous;
+   return (memPct * mainmem) / 100 + nonpaged + anonymous;
 }
 
 
@@ -1749,12 +1673,11 @@ Vmx86MinAllocationFunc(unsigned nonpaged,
  *----------------------------------------------------------------------
  */
 
-static INLINE unsigned
+static INLINE PageCnt
 Vmx86MinAllocation(VMDriver *vm,
-                   unsigned memPct)
+                   Percent memPct)
 {
    ASSERT(HostIF_VMLockIsHeld(vm));
-
    return Vmx86MinAllocationFunc(vm->memInfo.nonpaged, vm->memInfo.anonymous,
                                  vm->memInfo.mainMemSize, memPct);
 }
@@ -1780,12 +1703,11 @@ Vmx86MinAllocation(VMDriver *vm,
  *----------------------------------------------------------------------
  */
 
-static unsigned
-Vmx86CalculateGlobalMinAllocation(unsigned memPct)
+static PageCnt
+Vmx86CalculateGlobalMinAllocation(Percent memPct)
 {
    VMDriver *vm;
-   unsigned minAllocation = 0;
-
+   PageCnt minAllocation = 0;
    ASSERT(HostIF_GlobalLockIsHeld());
    /* Pages of other vms required to fit inside the hard limit. */
    for (vm = vmDriverList; vm; vm = vm->nextDriver) {
@@ -1819,10 +1741,9 @@ Vmx86CalculateGlobalMinAllocation(unsigned memPct)
  */
 
 static INLINE_SINGLE_CALLER void
-Vmx86UpdateMinAllocations(unsigned memPct)  // IN:
+Vmx86UpdateMinAllocations(Percent memPct)  // IN:
 {
    VMDriver *vm;
-
    ASSERT(HostIF_GlobalLockIsHeld());
    /* Pages of other vms required to fit inside the hard limit. */
    for (vm = vmDriverList; vm; vm = vm->nextDriver) {
@@ -1855,7 +1776,7 @@ Vmx86UpdateMinAllocations(unsigned memPct)  // IN:
  */
 
 Bool
-Vmx86_SetConfiguredLockedPagesLimit(unsigned limit)  // IN:
+Vmx86_SetConfiguredLockedPagesLimit(PageCnt limit)  // IN:
 {
    Bool retval = FALSE;
 
@@ -1889,7 +1810,7 @@ Vmx86_SetConfiguredLockedPagesLimit(unsigned limit)  // IN:
  */
 
 void
-Vmx86_SetDynamicLockedPagesLimit(unsigned limit)  // IN:
+Vmx86_SetDynamicLockedPagesLimit(PageCnt limit)  // IN:
 {
    HostIF_GlobalLock(11);
    lockedPageLimit.dynamic = limit;
@@ -2031,33 +1952,29 @@ Vmx86_UnlockPageByMPN(VMDriver *vm, // IN: VMDriver
  *-----------------------------------------------------------------------------
  */
 
-int
+int64
 Vmx86_AllocLockedPages(VMDriver *vm,         // IN: VMDriver
                        VA64 addr,            // OUT: VA of an array for
                                              //      allocated MPNs.
-                       unsigned numPages,    // IN: number of pages to allocate
+                       PageCnt numPages,     // IN: number of pages to allocate
                        Bool kernelMPNBuffer, // IN: is the MPN buffer in kernel
                                              //     or user address space?
                        Bool ignoreLimits)    // IN: should limits be ignored?
 {
-   int allocatedPages;
-
+   int64 allocatedPages;
    if (!Vmx86ReserveFreePages(vm, numPages, ignoreLimits)) {
       // XXX What kind of system-specific error code is that? --hpreg
       return PAGE_LOCK_LIMIT_EXCEEDED;
    }
-
    HostIF_VMLock(vm, 7);
    allocatedPages = HostIF_AllocLockedPages(vm, addr, numPages,
                                             kernelMPNBuffer);
    HostIF_VMUnlock(vm, 7);
-
    if (allocatedPages < 0) {
       Vmx86UnreserveFreePages(vm, numPages);
    } else if (allocatedPages < numPages) {
       Vmx86UnreserveFreePages(vm, numPages - allocatedPages);
    }
-
    return allocatedPages;
 }
 
@@ -2082,14 +1999,13 @@ Vmx86_AllocLockedPages(VMDriver *vm,         // IN: VMDriver
 
 int
 Vmx86_FreeLockedPages(VMDriver *vm,         // IN: VM instance pointer
-                      VA64 addr,            // IN: user or kernel array of MPNs to free
-                      unsigned numPages,    // IN: number of pages to free
-                      Bool kernelMPNBuffer) // IN: is the MPN buffer in kernel or user address space?
+                      MPN *mpns,            // IN: MPNs to free
+                      PageCnt numPages)     // IN: number of pages to free
 {
    int ret;
 
    HostIF_VMLock(vm, 8);
-   ret = HostIF_FreeLockedPages(vm, addr, numPages, kernelMPNBuffer);
+   ret = HostIF_FreeLockedPages(vm, mpns, numPages);
    HostIF_VMUnlock(vm, 8);
 
    if (ret == 0) {
@@ -2166,6 +2082,33 @@ Vmx86_GetNextAnonPage(VMDriver *vm,       // IN: VM instance pointer
    ret = HostIF_GetNextAnonPage(vm, mpn);
    HostIF_VMUnlock(vm, 22);
 
+   return ret;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Vmx86_GetNumAnonPages --
+ *
+ *      Queries the driver for the total number of anonymous pages.
+ *
+ * Results:
+ *      Total number of anonymous pages
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+PageCnt
+Vmx86_GetNumAnonPages(VMDriver *vm)       // IN: VM instance pointer
+{
+   PageCnt ret;
+   HostIF_VMLock(vm, 45);
+   ret = HostIF_GetNumAnonPages(vm);
+   HostIF_VMUnlock(vm, 45);
    return ret;
 }
 
@@ -2275,10 +2218,10 @@ Vmx86_GetMemInfo(VMDriver *curVM,
 
 static void
 Vmx86SetMemoryUsage(VMDriver *curVM,       // IN/OUT
-                    unsigned paged,        // IN
-                    unsigned nonpaged,     // IN
-                    unsigned anonymous,    // IN
-                    unsigned aminVmMemPct) // IN
+                    PageCnt  paged,        // IN
+                    PageCnt  nonpaged,     // IN
+                    PageCnt  anonymous,    // IN
+                    Percent  aminVmMemPct) // IN
 {
    ASSERT(HostIF_VMLockIsHeld(curVM));
    curVM->memInfo.paged         = paged;
@@ -2317,8 +2260,7 @@ Vmx86_Admit(VMDriver *curVM,     // IN
             VMMemInfoArgs *args) // IN/OUT
 {
    Bool allowAdmissionCheck = FALSE;
-   unsigned int globalMinAllocation;
-
+   PageCnt globalMinAllocation;
    HostIF_GlobalLock(9);
 
    /*
@@ -2360,8 +2302,8 @@ Vmx86_Admit(VMDriver *curVM,     // IN
 
 #if defined _WIN32
    if (curVM->memInfo.admitted) {
-      unsigned int allocatedPages, nonpaged;
-      signed int pages;
+      PageCnt allocatedPages, nonpaged;
+      int64 pages;
       MPN *mpns;
 
       /*
@@ -2397,10 +2339,7 @@ Vmx86_Admit(VMDriver *curVM,     // IN
        * XXX Do not free the pages but hand them directly to the admitted VM.
        */
 
-      for (pages = 0; pages < allocatedPages; pages += ALLOCATE_CHUNK_SIZE) {
-         Vmx86_FreeLockedPages(curVM, PtrToVA64(mpns + pages),
-                               MIN(ALLOCATE_CHUNK_SIZE, allocatedPages - pages), TRUE);
-      }
+      Vmx86_FreeLockedPages(curVM, mpns, allocatedPages);
       HostIF_FreeKernelMem(mpns);
 #undef ALLOCATE_CHUNK_SIZE
 
@@ -2429,11 +2368,11 @@ undoAdmission:
 Bool
 Vmx86_Readmit(VMDriver *curVM, OvhdMem_Deltas *delta)
 {
-   unsigned globalMinAllocation, newMinAllocation;
+   PageCnt globalMinAllocation, newMinAllocation;
    Bool retval = FALSE;
-   int paged;
-   int nonpaged;
-   int anonymous;
+   int64 paged;
+   int64 nonpaged;
+   int64 anonymous;
 
    HostIF_GlobalLock(31);
    globalMinAllocation = Vmx86CalculateGlobalMinAllocation(minVmMemPct);
@@ -2542,19 +2481,20 @@ static void
 Vmx86EnableHVOnCPU(void)
 {
    if (CPUID_HostSupportsSVM()) {
-      uint64 vmCR = __GET_MSR(MSR_VM_CR);
+      uint64 vmCR = X86MSR_GetMSR(MSR_VM_CR);
       if (!SVM_LockedFromFeatures(vmCR)) {
          CPUIDRegs regs;
          __GET_CPUID(0x8000000A, &regs);
          if (CPUID_GET(0x8000000A, EDX, SVM_LOCK, regs.edx) != 0) {
-            __SET_MSR(MSR_VM_CR, (vmCR & ~MSR_VM_CR_SVME_DISABLE) |
-                                  MSR_VM_CR_SVM_LOCK);
+            X86MSR_SetMSR(MSR_VM_CR, (vmCR & ~MSR_VM_CR_SVME_DISABLE) |
+                                      MSR_VM_CR_SVM_LOCK);
          }
       }
    } else if (CPUID_HostSupportsVT()) {
-      uint64 featCtl = __GET_MSR(MSR_FEATCTL);
+      uint64 featCtl = X86MSR_GetMSR(MSR_FEATCTL);
       if (!VT_LockedFromFeatures(featCtl)) {
-         __SET_MSR(MSR_FEATCTL, featCtl | MSR_FEATCTL_LOCK | MSR_FEATCTL_VMXE);
+         X86MSR_SetMSR(MSR_FEATCTL,
+                       featCtl | MSR_FEATCTL_LOCK | MSR_FEATCTL_VMXE);
       }
    }
 }
@@ -2925,9 +2865,9 @@ Vmx86CheckVMXStatus(const char *operation, // IN: Operation string
 #ifdef __GNUC__
 #if __GNUC__== 4 && __GNUC_MINOR__ > 3
       if (status == VMX_FailValid) {
-         uint64 errorCode;
+         size_t errorCode;
          VMREAD_2_STATUS(VT_VMCS_VMINSTR_ERR, &errorCode);
-         Log("VM-instruction error: Error %"FMT64"d\n", errorCode);
+         Log("VM-instruction error: Error %"FMTSZ"d\n", errorCode);
       }
 #endif
 #endif
@@ -3169,12 +3109,12 @@ Vmx86PerfCtrInUse(Bool isGen, unsigned pmcNum, unsigned ctrlMSR,
                   unsigned cntMSR, Bool hasPGC)
 {
    volatile unsigned delay;
-   uint64 origPGC = hasPGC ? __GET_MSR(PERFCTR_CORE_GLOBAL_CTRL_ADDR) : 0;
+   uint64 origPGC = hasPGC ? X86MSR_GetMSR(PERFCTR_CORE_GLOBAL_CTRL_ADDR) : 0;
    uint64 pmcCtrl;
    uint64 pmcCount, count;
    uint64 ctrlEna, pgcEna;
 
-   pmcCtrl = __GET_MSR(ctrlMSR);
+   pmcCtrl = X86MSR_GetMSR(ctrlMSR);
    if (isGen) {
       ASSERT(pmcNum < 32);
       if ((pmcCtrl & PERFCTR_CPU_ENABLE) != 0) {
@@ -3191,21 +3131,21 @@ Vmx86PerfCtrInUse(Bool isGen, unsigned pmcNum, unsigned ctrlMSR,
       ctrlEna = pmcCtrl | PERFCTR_CORE_FIXED_KERNEL_MASKn(pmcNum);
       pgcEna = CONST64U(1) << (pmcNum + 32);
    }
-   pmcCount = __GET_MSR(cntMSR);
+   pmcCount = X86MSR_GetMSR(cntMSR);
    /* Enable the counter. */
-   __SET_MSR(ctrlMSR, ctrlEna);
+   X86MSR_SetMSR(ctrlMSR, ctrlEna);
    if (hasPGC) {
-      __SET_MSR(PERFCTR_CORE_GLOBAL_CTRL_ADDR, pgcEna | origPGC);
+      X86MSR_SetMSR(PERFCTR_CORE_GLOBAL_CTRL_ADDR, pgcEna | origPGC);
    }
    /* Retire some instructions and wait a few cycles. */
    for (delay = 0; delay < 100; delay++) ;
    /* Disable the counter. */
    if (hasPGC) {
-      __SET_MSR(PERFCTR_CORE_GLOBAL_CTRL_ADDR, origPGC);
+      X86MSR_SetMSR(PERFCTR_CORE_GLOBAL_CTRL_ADDR, origPGC);
    }
-   count = __GET_MSR(cntMSR);
-   __SET_MSR(ctrlMSR, pmcCtrl);
-   __SET_MSR(cntMSR, pmcCount);
+   count = X86MSR_GetMSR(cntMSR);
+   X86MSR_SetMSR(ctrlMSR, pmcCtrl);
+   X86MSR_SetMSR(cntMSR, pmcCount);
    return count == pmcCount;
 }
 

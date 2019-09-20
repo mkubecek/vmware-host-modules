@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -29,9 +29,6 @@
 #define INCLUDE_ALLOW_VMCORE
 #define INCLUDE_ALLOW_VMMON
 #include "includeCheck.h"
-
-#define INTERRUPT_REDIRECTION_BITMAP_SIZE 32
-#define IO_PERMISSION_BITMAP_SIZE 0
 
 
 #define VMM_PANIC_NONE         0

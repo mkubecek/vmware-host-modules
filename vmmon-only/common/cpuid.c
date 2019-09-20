@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998, 2016-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998, 2016-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -16,7 +16,7 @@
  *
  *********************************************************/
 
-#ifdef linux
+#ifdef __linux__
 /* Must come before any kernel header file --hpreg */
 #   include "driver-config.h"
 
@@ -40,6 +40,7 @@ uint32      cpuidVersion;
 Bool        hostSupportsVT;
 Bool        hostSupportsSVM;
 Bool        hostHasSpecCtrl;
+Bool        hostSupportsXSave;
 
 
 /*
@@ -84,6 +85,7 @@ CPUID_Init(void)
    __GET_CPUID(1, &regs);
    cpuidVersion = regs.eax;
    cpuidFeatures = regs.edx;
+   hostSupportsXSave = CPUID_ISSET(1, ECX, XSAVE, regs.ecx);
 
    __GET_CPUID(0, &regs);
    ptr = (uint32 *)name;

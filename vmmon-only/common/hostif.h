@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -59,7 +59,7 @@
 
 #define CROSSCALL_SLEEP_US 1000
 
-EXTERN int   HostIF_Init(VMDriver *vm, uint32 numVCPUs);
+EXTERN Bool  HostIF_Init(VMDriver *vm, uint32 numVCPUs);
 EXTERN int   HostIF_LookupUserMPN(VMDriver *vm, VA64 uAddr, MPN *mpn);
 EXTERN void *HostIF_MapCrossPage(VMDriver *vm, VA64 uAddr);
 
@@ -76,12 +76,12 @@ EXTERN Bool  HostIF_IsLockedByMPN(VMDriver *vm, MPN mpn);
 EXTERN void  HostIF_FreeAllResources(VMDriver *vm);
 EXTERN uint64 HostIF_ReadUptime(void);
 EXTERN uint64 HostIF_UptimeFrequency(void);
-EXTERN unsigned int HostIF_EstimateLockedPageLimit(const VMDriver *vm,
-                                                   unsigned int lockedPages);
+EXTERN PageCnt HostIF_EstimateLockedPageLimit(const VMDriver *vm,
+                                              PageCnt lockedPages);
 EXTERN void  HostIF_Wait(unsigned int timeoutMs);
 EXTERN void  HostIF_WaitForFreePages(unsigned int timeoutMs);
-EXTERN void *HostIF_AllocKernelPages(unsigned numPages, MPN *mpns);
-EXTERN void  HostIF_FreeKernelPages(unsigned numPages, void *ptr);
+EXTERN void *HostIF_AllocKernelPages(PageCnt numPages, MPN *mpns);
+EXTERN void  HostIF_FreeKernelPages(PageCnt numPages, void *ptr);
 EXTERN void  HostIF_VMLock(VMDriver *vm, int callerID);
 EXTERN void  HostIF_VMUnlock(VMDriver *vm, int callerID);
 #ifdef VMX86_DEBUG
@@ -111,11 +111,11 @@ EXTERN void HostIF_WaitForThreads(VMDriver *vm, Vcpuid currVcpu);
 EXTERN void HostIF_CancelWaitForThreads(VMDriver *vm, Vcpuid currVcpu);
 EXTERN void HostIF_WakeUpYielders(VMDriver *vm, Vcpuid currVcpu);
 
-EXTERN int HostIF_AllocLockedPages(VMDriver *vm, VA64 addr,
-                                   unsigned int numPages, Bool kernelMPNBuffer);
-EXTERN int HostIF_FreeLockedPages(VMDriver *vm, VA64 addr,
-                                  unsigned int numPages, Bool kernelMPNBuffer);
+EXTERN int64 HostIF_AllocLockedPages(VMDriver *vm, VA64 addr,
+                                     PageCnt numPages, Bool kernelMPNBuffer);
+EXTERN int HostIF_FreeLockedPages(VMDriver *vm, MPN *mpns, PageCnt numPages);
 EXTERN MPN HostIF_GetNextAnonPage(VMDriver *vm, MPN mpn);
+EXTERN PageCnt HostIF_GetNumAnonPages(VMDriver *vm);
 EXTERN MPN HostIF_AllocLowPage(VMDriver *vm);
 
 EXTERN int HostIF_ReadPhysical(VMDriver *vm, MA ma, VA64 addr,

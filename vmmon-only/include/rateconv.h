@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2003-2016 VMware, Inc. All rights reserved.
+ * Copyright (C) 2003-2016, 2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -97,7 +97,7 @@ void RateConv_LogRatio(const char *prefix,
 static INLINE uint64
 RateConv_Unsigned(const RateConv_Params *conv, uint64 x)
 {
-   return Mul64x3264(x, conv->mult, conv->shift) + conv->add;
+   return Mul64x3264(x, conv->mult, conv->shift) + (uint64)conv->add;
 }
 
 

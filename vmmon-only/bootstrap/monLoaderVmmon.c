@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2016-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 2016-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -65,7 +65,7 @@ typedef struct MonLoaderEnvContext {
  */
 
 Bool
-MonLoaderCallout_Init(void *args, MonLoaderEnvContext **ctx)
+MonLoaderCallout_Init(void *args, MonLoaderEnvContext **ctx, unsigned numVCPUs)
 {
    MonLoaderEnvContext *c;
    MonLoaderArgs *mlArgs = (MonLoaderArgs *)args;
@@ -215,7 +215,7 @@ MonLoaderCallout_AllocMPN(MonLoaderEnvContext *ctx,  // IN
    vpn = Vmx86_MapPage(mpn);
    if (vpn == 0) {
       Log("Failed to map MPN 0x%"FMT64"x\n", mpn);
-      Vmx86_FreeLockedPages(vm, (VA64)&mpn, 1, TRUE);
+      Vmx86_FreeLockedPages(vm, &mpn, 1);
       return INVALID_MPN;
    }
    HostIF_VMLock(vm, 41);
@@ -225,7 +225,7 @@ MonLoaderCallout_AllocMPN(MonLoaderEnvContext *ctx,  // IN
       Log("Failed to track mapping from VPN 0x%"FMTVPN"x to MPN 0x%"FMT64"x\n",
           vpn, mpn);
       Vmx86_UnmapPage(vpn);
-      Vmx86_FreeLockedPages(vm, (VA64)&mpn, 1, TRUE);
+      Vmx86_FreeLockedPages(vm, &mpn, 1);
       return INVALID_MPN;
    }
    return mpn;
@@ -386,10 +386,8 @@ MonLoaderFindSharedRegion(MonLoaderEnvContext *ctx,
    int i;
 
    for (i = 0; i < ML_SHARED_REGIONS_MAX; i++) {
-      if (ctx->shRegions[i].baseVpn == INVALID_VPN) {
-         /* Not found. */
-         return NULL;
-      } else if (ctx->shRegions[i].index == index) {
+      if (ctx->shRegions[i].index == index &&
+          ctx->shRegions[i].baseVpn != INVALID_VPN) {
          return &ctx->shRegions[i];
       }
    }
@@ -425,10 +423,6 @@ MonLoaderGetSharedRegionMPN(MonLoaderEnvContext *ctx,
 
    ASSERT(IS_BOOT_VCPUID(vcpuid));
 
-   if (index >= ML_SHARED_REGIONS_MAX) {
-      Log("Invalid shared region %"FMT64"x", index);
-      return INVALID_MPN;
-   }
    s = MonLoaderFindSharedRegion(ctx, index);
    if (s == NULL) {
       return INVALID_MPN;
@@ -465,10 +459,10 @@ MonLoaderGetSharedRegionMPN(MonLoaderEnvContext *ctx,
  */
 
 MPN
-MonLoaderCallout_GetSharedUserPage(MonLoaderEnvContext *ctx,
-                                   uint64 subIndex, // IN
-                                   unsigned page,   // IN
-                                   Vcpuid vcpu)     // IN
+MonLoaderCallout_GetSharedUserPage(MonLoaderEnvContext *ctx, // IN
+                                   uint64 subIndex,          // IN
+                                   unsigned page,            // IN
+                                   Vcpuid vcpu)              // IN
 {
    if (subIndex == MONLOADER_HEADER_IDX) {
       return VmmBlob_GetHeaderMpn(ctx->vm);
@@ -484,30 +478,7 @@ MonLoaderCallout_GetSharedHostPage(MonLoaderEnvContext *ctx,      // IN
                                    unsigned             page,     // IN
                                    Vcpuid               vcpu)     // IN
 {
-   NOT_IMPLEMENTED();
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * MonLoaderCallout_IsPrivileged --
- *
- *      Returns whether or not this is a privileged environment.
- *
- * Returns:
- *      TRUE if privileged, FALSE if not.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-Bool
-MonLoaderCallout_IsPrivileged(MonLoaderEnvContext *ctx) // IN
-{
-   return TRUE;
+   return MonLoaderGetSharedRegionMPN(ctx, subIndex, vcpu, page);
 }
 
 
@@ -533,14 +504,4 @@ MonLoaderCallout_GetBlobMpn(MonLoaderEnvContext *ctx,    // IN
 {
    ASSERT((offset & (PAGE_SIZE - 1)) == 0);
    return VmmBlob_GetMpn(ctx->vm, BYTES_2_PAGES(offset));
-}
-
-Bool
-MonLoaderCallout_SetEntrypoint(MonLoaderEnvContext *ctx,           // IN
-                               uint16               codeSelector,  // IN
-                               VA64                 code,          // IN
-                               uint16               stackSelector, // IN
-                               VA64                 stack)         // IN
-{
-   NOT_IMPLEMENTED();
 }
