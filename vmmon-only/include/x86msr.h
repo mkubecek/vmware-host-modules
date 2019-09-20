@@ -633,7 +633,9 @@ typedef enum {
 #define MSR_HYPERV_GUESTOSID_OS_WINNT_DERIVATIVE 4ULL
 
 /* MSR for forcing RTM abort to recover PMC3 (see PR 2333817) */
+#ifndef MSR_TSX_FORCE_ABORT
 #define MSR_TSX_FORCE_ABORT                      0x0000010f
+#endif
 #define MSR_TSX_FORCE_ABORT_RTM_BIT_INDEX        0
 
 /*
