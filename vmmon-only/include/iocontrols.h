@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -37,7 +37,6 @@
 #error iocontrols.h is for hosted vmmon, do not use on visor
 #endif
 
-#include "basic_initblock.h"
 #include "x86segdescrs.h"
 #include "rateconv.h"
 #include "overheadmem_types.h"
@@ -45,6 +44,8 @@
 #include "numa_defs.h"
 #include "bootstrap_vmm.h"
 #include "contextinfo.h"
+#include "vcpuid.h"
+#include "sharedAreaType.h"
 
 #if defined __cplusplus
 extern "C" {
@@ -144,7 +145,7 @@ PtrToVA64(void const *ptr) // IN
  * See bora/doc/vmcore details.
  */
 
-#define VMMON_VERSION           (361 << 16 | 0)
+#define VMMON_VERSION           (385 << 16 | 0)
 #define VMMON_VERSION_MAJOR(v)  ((uint32) (v) >> 16)
 #define VMMON_VERSION_MINOR(v)  ((uint16) (v))
 
@@ -153,11 +154,8 @@ PtrToVA64(void const *ptr) // IN
  * ENOMEM returned after MAX_VMS virtual machines created
  */
 
-#ifdef VMX86_SERVER
-#define MAX_VMS 128
-#else
 #define MAX_VMS 64
-#endif
+
 /*
  * MsgWaitForMultipleObjects doesn't scale well enough on Win32.
  * Allocate with MAX_VMS so static buffers are large, but do
@@ -209,11 +207,13 @@ enum IOCTLCmd {
    IOCTLCMD(VERSION) = IOCTLCMD(FIRST),
    IOCTLCMD(CREATE_VM),
    IOCTLCMD(PROCESS_BOOTSTRAP),
+   IOCTLCMD(REGISTER_SHARED),
+   IOCTLCMD(REGISTER_STATVARS),
    IOCTLCMD(RELEASE_VM),
    IOCTLCMD(GET_NUM_VMS),
-   IOCTLCMD(INIT_VM),
    IOCTLCMD(RUN_VM),
    IOCTLCMD(LOOK_UP_MPN),
+   IOCTLCMD(GET_VMM_PAGE_ROOT),
    IOCTLCMD(LOCK_PAGE),
    IOCTLCMD(UNLOCK_PAGE),
    IOCTLCMD(APIC_INIT),
@@ -222,7 +222,6 @@ enum IOCTLCmd {
    IOCTLCMD(ADMIT),
    IOCTLCMD(UPDATE_MEM_INFO),
    IOCTLCMD(READMIT),
-   IOCTLCMD(GET_TOTAL_MEM_USAGE),
    IOCTLCMD(GET_KHZ_ESTIMATE),
    IOCTLCMD(SET_HOST_CLOCK_RATE),
    IOCTLCMD(READ_PAGE),
@@ -232,6 +231,7 @@ enum IOCTLCmd {
     /* AWE calls */
    IOCTLCMD(ALLOC_LOCKED_PAGES),
    IOCTLCMD(GET_NEXT_ANON_PAGE),
+   IOCTLCMD(GET_NUM_ANON_PAGES),
 
    IOCTLCMD(GET_ALL_MSRS),
 
@@ -277,7 +277,6 @@ enum IOCTLCmd {
 
 #if defined __APPLE__
    IOCTLCMD(GET_NUM_RESPONDING_CPUS),
-   IOCTLCMD(ALLOC_LOW_PAGES),
    IOCTLCMD(INIT_DRIVER),
    IOCTLCMD(BLUEPILL),
 #endif
@@ -318,13 +317,15 @@ enum IOCTLCmd {
 #define IOCTL_VMX86_CREATE_VM           VMIOCTL_BUFFERED(CREATE_VM)
 #define IOCTL_VMX86_RELEASE_VM          VMIOCTL_BUFFERED(RELEASE_VM)
 #define IOCTL_VMX86_PROCESS_BOOTSTRAP   VMIOCTL_BUFFERED(PROCESS_BOOTSTRAP)
+#define IOCTL_VMX86_REGISTER_SHARED     VMIOCTL_BUFFERED(REGISTER_SHARED)
+#define IOCTL_VMX86_REGISTER_STATVARS   VMIOCTL_BUFFERED(REGISTER_STATVARS)
 #define IOCTL_VMX86_GET_NUM_VMS         VMIOCTL_BUFFERED(GET_NUM_VMS)
-#define IOCTL_VMX86_INIT_VM             VMIOCTL_BUFFERED(INIT_VM)
 #define IOCTL_VMX86_RUN_VM              VMIOCTL_NEITHER(RUN_VM)
 #define IOCTL_VMX86_SEND_IPI            VMIOCTL_NEITHER(SEND_IPI)
 #define IOCTL_VMX86_SEND_ONE_IPI        VMIOCTL_BUFFERED(SEND_ONE_IPI)
 #define IOCTL_VMX86_GET_IPI_VECTORS     VMIOCTL_BUFFERED(GET_IPI_VECTORS)
 #define IOCTL_VMX86_LOOK_UP_MPN         VMIOCTL_BUFFERED(LOOK_UP_MPN)
+#define IOCTL_VMX86_GET_VMM_PAGE_ROOT   VMIOCTL_BUFFERED(GET_VMM_PAGE_ROOT)
 #define IOCTL_VMX86_LOCK_PAGE           VMIOCTL_BUFFERED(LOCK_PAGE)
 #define IOCTL_VMX86_UNLOCK_PAGE         VMIOCTL_BUFFERED(UNLOCK_PAGE)
 #define IOCTL_VMX86_APIC_INIT           VMIOCTL_BUFFERED(APIC_INIT)
@@ -348,6 +349,7 @@ enum IOCTLCmd {
 #define IOCTL_VMX86_UNLOCK_PAGE_BY_MPN  VMIOCTL_BUFFERED(UNLOCK_PAGE_BY_MPN)
 #define IOCTL_VMX86_ALLOC_LOCKED_PAGES  VMIOCTL_BUFFERED(ALLOC_LOCKED_PAGES)
 #define IOCTL_VMX86_GET_NEXT_ANON_PAGE  VMIOCTL_BUFFERED(GET_NEXT_ANON_PAGE)
+#define IOCTL_VMX86_GET_NUM_ANON_PAGES  VMIOCTL_BUFFERED(GET_NUM_ANON_PAGES)
 
 #define IOCTL_VMX86_READ_DISASM_PROC_BINARY \
                                       VMIOCTL_BUFFERED(READ_DISASM_PROC_BINARY)
@@ -369,6 +371,8 @@ enum IOCTLCmd {
 #define IOCTL_VMX86_UNMAP_SCATTER_LIST VMIOCTL_BUFFERED(UNMAP_SCATTER_LIST)
 #endif
 
+
+#define INIT_BLOCK_MAGIC     (0x1789 + 14)
 
 /*
  * Flags sent into APICBASE ioctl
@@ -396,6 +400,14 @@ union {
 #include "vmware_pack_end.h"
 VMLockPage;
 
+typedef
+#include "vmware_pack_begin.h"
+union {
+   Vcpuid vcpuid; // IN: VCPU
+   MPN pageRoot;  // OUT: MPN of the VCPU's page root
+}
+#include "vmware_pack_end.h"
+VcpuPageRoot;
 
 typedef struct VMAPICInfo {
    uint32 flags;
@@ -414,9 +426,9 @@ typedef struct VMAPICInfo {
  * all these values at any given time.
  */
 typedef struct LockedPageLimit {
-   uint32 host;        // driver calculated maximum for this host
-   uint32 configured;  // user defined maximum pages to lock
-   uint32 dynamic;     // authd hardLimitMonitor pages to lock
+   PageCnt host;        // driver calculated maximum for this host
+   PageCnt configured;  // user defined maximum pages to lock
+   PageCnt dynamic;     // authd hardLimitMonitor pages to lock
 } LockedPageLimit;
 
 /*
@@ -437,15 +449,15 @@ typedef struct LockedPageLimit {
  */
 
 typedef struct VMMemMgmtInfo {
-   uint32          minAllocation;   // minimum pages for vm
-   uint32          maxAllocation;   // maximum pages the vm could lock
+   PageCnt         minAllocation;   // minimum pages for vm
+   PageCnt         maxAllocation;   // maximum pages the vm could lock
+   PageCnt         nonpaged;        // overhead memory (guest, mmap)
+   PageCnt         paged;           // vmx memory (malloc, statics)
+   PageCnt         anonymous;       // vmm memory
+   PageCnt         mainMemSize;     // guest main memory size
+   PageCnt         locked;          // number of pages locked by this vm
+   PageCnt         perVMOverhead;   // memory for vmx/vmmon overheads
    uint32          shares;          // proportional sharing weight
-   uint32          nonpaged;        // overhead memory (guest, mmap)
-   uint32          paged;           // vmx memory (malloc, statics)
-   uint32          anonymous;       // vmm memory
-   uint32          mainMemSize;     // guest main memory size
-   uint32          locked;          // number of pages locked by this vm
-   uint32          perVMOverhead;   // memory for vmx/vmmon overheads
    Percent         touchedPct;      // % of guest memory being touched
    Percent         dirtiedPct;      // % of guest memory being dirtied
    Bool            admitted;        // admission control
@@ -468,14 +480,14 @@ typedef struct VMMemMgmtInfoPatch {
 
 typedef struct VMMemInfoArgs {
    uint64          currentTime;        // Host time in secs of the call.
-   uint32          minVmMemPct;        // % of vm that must fit in memory
-   uint32          globalMinAllocation;// pages that must fit in maxLockedPages
-   uint32          numLockedPages;     // total locked pages by all vms
+   PageCnt         globalMinAllocation;// pages that must fit in maxLockedPages
+   PageCnt         numLockedPages;     // total locked pages by all vms
    LockedPageLimit lockedPageLimit;    // set of locked page limits
-   uint32          maxLockedPages;     // effective limit on locked pages
+   PageCnt         maxLockedPages;     // effective limit on locked pages
    uint32          callerIndex;        // this vm's index memInfo array
    uint32          numVMs;             // number of running VMs
-   uint8           _pad[4];
+   Percent         minVmMemPct;        // % of vm that must fit in memory
+   uint8           _pad[7];
    VMMemMgmtInfo   memInfo[1];
 } VMMemInfoArgs;
 
@@ -488,9 +500,9 @@ typedef struct VMMPNNext {
 } VMMPNNext;
 
 typedef struct VMMPNList {
-   uint32    mpnCount;   // IN (and OUT on Mac OS)
+   PageCnt   mpnCount;   // IN (and OUT on Mac OS)
    Bool      ignoreLimits;
-   uint8     _pad[3];
+   uint8     _pad[7];
    VA64      mpnList;    // IN: User VA of an array of 64-bit MPNs.
 } VMMPNList;
 
@@ -526,8 +538,6 @@ typedef struct PTSCCheckParams {
    uint8  _pad[7];
 } PTSCCheckParams;
 
-#ifndef VMX86_SERVER
-
 typedef struct IPIVectors {
    /*
     * Vectors we have allocated or stolen for the monitor interrupts.
@@ -535,8 +545,6 @@ typedef struct IPIVectors {
    uint8 monitorIPIVector;
    uint8 hvIPIVector;
 } IPIVectors;
-
-#endif
 
 /*
  * Arguments and return value for VM creation.
@@ -552,10 +560,32 @@ typedef struct VMCreateBlock {
  * Information about a shared region.
  */
 typedef struct VMSharedRegion {
-   uint32 index;
-   VPN    baseVpn;
-   uint32 numPages;
+   SharedAreaType index;
+   VPN            baseVpn;
+   uint32         numPages;
 } VMSharedRegion;
+
+/*
+ * Arguments for VMM shared area registration.
+ */
+typedef struct VMSharedAreaRegistrationBlock {
+   Vcpuid vcpu;            // IN: VCPU being registered.
+   VMSharedRegion region;  // IN: Shared region being registered.
+} VMSharedAreaRegistrationBlock;
+
+/*
+ * Information about a VM's statvars.
+ */
+typedef struct VMStatVarsRegistrationBlock {
+   VPN     baseVpn;
+   PageCnt numPages;
+   Vcpuid  vcpu;
+} VMStatVarsRegistrationBlock;
+
+typedef struct {
+   VA64   crosspage; // IN: User VA of VCPU crosspage.
+   VA64   ptRoot;    // IN: User VA of VCPU L4 page table root.
+} PerVcpuPages;
 
 /*
  * Arguments for VMM bootstrap processing.
@@ -565,9 +595,16 @@ typedef struct VMProcessBootstrapBlock {
    uint32         numBytes;      // IN: Size of VMM bootstrap blob.
    uint32         headerOffset;  // IN: Offset of header in blob.
    uint16         numVCPUs;      // IN: Number of VCPUs.
-   VA64           ptRootVAs[MAX_VCPUS];  // IN: User VA of PT roots.
    VMSharedRegion shRegions[ML_SHARED_REGIONS_MAX]; // IN: Shared regions.
+   PerVcpuPages   perVcpuPages[0];
 } VMProcessBootstrapBlock;
+
+static INLINE size_t
+GetVMProcessBootstrapBlockSize(unsigned numVCPUs)
+{
+   VMProcessBootstrapBlock *args = NULL;
+   return sizeof *args + numVCPUs * sizeof args->perVcpuPages[0];
+}
 
 /*
  * Arguments for VMM context retrieval.
@@ -584,29 +621,20 @@ typedef union {
  * macros to marshall real arguments to mmap's made-up 'offset' argument.
  */
 
-#define VMMON_MAP_MT_LOW4GB     0
-#define VMMON_MAP_MT_LOW16MB    1
-#define VMMON_MAP_MT_ANY        2
-
 #define VMMON_MAP_OFFSET_SHIFT  0
 #define VMMON_MAP_OFFSET_MASK   0x00000FFF
 #define VMMON_MAP_ORDER_SHIFT   12
 #define VMMON_MAP_ORDER_MASK    0xF
-#define VMMON_MAP_MT_SHIFT      16
-#define VMMON_MAP_MT_MASK       0x7
-#define VMMON_MAP_RSVD_SHIFT    19
+#define VMMON_MAP_RSVD_SHIFT    16
 
 #define VMMON_MAP_RSVD(base)    \
                 ((base) >> VMMON_MAP_RSVD_SHIFT)
-#define VMMON_MAP_MT(base)      \
-                (((base) >> VMMON_MAP_MT_SHIFT) & VMMON_MAP_MT_MASK)
 #define VMMON_MAP_ORDER(base)   \
                 (((base) >> VMMON_MAP_ORDER_SHIFT) & VMMON_MAP_ORDER_MASK)
 #define VMMON_MAP_OFFSET(base)  \
                 (((base) >> VMMON_MAP_OFFSET_SHIFT) & VMMON_MAP_OFFSET_MASK)
 
-#define VMMON_MAP_BASE(mt, order)   (((mt) << VMMON_MAP_MT_SHIFT) | \
-                                     ((order) << VMMON_MAP_ORDER_SHIFT))
+#define VMMON_MAP_BASE(order)   ((order) << VMMON_MAP_ORDER_SHIFT)
 
 #elif defined _WIN32
 /*
@@ -617,7 +645,6 @@ typedef struct VMAllocContiguousMem {
    VA64   mpnList;  // IN: User VA of an array of 64-bit MPNs.
    uint32 mpnCount; // IN
    uint32 order;    // IN
-   MPN    maxMPN;   // IN
 } VMAllocContiguousMem;
 #elif defined __APPLE__
 #   include "iocontrolsMacos.h"

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2012,2014-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 2014, 2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -17,12 +17,17 @@
  *********************************************************/
 
 /*
- * x86perfctr.h --
+ * perfctr_arch.h --
  *
+ *      Performance counters (x64 specific).
  */
 
-#ifndef _X86PERFCTR_H_
-#define _X86PERFCTR_H_
+#ifndef _PERFCTR_ARCH_H
+#define _PERFCTR_ARCH_H
+
+#ifndef _PERFCTR_H_
+#error "This file can only be included by perfctr.h"
+#endif
 
 #define INCLUDE_ALLOW_USERLEVEL
 
@@ -30,25 +35,20 @@
 #define INCLUDE_ALLOW_MODULE
 #define INCLUDE_ALLOW_VMCORE
 #define INCLUDE_ALLOW_VMMON
-
 #include "includeCheck.h"
+
 #include "vm_asm.h"
 #include "x86cpuid_asm.h"
-#include "perfctr_generic.h"
 
-#define PERFCTR_PENTIUM4_NUM_COUNTERS            18
-#define PERFCTR_PENTIUM4_NUM_COUNTERS_WITH_L3    26
-#define PERFCTR_AMD_NUM_COUNTERS                 4 
+#define PERFCTR_AMD_NUM_COUNTERS                 4
 #define PERFCTR_AMD_EXT_NUM_COUNTERS             6
 #define PERFCTR_P6_NUM_COUNTERS                  2
 #define PERFCTR_NEHALEM_NUM_GEN_COUNTERS         4
 #define PERFCTR_NEHALEM_NUM_FIXED_COUNTERS       3
 #define PERFCTR_SANDYBRIDGE_NUM_GEN_COUNTERS     8 /* When HT is disabled */
-#define PERFCTR_CORE_NUM_ARCH_EVENTS             7
-#define PERFCTR_CORE_NUM_FIXED_COUNTERS          3
-#define PERFCTR_PENTIUM4_VAL_MASK                0xffffffffffLL
+#define PERFCTR_CORE_NUM_ARCH_EVENTS             8
+#define PERFCTR_CORE_NUM_FIXED_COUNTERS          4
 #define PERFCTR_AMD_VAL_MASK                     0xffffffffffffLL
-#define PERF_EVENT_NAME_LEN                      64
 /*
  * Even though the performance counters in P6 are 40 bits,
  * we can only write to the lower 32 bits.  Bit 31 is
@@ -59,7 +59,7 @@
 
 /*
  * Performance counter width is determined at runtime in CORE.
- * But the writables bits are fixed. we can only write to the 
+ * But the writables bits are fixed. we can only write to the
  * lower 32 bits.  Bit 31 is used to sign-extend the upper 8 bits.
  */
 #define PERFCTR_CORE_WRITE_MASK                  0xffffffff
@@ -124,7 +124,7 @@
 #define PERFCTR_AMD_CPU_CLK_UNHALTED                           0x76
 
 /* AMD Load/Store unit events */
-#define PERFCTR_AMD_SEGMENT_REGISTER_LOADS                     0x20 
+#define PERFCTR_AMD_SEGMENT_REGISTER_LOADS                     0x20
 #define PERFCTR_AMD_LS_BUFFER2_FULL                            0x23
 
 /*
@@ -198,8 +198,8 @@
 
 #define PERFCTR_AMD_MEM_CTRL_PAGE_TABLE_OVERFLOWS                   0xe1
 #define PERFCTR_AMD_CPU_IO_REQUESTS_TO_MEMORY_IO                    0xe9
-#define PERFCTR_AMD_PROBE_RESPONSE_AND_UPSTREAM_REQ                 0xec 
- 
+#define PERFCTR_AMD_PROBE_RESPONSE_AND_UPSTREAM_REQ                 0xec
+
 /* AMD HyperTransport Interface Events */
 
 #define PERFCTR_AMD_HT_L0_TX_BW                                     0xf6
@@ -219,9 +219,9 @@
  */
 
 /* P6 Data Cache Unit (DCU) */
-#define PERFCTR_P6_DATA_MEM_REFS                 0x00000043  
+#define PERFCTR_P6_DATA_MEM_REFS                 0x00000043
 #define PERFCTR_P6_DCU_LINES_IN                  0x00000045
-#define PERFCTR_P6_DCU_M_LINES_IN                0x00000046 
+#define PERFCTR_P6_DCU_M_LINES_IN                0x00000046
 #define PERFCTR_P6_DCU_MISS_OUTSTANDING          0x00000048
 
 /* P6 Instruction Fetch Unit (IFU) */
@@ -379,7 +379,7 @@
 #define PERFCTR_P6_APIC_INTR                     0x00100000
 #define PERFCTR_P6_ENABLE                        0x00400000
 #define PERFCTR_P6_INVERT_COUNTER_MASK           0x00800000
-#define PERFCTR_P6_COUNTER_MASK                  0xff000000        
+#define PERFCTR_P6_COUNTER_MASK                  0xff000000
 #define PERFCTR_P6_COUNTER_MASK_SHIFT            24
 #define PERFCTR_P6_SHIFT_BY_UNITMASK(e)          (e << 8)
 
@@ -436,6 +436,7 @@
 #define PERFCTR_CORE_KERNEL_MODE                    PERFCTR_CPU_KERNEL_MODE
 #define PERFCTR_CORE_APIC_INTR                      PERFCTR_CPU_APIC_INTR
 #define PERFCTR_CORE_ENABLE                         PERFCTR_CPU_ENABLE
+/* AnyThread Counting deprecated since PMU v5. */
 #define PERFCTR_CORE_ANYTHREAD                      0x00200000
 #define PERFCTR_CORE_IN_TX                          (CONST64U(1) << 32)
 #define PERFCTR_CORE_IN_TXCP                        (CONST64U(1) << 33)
@@ -463,6 +464,7 @@
 #define PERFCTR_CORE_INST_RETIRED                0xc0
 /* bus cycles */
 #define PERFCTR_CORE_UNHALTED_REF_CYCLES         (0x3c | (0x01 << 8))
+#define PERFCTR_CORE_TOPDOWN_SLOTS               (0xa4 | (0x01 << 8))
 
 /*
  * See Tables 30-2, 30-4 of the
@@ -558,132 +560,20 @@
 #define PERFCTR_NEHALEM_UNCORE_ENABLE            0x400000
 #define PERFCTR_NEHALEM_UNCORE_L3_LINES_IN       (0x0a | (0x0f << 8))
 
-
-/*
- * ----------------------------------------------------------------------
- *
- * Pentium 4
- *
- * ----------------------------------------------------------------------
- */
-
-/*
- * Pentium 4 Counter Configuration Control Register flags and fields
- */
-#define PERFCTR_PENTIUM4_CCCR_ENABLE                   0x00001000
-#define PERFCTR_PENTIUM4_CCCR_SET_ESCR(c, e)           ((c) |= (((e) & 0x7) << 13))
-#define PERFCTR_PENTIUM4_CCCR_REQRSVD                  0x00030000 // always set these bits
-#define PERFCTR_PENTIUM4_CCCR_COMPARE                  0x00040000
-#define PERFCTR_PENTIUM4_CCCR_COMPLEMENT               0x00080000
-#define PERFCTR_PENTIUM4_CCCR_SET_THRESHOLD(c, e)      ((c) |= (((e) & 0xf) << 20))
-#define PERFCTR_PENTIUM4_CCCR_EDGE                     0x01000000
-#define PERFCTR_PENTIUM4_CCCR_FORCE_OVF                0x02000000
-#define PERFCTR_PENTIUM4_CCCR_OVF_PMI_T0               0x04000000
-#define PERFCTR_PENTIUM4_CCCR_OVF_PMI_T1               0x08000000
-#define PERFCTR_PENTIUM4_CCCR_CASCADE                  0x40000000
-#define PERFCTR_PENTIUM4_CCCR_OVF                      0x80000000
-
-#define PERFCTR_PENTIUM4_COUNTER_BASEADDR              0x00000300
-#define PERFCTR_PENTIUM4_CCCR_BASE_ADDR                0x00000360
-
-#define PERFCTR_PENTIUM4_CCCR_THRESHOLD(e)             ((e & 0xf) << 20)
-#define PERFCTR_PENTIUM4_OPT_EDGE_DETECT (PERFCTR_PENTIUM4_CCCR_COMPARE | PERFCTR_PENTIUM4_CCCR_EDGE)
-
-/*
- * Pentium 4 Event Selection Control Register flags
- */
-#define PERFCTR_PENTIUM4_ESCR_USER_MODE_T0             0x00000004
-#define PERFCTR_PENTIUM4_ESCR_KERNEL_MODE_T0           0x00000008
-#define PERFCTR_PENTIUM4_ESCR_USER_MODE_T1             0x00000001
-#define PERFCTR_PENTIUM4_ESCR_KERNEL_MODE_T1           0x00000002
-#define PERFCTR_PENTIUM4_SHIFT_BY_UNITMASK(e)          (e << 9)
-#define PENTIUM4_EVTSEL(e)                             (e << 25)
-
-/*
- * Event definitions for Pentium4 Family Processors. 
- * There are many more of these possible.
- * See Appendix A.1 in Volume 3 of the IA32 manual.
- */
-
-#define PERFCTR_PENTIUM4_EVT_INSTR_RETIRED              PENTIUM4_EVTSEL(0x02)
-#define PERFCTR_PENTIUM4_EVT_INSTR_COMPLETED            PENTIUM4_EVTSEL(0x07)
-#define PERFCTR_PENTIUM4_EVT_BSQ_CACHE_REFERENCE        PENTIUM4_EVTSEL(0x0c)
-#define PERFCTR_PENTIUM4_EVT_ITLB_REFERENCE             PENTIUM4_EVTSEL(0x18)
-#define PERFCTR_PENTIUM4_EVT_PAGE_WALK_TYPE             PENTIUM4_EVTSEL(0x01)   
-#define PERFCTR_PENTIUM4_EVT_BPU_FETCH_REQUEST          PENTIUM4_EVTSEL(0x03)
-#define PERFCTR_PENTIUM4_EVT_BRANCH_RETIRED             PENTIUM4_EVTSEL(0x06)  
-#define PERFCTR_PENTIUM4_EVT_MISPRED_BRANCH_RETIRED     PENTIUM4_EVTSEL(0x03)
-#define PERFCTR_PENTIUM4_EVT_MACHINE_CLEAR              PENTIUM4_EVTSEL(0x02)
-#define PERFCTR_PENTIUM4_EVT_MEMORY_CANCEL              PENTIUM4_EVTSEL(0x02) 
-#define PERFCTR_PENTIUM4_GLOBAL_POWER_EVENTS            PENTIUM4_EVTSEL(0x13)
-
-/*
- * Pentium4 doesn't have an event for clock cycles, but Intel
- * outlines a method in the IA32 manual, vol 3, sec 14.9.9,
- * for measuring cycles which involves this event strategy.
- */
-
-#define PERFCTR_PENTIUM4_EVT_CLK_CYCLES \
-   PENTIUM4_EVTSEL(0x2) | \
-   PERFCTR_PENTIUM4_SHIFT_BY_UNITMASK (0x01 | 0x02 | 0x04 | 0x08)
-
-
-/*
- * PerfCtr_Config --
- *      Describes configuration for a single hardware performance counter
- *
- *      Since this is only used to record general performance counters, we
- *      made the assumption in nmiProfiler.c  that the type is GENERAL and
- *      index is counter number of type GENERAL.
- *      
- *      
- *      On AMD K8 and GH:
- *      index:        Which perf ctr, 0 to 3.  RDPMC argument
- *      addr:         MSR of raw perf ctr              (0xc0010004 + index).
- *      escrAddr:     MSR # of the Perf Event Selector (0xc0010000 + index).
- *      escrVal:      Value placed in PerfEvtSel MSR; what to measure.
- *
- *      On AMD with PerfCtrExtCore support:
- *      index:        Which perf ctr, 0 to 5.  RDPMC argument
- *      addr:         MSR of raw perf ctr              (0xc0010201 + 2 * index).
- *                                  aliased PMCs 0 - 3 (0xc0010004 + index).
- *      escrAddr:     MSR # of the Perf Event Selector (0xc0010200 + 2 * index).
- *                                  aliased PMCs 0 - 3 (0xc0010000 + index).
- *      escrVal:      Value placed in PerfEvtSel MSR; what to measure.
- * 
- *      No field should be greater than 32-bit as it is shared with monitor.
- *
- *      On Intel Core architecture:
- *      <to be documented>
- */
-typedef struct PerfCtr_Config {
-   uint64 escrVal;
-   uint32 index;
-   uint32 addr;
-   uint32 escrAddr;
-   uint32 resetHi;
-   uint32 periodMean;
-
-   /*
-    * Random number (whose absolute value is capped at
-    * periodJitterMask) is used to randomize sampling interval.
-    */
-   uint32  periodJitterMask;
-   uint32  seed;    // seed is used to compute next random number
-   uint16  config;
-   Bool    valid;
-   Bool    pebsEnabled;
-} PerfCtr_Config;
-
+#define PERFCTR_CONFIG_ARCH_FIELDS \
+   uint32 addr;      \
+   uint32 escrAddr;  \
+   uint32 resetHi;   \
+   Bool pebsEnabled; \
 
 /*
  * Program/reprogram event reg(s) associated w/perfctrs & start or stop perfctrs
  */
 static INLINE void
-PerfCtrWriteEvtSel(PerfCtr_Config *ctr,  // IN: counter to write
-                   uint32 escrVal)       // IN: event register value
+PerfCtr_WriteEvtSel(uint32 addr,       // IN: Event register to write
+                    uint32 escrVal)    // IN: event register value
 {
-   __SET_MSR(ctr->escrAddr, escrVal);
+   X86MSR_SetMSR(addr, escrVal);
 }
 
 
@@ -691,11 +581,10 @@ PerfCtrWriteEvtSel(PerfCtr_Config *ctr,  // IN: counter to write
  * Set/reset performance counters to engender desired period before overflow
  */
 static INLINE void
-PerfCtrWriteCounter(PerfCtr_Config *ctr,   // IN: counter to write
-                    uint32 valueLo,        // IN: low 32 bits of value to write
-                    uint32 valueHi)        // IN: high 32 bits of value to write
+PerfCtr_WriteCounter(uint32 addr,   // IN: counter to write
+                     uint64 value)  // IN: value to write
 {
-   WRMSR(ctr->addr, valueLo, valueHi);
+   X86MSR_SetMSR(addr, value);
 }
 
 
@@ -814,8 +703,9 @@ PerfCtr_PEBSAvailable(void)
    CPUIDRegs regs;
    __GET_CPUID(0, &regs);
    if (CPUID_IsVendorIntel(&regs) &&
-       ((__GET_MSR(MSR_MISC_ENABLE) & MSR_MISC_ENABLE_EMON_AVAILABLE) != 0) &&
-       ((__GET_MSR(MSR_MISC_ENABLE) & MSR_MISC_ENABLE_PEBS_UNAVAILABLE) == 0)) {
+       (X86MSR_GetMSR(MSR_MISC_ENABLE) &
+        (MSR_MISC_ENABLE_EMON_AVAILABLE | MSR_MISC_ENABLE_PEBS_UNAVAILABLE))
+       == MSR_MISC_ENABLE_EMON_AVAILABLE) {
       CPUIDRegs hvendor;
 
       /*
@@ -827,7 +717,7 @@ PerfCtr_PEBSAvailable(void)
              !CPUID_IsRawVendor(&hvendor,
                                 CPUID_HYPERV_HYPERVISOR_VENDOR_STRING);
    }
-   return FALSE; 
+   return FALSE;
 }
 
 /*
@@ -858,162 +748,4 @@ PerfCtr_PTAvailable(void)
    return FALSE;
 }
 
-/* The following are taken from the Intel Architecture Manual,
- * Book 3, Table 14-4. 
- */ 
-
-/* --------- BEGIN INTEL DEFINES ------------------------ */
-
-#define PENTIUM4_MSR_BPU_COUNTER0_IDX           0
-#define PENTIUM4_MSR_BPU_COUNTER0_ADDR          0x300
-#define PENTIUM4_MSR_BPU_CCCR0                  0x360
-#define PENTIUM4_MSR_BPU_COUNTER1_IDX           1
-#define PENTIUM4_MSR_BPU_COUNTER1_ADDR          0x301
-#define PENTIUM4_MSR_BPU_CCCR1                  0x361
-#define PENTIUM4_MSR_BPU_COUNTER2_IDX           2
-#define PENTIUM4_MSR_BPU_COUNTER2_ADDR          0x302
-#define PENTIUM4_MSR_BPU_CCCR2                  0x362
-#define PENTIUM4_MSR_BPU_COUNTER3_IDX           3
-#define PENTIUM4_MSR_BPU_COUNTER3_ADDR          0x303
-#define PENTIUM4_MSR_BPU_CCCR3                  0x363
-#define PENTIUM4_MSR_MS_COUNTER0_IDX            4
-#define PENTIUM4_MSR_MS_COUNTER0_ADDR           0x304
-#define PENTIUM4_MSR_MS_CCCR0                   0x364
-#define PENTIUM4_MSR_MS_COUNTER1_IDX            5
-#define PENTIUM4_MSR_MS_COUNTER1_ADDR           0x305
-#define PENTIUM4_MSR_MS_CCCR1                   0x365
-#define PENTIUM4_MSR_MS_COUNTER2_IDX            6
-#define PENTIUM4_MSR_MS_COUNTER2_ADDR           0x306
-#define PENTIUM4_MSR_MS_CCCR2                   0x366
-#define PENTIUM4_MSR_MS_COUNTER3_IDX            7
-#define PENTIUM4_MSR_MS_COUNTER3_ADDR           0x307
-#define PENTIUM4_MSR_MS_CCCR3                   0x367
-#define PENTIUM4_MSR_FLAME_COUNTER0_IDX         8
-#define PENTIUM4_MSR_FLAME_COUNTER0_ADDR        0x308
-#define PENTIUM4_MSR_FLAME_CCCR0                0x368
-#define PENTIUM4_MSR_FLAME_COUNTER1_IDX         9
-#define PENTIUM4_MSR_FLAME_COUNTER1_ADDR        0x309
-#define PENTIUM4_MSR_FLAME_CCCR1                0x369
-#define PENTIUM4_MSR_FLAME_COUNTER2_IDX         10
-#define PENTIUM4_MSR_FLAME_COUNTER2_ADDR        0x30A
-#define PENTIUM4_MSR_FLAME_CCCR2                0x36A
-#define PENTIUM4_MSR_FLAME_COUNTER3_IDX         11
-#define PENTIUM4_MSR_FLAME_COUNTER3_ADDR        0x30B
-#define PENTIUM4_MSR_FLAME_CCCR3                0x36B
-#define PENTIUM4_MSR_IQ_COUNTER0_IDX            12
-#define PENTIUM4_MSR_IQ_COUNTER0_ADDR           0x30C
-#define PENTIUM4_MSR_IQ_CCCR0                   0x36C
-#define PENTIUM4_MSR_IQ_COUNTER1_IDX            13
-#define PENTIUM4_MSR_IQ_COUNTER1_ADDR           0x30D
-#define PENTIUM4_MSR_IQ_CCCR1                   0x36D
-#define PENTIUM4_MSR_IQ_COUNTER2_IDX            14
-#define PENTIUM4_MSR_IQ_COUNTER2_ADDR           0x30E
-#define PENTIUM4_MSR_IQ_CCCR2                   0x36E
-#define PENTIUM4_MSR_IQ_COUNTER3_IDX            15
-#define PENTIUM4_MSR_IQ_COUNTER3_ADDR           0x30F
-#define PENTIUM4_MSR_IQ_CCCR3                   0x36F
-#define PENTIUM4_MSR_IQ_COUNTER4_IDX            16
-#define PENTIUM4_MSR_IQ_COUNTER4_ADDR           0x310
-#define PENTIUM4_MSR_IQ_CCCR4                   0x370
-#define PENTIUM4_MSR_IQ_COUNTER5_IDX            17
-#define PENTIUM4_MSR_IQ_COUNTER5_ADDR           0x311
-#define PENTIUM4_MSR_IQ_CCCR5                   0x371
-
-#define PENTIUM4_MSR_ALF_ESCR0_IDX              1
-#define PENTIUM4_MSR_ALF_ESCR0_ADDR             0x3CA
-#define PENTIUM4_MSR_ALF_ESCR1_IDX              1
-#define PENTIUM4_MSR_ALF_ESCR1_ADDR             0x3CB
-#define PENTIUM4_MSR_BPU_ESCR0_IDX              0
-#define PENTIUM4_MSR_BPU_ESCR0_ADDR             0x3B2
-#define PENTIUM4_MSR_BPU_ESCR1_IDX              0
-#define PENTIUM4_MSR_BPU_ESCR1_ADDR             0x3B3
-#define PENTIUM4_MSR_BSU_ESCR0_IDX              7
-#define PENTIUM4_MSR_BSU_ESCR0_ADDR             0x3A0
-#define PENTIUM4_MSR_BSU_ESCR1_IDX              7
-#define PENTIUM4_MSR_BSU_ESCR1_ADDR             0x3A1
-#define PENTIUM4_MSR_CRU_ESCR0_IDX              4
-#define PENTIUM4_MSR_CRU_ESCR0_ADDR             0x3B8
-#define PENTIUM4_MSR_CRU_ESCR1_IDX              4
-#define PENTIUM4_MSR_CRU_ESCR1_ADDR             0x3B9
-#define PENTIUM4_MSR_CRU_ESCR2_IDX              5
-#define PENTIUM4_MSR_CRU_ESCR2_ADDR             0x3CC
-#define PENTIUM4_MSR_CRU_ESCR3_IDX              5
-#define PENTIUM4_MSR_CRU_ESCR3_ADDR             0x3CD
-#define PENTIUM4_MSR_CRU_ESCR4_IDX              6
-#define PENTIUM4_MSR_CRU_ESCR4_ADDR             0x3E0
-#define PENTIUM4_MSR_CRU_ESCR5_IDX              6
-#define PENTIUM4_MSR_CRU_ESCR5_ADDR             0x3E1
-#define PENTIUM4_MSR_DAC_ESCR0_IDX              5
-#define PENTIUM4_MSR_DAC_ESCR0_ADDR             0x3A8
-#define PENTIUM4_MSR_DAC_ESCR1_IDX              5
-#define PENTIUM4_MSR_DAC_ESCR1_ADDR             0x3A9
-#define PENTIUM4_MSR_FIRM_ESCR0_IDX             1
-#define PENTIUM4_MSR_FIRM_ESCR0_ADDR            0x3A4
-#define PENTIUM4_MSR_FIRM_ESCR1_IDX             1
-#define PENTIUM4_MSR_FIRM_ESCR1_ADDR            0x3A5
-#define PENTIUM4_MSR_FLAME_ESCR0_IDX            0
-#define PENTIUM4_MSR_FLAME_ESCR0_ADDR           0x3A6
-#define PENTIUM4_MSR_FLAME_ESCR1_IDX            0
-#define PENTIUM4_MSR_FLAME_ESCR1_ADDR           0x3A7
-#define PENTIUM4_MSR_FSB_ESCR0_IDX              6
-#define PENTIUM4_MSR_FSB_ESCR0_ADDR             0x3A2
-#define PENTIUM4_MSR_FSB_ESCR1_IDX              6
-#define PENTIUM4_MSR_FSB_ESCR1_ADDR             0x3A3
-#define PENTIUM4_MSR_IQ_ESCR0_IDX               0
-#define PENTIUM4_MSR_IQ_ESCR0_ADDR              0x3BA
-#define PENTIUM4_MSR_IQ_ESCR1_IDX               0
-#define PENTIUM4_MSR_IQ_ESCR1_ADDR              0x3BB
-#define PENTIUM4_MSR_IS_ESCR0_IDX               1
-#define PENTIUM4_MSR_IS_ESCR0_ADDR              0x3B4
-#define PENTIUM4_MSR_IS_ESCR1_IDX               1
-#define PENTIUM4_MSR_IS_ESCR1_ADDR              0x3B5
-#define PENTIUM4_MSR_ITLB_ESCR0_IDX             3
-#define PENTIUM4_MSR_ITLB_ESCR0_ADDR            0x3B6
-#define PENTIUM4_MSR_ITLB_ESCR1_IDX             3
-#define PENTIUM4_MSR_ITLB_ESCR1_ADDR            0x3B7
-#define PENTIUM4_MSR_IX_ESCR0_IDX               5
-#define PENTIUM4_MSR_IX_ESCR0_ADDR              0x3C8
-#define PENTIUM4_MSR_IX_ESCR1_IDX               5
-#define PENTIUM4_MSR_IX_ESCR1_ADDR              0x3C9
-#define PENTIUM4_MSR_MOB_ESCR0_IDX              2
-#define PENTIUM4_MSR_MOB_ESCR0_ADDR             0x3AA
-#define PENTIUM4_MSR_MOB_ESCR1_IDX              2
-#define PENTIUM4_MSR_MOB_ESCR1_ADDR             0x3AB
-#define PENTIUM4_MSR_MS_ESCR0_IDX               0
-#define PENTIUM4_MSR_MS_ESCR0_ADDR              0x3C0
-#define PENTIUM4_MSR_MS_ESCR1_IDX               0
-#define PENTIUM4_MSR_MS_ESCR1_ADDR              0x3C1
-#define PENTIUM4_MSR_PMH_ESCR0_IDX              4
-#define PENTIUM4_MSR_PMH_ESCR0_ADDR             0x3AC
-#define PENTIUM4_MSR_PMH_ESCR1_IDX              4
-#define PENTIUM4_MSR_PMH_ESCR1_ADDR             0x3AD
-#define PENTIUM4_MSR_RAT_ESCR0_IDX              2
-#define PENTIUM4_MSR_RAT_ESCR0_ADDR             0x3BC
-#define PENTIUM4_MSR_RAT_ESCR1_IDX              2
-#define PENTIUM4_MSR_RAT_ESCR1_ADDR             0x3BD
-#define PENTIUM4_MSR_SAAT_ESCR0_IDX             2
-#define PENTIUM4_MSR_SAAT_ESCR0_ADDR            0x3AE
-#define PENTIUM4_MSR_SAAT_ESCR1_IDX             2
-#define PENTIUM4_MSR_SAAT_ESCR1_ADDR            0x3AF
-#define PENTIUM4_MSR_SSU_ESCR0_IDX              3
-#define PENTIUM4_MSR_SSU_ESCR0_ADDR             0x3BE
-#define PENTIUM4_MSR_TBPU_ESCR0_IDX             2
-#define PENTIUM4_MSR_TBPU_ESCR0_ADDR            0x3C2
-#define PENTIUM4_MSR_TBPU_ESCR1_IDX             2
-#define PENTIUM4_MSR_TBPU_ESCR1_ADDR            0x3C3
-#define PENTIUM4_MSR_TC_ESCR0_IDX               1
-#define PENTIUM4_MSR_TC_ESCR0_ADDR              0x3C4
-#define PENTIUM4_MSR_TC_ESCR1_IDX               1
-#define PENTIUM4_MSR_TC_ESCR1_ADDR              0x3C5
-#define PENTIUM4_MSR_U2L_ESCR0_IDX              3
-#define PENTIUM4_MSR_U2L_ESCR0_ADDR             0x3B0
-#define PENTIUM4_MSR_U2L_ESCR1_IDX              3
-#define PENTIUM4_MSR_U2L_ESCR1_ADDR             0x3B1
-
-#define PENTIUM4_MIN_ESCR_ADDR                  0x3A0
-#define PENTIUM4_MAX_ESCR_ADDR                  0x3E1
-#define PENTIUM4_NUM_ESCR_ADDRS                 (PENTIUM4_MAX_ESCR_ADDR - PENTIUM4_MIN_ESCR_ADDR + 1)
-
-/* -------- END INTEL DEFINES ------------------------- */
-
-#endif // ifndef _X86PERFCTR_H_ 
+#endif // _PERFCTR_ARCH_H

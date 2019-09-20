@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2007-2015 VMware, Inc. All rights reserved.
+ * Copyright (C) 2007-2015,2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -60,20 +60,21 @@
  *     lengths, and this causes the 'monitor-modular-size' script to
  *     report differences in '.rodata'.
  *
- *   o To avoid differences in '.rodata', each __FILE__ is put into
- *     its own section.  The monitor's linker (not ld) will use the
- *     name of the section to recover the name of the source file.
+ *   o Each __FILE__ is put into its own .assert_pathname_##__FILE
+ *     section.  The monitor's runtime linker (not ld) then uses the name
+ *     of this section to recover the name of the corresponding source file.
  *
  *   o At run time, prior to loading, when our linker is creating an
  *     executable image of the monitor and extensions, all the file
  *     names are extracted from these sections, the '${VMTREE}' prefix
  *     is removed, and the resulting table of shortened file names is
- *     added to '.rodata'.
+ *     added to a non-loadable section called '.assert_pathnames' in the
+ *     VMX linker (not the bootstrap linker which does not need them).
  *
  *     Further, during linkage, each relocation to the original
  *     section containing the path name is modified so that the low
- *     16-bits contain an offset from '__vmm_pathnames_start' rather
- *     than the base of the original containing section.
+ *     16-bits contain an offset from the start of the .assert_pathnames
+ *     section rather than the base of the original containing section.
  *
  *     Only three types of relocations to the assertion strings are
  *     supported (32-bit PC-relative and 32-bit/64-bit absolute) because that
@@ -111,42 +112,12 @@ typedef struct Assert_Info {
    Assert_MonSrcLoc loc;
 } Assert_Info;
 
-/*
- * The portion of the __attribute__ line after __FILE__ is there so that
- * the .assert_pathname_* sections are not marked as ALLOC, since we only
- * need them in the vmx and do not need them loaded.
- */
-#define __VMM__FILE__SECTION \
-      __attribute__((section (".assert_pathname_" __FILE__ ",\"\"#")))
-#define __VMM__FILE__ ({                                                \
-         static __VMM__FILE__SECTION const char file[] = "";            \
-         file;                                                          \
-      })
-
 #define ASSERT_MONSRCFILEOFFSET(loc)    LOWORD(loc)
 #define ASSERT_MONSRCLINE(loc)          HIWORD(loc)
 
 #define ASSERT_NULL_MONSRCLOC     0             // there is never line 0
 
-#ifdef VMM // {
-#ifdef MONITOR_APP // {
-
-#define ASSERT_MONSRCLOC() ASSERT_NULL_MONSRCLOC
-
-#else // } {
-
-#define ASSERT_MONSRCLOC() ({                                           \
-   const uintptr_t offset = ((__LINE__ << 16) +                         \
-                             (uintptr_t)__VMM__FILE__);                 \
-   const Assert_MonSrcLoc loc = offset;                                 \
-   loc;                                                                 \
-})
-
-extern const char __vmm_pathnames_start;
-#define ASSERT_MONSRCFILE(loc) \
-   (&__vmm_pathnames_start + ASSERT_MONSRCFILEOFFSET(loc))
-
-
+#if defined(VMM) && !defined(MONITOR_APP) // {
 /*
  * Assertion information is collected in a non-loadable section
  * named .assert_info.  Each record in this section contains
@@ -176,6 +147,18 @@ extern const char __vmm_pathnames_start;
  */
 
 #ifndef VMM_BOOTSTRAP
+/*
+ * The portion of the __attribute__ line after __FILE__ is there so that
+ * the .assert_pathname_* sections are not marked as ALLOC, since we only
+ * need them in the vmx and do not need them loaded.
+ */
+#define __VMM__FILE__SECTION \
+      __attribute__((section (".assert_pathname_" __FILE__ ",\"\"#")))
+#define __VMM__FILE__ ({                                                \
+         static __VMM__FILE__SECTION const char file[] = "";            \
+         file;                                                          \
+      })
+
 #define ASSERT_RECORDINFO(assembly, assertType, bugNr)                   \
    __asm__ __volatile__(".pushsection .assert_info;"                     \
                         ".quad 0f;"                                      \
@@ -215,8 +198,6 @@ extern uint64 bsAssertRIP;
    ({COMPILER_MEM_BARRIER();                                             \
      ASSERT_RECORDINFO("", AssertType_##name##Bug, bug);                 \
      __builtin_trap();})
+#endif // VMM && !MONITOR_APP}
 
-#endif // MONITOR_APP }
-#endif // VMM }
-
-#endif
+#endif // _MON_ASSERT_H_

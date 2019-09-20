@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2000-2015,2017-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 2000-2015,2017-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -83,7 +83,7 @@
  * Structure used to query platform about the page state.
  */
 typedef struct PlatformPageInfoList {
-   PgCnt64 numPages;
+   PageCnt numPages;
    BPN     bpn[MAX_PLATFORM_PAGE_INFO_PAGES];    // bpns to check
    MPN     mpn[MAX_PLATFORM_PAGE_INFO_PAGES];    // filled in by host
    uint8   flags[MAX_PLATFORM_PAGE_INFO_PAGES];  // filled in by host
@@ -96,9 +96,10 @@ typedef struct PlatformPageInfoList {
 #define VMMEM_SERVICES_CLEAR_MASK(typeMask, type)         \
            (typeMask & ~VMMEM_SERVICES_TYPE_2_MASK(type))
 
-#define VMMEM_SERVICES_DEFS                               \
-   MDEF(VMMEM_SERVICES_TYPE_P2M,  P2MUpdate_FilterPages)  \
-   MDEF(VMMEM_SERVICES_TYPE_SWAP, BusMemSwap_FilterPages)
+#define VMMEM_SERVICES_DEFS                                       \
+   MDEF(VMMEM_SERVICES_TYPE_P2M,         P2MUpdate_FilterPages)   \
+   MDEF(VMMEM_SERVICES_TYPE_SWAP,        BusMemSwap_FilterPages)  \
+   MDEF(VMMEM_SERVICES_TYPE_DIRTY_CLEAR, DirtyDrainer_ClearDirty)
 
 #define MDEF(_type, _cb) _type,
 typedef enum VmMemServices_Type {

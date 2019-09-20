@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -24,7 +24,7 @@
  *
  */
 
-#if defined(linux)
+#if defined(__linux__)
 /* Must come before any kernel header file */
 #   include "driver-config.h"
 #   include <linux/kernel.h>
@@ -34,7 +34,6 @@
 #include "modulecall.h"
 #include "vmx86.h"
 #include "task.h"
-#include "initblock.h"
 #include "vm_basic_asm.h"
 #include "iocontrols.h"
 #include "hostif.h"
@@ -43,6 +42,7 @@
 #include "usercalldefs.h"
 #include "cpuid.h"
 #include "vmmblob.h"
+#include "sharedAreaVmmon.h"
 
 /*
  *----------------------------------------------------------------------
@@ -72,13 +72,15 @@ int
 Vmx86_RunVM(VMDriver *vm,   // IN:
             Vcpuid vcpuid)  // IN:
 {
-   uint32           retval    = MODULECALL_USERRETURN;
+   uint64           retval    = MODULECALL_USERRETURN;
    VMCrossPageData *crosspage;
    int              bailValue = 0;
 
-   ASSERT(vcpuid < vm->numVCPUs && CPUID_HostSupportsHV());
+   ASSERT(vcpuid < vm->numVCPUs);
+   if (vm->crosspage[vcpuid] == NULL) {
+      return USERCALL_VMX86ALLOCERR;
+   }
    crosspage = &vm->crosspage[vcpuid]->crosspageData;
-   ASSERT(crosspage);
 
    /*
     * Check if we were interrupted by signal.
@@ -123,7 +125,8 @@ skipTaskSwitch:;
           * from the ioctl (back to the userlevel side of a VCPU thread).
           */
          bailValue = crosspage->userCallType;
-         crosspage->retval = retval;
+         ASSERT(retval == (uint64)((uint32)retval));
+         crosspage->retval = (uint32)retval;
          goto bailOut;
       }
 
@@ -136,18 +139,19 @@ skipTaskSwitch:;
 
       case MODULECALL_GET_RECYCLED_PAGES: {
          MPN mpns[MODULECALL_NUM_ARGS];
-         int nPages = MIN((int)crosspage->args[0], MODULECALL_NUM_ARGS);
-
-         retval = Vmx86_AllocLockedPages(vm, PtrToVA64(mpns), nPages, TRUE,
-                                         FALSE);
+         PageCnt nPages = MIN(crosspage->args[0], MODULECALL_NUM_ARGS);
+         ASSERT((int64)crosspage->args[0] >= 0);
+         retval = Vmx86_AllocLockedPages(vm, PtrToVA64(mpns), nPages,
+                                         TRUE, FALSE);
          if (retval <= nPages) {
-            int i;
+            PageCnt i;
             for (i = 0; i < retval; i++) {
                crosspage->args[i] = mpns[i];
             }
          } else {
-            // retval is holding an error code
-            Warning("Failed to alloc %u pages: %d\n", nPages, (int)retval);
+            /* retval is holding an error code */
+            Warning("Failed to alloc %"FMT64"u pages: %"FMT64"d\n", nPages,
+                    (int64)retval);
             retval = 0;
          }
          break;
@@ -197,7 +201,7 @@ skipTaskSwitch:;
       }
 
       case MODULECALL_RELEASE_ANON_PAGES: {
-         unsigned count;
+         PageCnt count;
          MPN mpns[MODULECALL_NUM_ARGS];
          for (count = 0; count < MODULECALL_NUM_ARGS; count++) {
             mpns[count] = (MPN)crosspage->args[count];
@@ -206,15 +210,14 @@ skipTaskSwitch:;
             }
          }
          ASSERT(count > 0);
-         retval = Vmx86_FreeLockedPages(vm, PtrToVA64(mpns), count, TRUE);
+         retval = Vmx86_FreeLockedPages(vm, mpns, count);
          break;
       }
 
       case MODULECALL_LOOKUP_MPN: {
-         int i;
-         VPN64  vpn    = (VPN64)crosspage->args[0];
-         uint32 nPages = (uint32)crosspage->args[1];
-         VA64   uAddr  = (VA64)VPN_2_VA(vpn);
+         VPN64   vpn        = (VPN64)crosspage->args[0];
+         PageCnt i, nPages  = crosspage->args[1];
+         VA64    uAddr      = (VA64)VPN_2_VA(vpn);
          ASSERT(nPages <= MODULECALL_NUM_ARGS);
          HostIF_VMLock(vm, 38);
          for (i = 0; i < nPages; i++) {
@@ -292,17 +295,36 @@ skipTaskSwitch:;
          vm->blobInfo = NULL;
       } break;
 
+      case MODULECALL_GET_SHARED_AREA: {
+         SharedAreaVmmonRequest request;
+         request.type       = (SharedAreaType)crosspage->args[0];
+         request.vcpu       = (Vcpuid)crosspage->args[1];
+         request.offset     = (PageCnt)crosspage->args[2];
+         /* Store MPN result in crosspage arg as crosspage retval is 32 bit. */
+         crosspage->args[3] = SharedAreaVmmon_GetRegionMPN(vm, &request);
+      } break;
+
+      case MODULECALL_GET_STAT_VARS: {
+         Vcpuid  vcpu   = (Vcpuid)crosspage->args[0];
+         PageCnt offset = (PageCnt)crosspage->args[1];
+         /* Store MPN result in crosspage arg as crosspage retval is 32 bit. */
+         crosspage->args[2] = StatVarsVmmon_GetRegionMPN(vm, vcpu, offset);
+      } break;
+
+      case MODULECALL_GET_NUM_PTP_PAGES: {
+         /* Store PageCnt in crosspage arg as crosspage retval is 32 bit. */
+         crosspage->args[1] = vm->numPTPPages;
+      } break;
+
       default:
          Warning("ModuleCall %d not supported\n", crosspage->moduleCallType);
       }
-
-      crosspage->retval = retval;
-
-#if defined(linux)
+      ASSERT(retval == (uint64)((uint32)retval));
+      crosspage->retval = (uint32)retval;
+#if defined(__linux__)
       cond_resched(); // Other kernels are preemptable
 #endif
    }
-
 bailOut:
    return bailValue;
 }

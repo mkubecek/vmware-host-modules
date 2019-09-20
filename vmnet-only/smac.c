@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2002 VMware, Inc. All rights reserved.
+ * Copyright (C) 2002,2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -40,8 +40,6 @@
 #include "vnetInt.h"
 
 #else /* _WIN32 */
-
-#undef __KERNEL__ //To prevent including any kernel specific stuff 
 
 #ifdef VMX86_DEVEL
 #define DBG 1

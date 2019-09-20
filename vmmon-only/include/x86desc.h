@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -97,43 +97,78 @@ static INLINE uint32 Desc_LongMode(const Descriptor *d) { return d->longmode; }
 static INLINE uint32 Desc_DB(const Descriptor *d)       { return d->DB; }
 static INLINE uint32 Desc_Gran(const Descriptor *d)     { return d->gran; }
 
-static INLINE uint32 Desc64_Type(const Descriptor64 *d)     { return d->type; }
-static INLINE uint32 Desc64_S(const Descriptor64 *d)        { return d->S; }
-static INLINE uint32 Desc64_DPL(const Descriptor64 *d)      { return d->DPL; }
-static INLINE uint32 Desc64_Present(const Descriptor64 *d)  { return d->present; }
-static INLINE uint32 Desc64_AVL(const Descriptor64 *d)      { return d->AVL; }
-static INLINE uint32 Desc64_Gran(const Descriptor64 *d)     { return d->gran; }
-static INLINE uint32 Desc64_ExtAttrs(const Descriptor64 *d) { return d->ext_attrs; }
+static INLINE uint32
+Desc64_Type(const Descriptor64 *d)
+{
+   return (uint32)d->type;
+}
+
+static INLINE uint32
+Desc64_S(const Descriptor64 *d)
+{
+   return (uint32)d->S;
+}
+
+static INLINE uint32
+Desc64_DPL(const Descriptor64 *d)
+{
+   return (uint32)d->DPL;
+}
+
+static INLINE uint32
+Desc64_Present(const Descriptor64 *d)
+{
+   return (uint32)d->present;
+}
+
+static INLINE uint32
+Desc64_AVL(const Descriptor64 *d)
+{
+   return (uint32)d->AVL;
+}
+
+static INLINE uint32
+Desc64_Gran(const Descriptor64 *d)
+{
+   return (uint32)d->gran;
+}
+
+static INLINE uint32
+Desc64_ExtAttrs(const Descriptor64 *d)
+{
+   return (uint32)d->ext_attrs;
+}
 
 static INLINE LA32
 Desc_GetBase(const Descriptor *d)
 {
-   return (d->base_hi << 24) | (d->base_mid << 16) | d->base_lo;
+   return ((unsigned)d->base_hi  << 24) |
+          ((unsigned)d->base_mid << 16) | d->base_lo;
 }
 
 static INLINE LA64
 Desc64_GetBase(const Descriptor64 *d)
 {
-   return ((uint64)d->base_hi << 32)  | 
-          ((uint64)d->base_mid << 24) | (uint32)d->base_lo;
+   return ((uint64)d->base_hi << 32)  |
+          ((uint64)d->base_mid << 24) | (uint64)d->base_lo;
 }
 
 static INLINE LA32
 Desc64_GetBaseHi(const Descriptor64 *d)
 {
-   return d->base_hi;
+   return (LA32)d->base_hi;
 }
 
 static INLINE VA32
 Desc_GetLimit(const Descriptor *d)
 {
-   return (d->limit_hi << 16) | d->limit_lo;
+   return ((unsigned)d->limit_hi << 16) | d->limit_lo;
 }
 
 static INLINE VA32
 Desc64_GetLimit(const Descriptor64 *d)
 {
-   return ((uint32)d->limit_hi << 16) | (uint32)d->limit_lo;
+   return (VA32)(((unsigned)d->limit_hi << 16) | d->limit_lo);
 }
 
 static INLINE Bool
@@ -310,12 +345,13 @@ static INLINE uint32 DESC_PRESENT(Descriptor d)    { return d.present; }
  *-----------------------------------------------------------------------------
  */
 
-static INLINE void 
-Desc_SetSystemDescriptor64(Descriptor *d, uint64 base, uint32 limit, uint32 type, 
-                           uint32 DPL, uint32 present, uint32 DB, uint32 gran)
+static INLINE void
+Desc_SetSystemDescriptor64(Descriptor *d, uint64 base, uint32 limit,
+                           uint32 type, uint32 DPL, uint32 present,
+                           uint32 DB, uint32 gran)
 {
-   uint32 baseHi = (uint32) (base >> 32);
-   uint32 baseLo = (uint32) base;
+   uint32 baseHi = (uint32)(base >> 32);
+   uint32 baseLo = (uint32)base;
 
    /*
     * The first half of a 16-byte descriptor is a valid 8-byte descriptor
@@ -336,15 +372,17 @@ Desc_SetSystemDescriptor64(Descriptor *d, uint64 base, uint32 limit, uint32 type
  *   Given descriptor, return the code/stack size that it specifies.
  *----------------------------------------------------------------------
  */
-static INLINE int
+static INLINE unsigned
 Desc_DBSize(const Descriptor *desc)
 {
    /*
     * Code/stack size is determined by the D/B bit; bit 22 of the 2nd word.
-    * Shift the bit to position 1, mask it out, add 2. Result: 2 or 4.
+    * Shift the bit to position 1, mask it out, add 2.
+    *
+    * Result: 2 or 4.
     */
-   int cSz = ((((const uint32*)desc)[1] >> 21) & 2) + 2;
-   ASSERT(cSz == (Desc_DB(desc) ? 4 : 2));
+   unsigned cSz = ((((const uint32 *)desc)[1] >> 21) & 2) + 2;
+   ASSERT(cSz == (Desc_DB(desc) ? 4U : 2U));
    return cSz;
 }
 
@@ -526,7 +564,7 @@ typedef struct Gate {
 static INLINE VA
 CallGate_GetOffset(const Gate *cg)
 {
-   return (cg->offset_hi << 16) | cg->offset_lo;
+   return ((unsigned)cg->offset_hi << 16) | cg->offset_lo;
 }
 
 static INLINE void

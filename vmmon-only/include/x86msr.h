@@ -16,7 +16,7 @@
  *
  *********************************************************/
 
-/* 
+/*
  * x86msr.h --
  *
  *      MSR number definitions.
@@ -59,11 +59,8 @@ struct MSRReply {
     * we use it to correlate the replies of multiple queries.
     */
    uint64 tag;              // OUT
-
    uint64 msrVal;           // OUT
-
    uint8  implemented;      // OUT
-
    uint8  _pad[7];
 }
 #include "vmware_pack_end.h"
@@ -123,24 +120,29 @@ MSRQuery;
 #define MSR_ARCH_CAPABILITIES_NOL1F_VMENTRY       (1ULL << 3)
 #define MSR_ARCH_CAPABILITIES_SSB_NO              (1ULL << 4)
 
+#define MSR_FLUSH_CMD                        0x10b
+#define MSR_FLUSH_CMD_FLUSH_L1D                   (1ULL << 0)
 
 #define MSR_SPEC_CTRL_IBRS                        (1UL << 0)
 #define MSR_SPEC_CTRL_STIBP                       (1UL << 1)
+#define MSR_SPEC_CTRL_SSBD                        (1UL << 2)
 
 #define MSR_PRED_CMD_IBPB                         (1UL << 0)
 
 #define MSR_MISC_FEATURES_ENABLES            0x140
 
 /* Intel Core Architecture and later: use only architected counters. */
-#define IA32_MSR_PERF_CAPABILITIES                0x345
-#define MSR_PERF_CAPABILITIES_LBRFMT_SHIFT        0
-#define MSR_PERF_CAPABILITIES_LBRFMT_MASK         0x3f
-#define MSR_PERF_CAPABILITIES_PEBSTRAP            (1u << 6)
-#define MSR_PERF_CAPABILITIES_PEBSSAVEARCHREGS    (1u << 7)
-#define MSR_PERF_CAPABILITIES_PEBSRECORDFMT_SHIFT 8
-#define MSR_PERF_CAPABILITIES_PEBSRECORDFMT_MASK  0xf
-#define MSR_PERF_CAPABILITIES_FREEZE_WHILE_SMM    (1u << 12)
-#define MSR_PERF_CAPABILITIES_FULL_WIDTH_WRITES   (1u << 13)
+#define IA32_MSR_PERF_CAPABILITIES                   0x345
+#define MSR_PERF_CAPABILITIES_LBRFMT_SHIFT           0
+#define MSR_PERF_CAPABILITIES_LBRFMT_MASK            0x3f
+#define MSR_PERF_CAPABILITIES_PEBSTRAP               (1u << 6)
+#define MSR_PERF_CAPABILITIES_PEBSSAVEARCHREGS       (1u << 7)
+#define MSR_PERF_CAPABILITIES_PEBSRECORDFMT_SHIFT    8
+#define MSR_PERF_CAPABILITIES_PEBSRECORDFMT_MASK     0xf
+#define MSR_PERF_CAPABILITIES_FREEZE_WHILE_SMM       (1u << 12)
+#define MSR_PERF_CAPABILITIES_FULL_WIDTH_WRITES      (1u << 13)
+#define MSR_PERF_CAPABILITIES_PEBS_ADAPTIVE_DATA     (1u << 14)
+#define MSR_PERF_CAPABILITIES_PERF_METRICS_AVAILABLE (1u << 15)
 
 #define IA32_MSR_PEBS_ENABLE                      0x3f1
 
@@ -266,6 +268,8 @@ typedef enum {
 #define MSR_BNDCFGS          0x00000d90  // Sup. mode bounds configuration
 
 #define MSR_XSS              0x00000da0  // Extended Supervisor State Mask
+
+#define MSR_MPX_LAX          0x00001000  // MPX Linear Address Extension
 
 /* RTIT MSRs */
 #define MSR_RTIT_CTL              0x00000570
@@ -509,8 +513,27 @@ typedef enum {
 #define MSR_VM_CR_SVME_DISABLE     0x0000000000000010ULL
 #define MSR_VM_CR_RESERVED         0xffffffffffffffe0ULL
 
+/* SEV related MSRs. */
+#define MSR_VMPAGE_FLUSH           0xc001011e
+#define MSR_GHCB_PA                0xc0010130
+#define MSR_GHCB_PA_SEVINFO_HV              1
+#define MSR_GHCB_PA_SEVINFO_REQ             2
+#define MSR_GHCB_PA_AP_JUMP_TABLE           3
+#define MSR_SEV_STATUS             0xc0010131
+
+#define MSR_SEV_STATUS_SEV_EN      0x0000000000000001ULL // SEV is enabled
+#define MSR_SEV_STATUS_SEV_ES_EN   0x0000000000000002ULL // SEV-ES is enabled
+
 #define MSR_AMD_DE_CFG           0xc0011029  // Decode configuration
 #define MSR_AMD_DE_CFG_BIT1      (1ULL<<1)
+
+#define MSR_AMD_LS_CFG           0xc0011020  // load-store configuration
+#define MSR_AMD_LS_CFG_SSBD_BULLDOZER (1ULL<<54)  // BD family non-arch SSBD
+#define MSR_AMD_LS_CFG_SSBD_KYOTO     (1ULL<<33)  // Kyoto family non-arch SSBD
+#define MSR_AMD_LS_CFG_SSBD_ZEN       (1ULL<<10)  // Zen family non-arch SSBD
+
+#define MSR_AMD_VIRT_SPEC_CTRL   0xc001011f  // Virtual speculation control
+#define MSR_AMD_VIRT_SPEC_CTRL_SSBD   (1ULL<<2)   // Virtual SSBD
 
 /* Syscall/Sysret related MSRs (x86_64) */
 #define MSR_STAR             0xc0000081 // Also present on Athlons.
@@ -593,6 +616,8 @@ typedef enum {
 #define MSR_HYPERV_HYPERCALL_EN                  1ULL
 #define MSR_HYPERV_REFERENCE_TSC_EN              1ULL
 #define MSR_HYPERV_VP_ASSIST_EN                  1ULL
+#define MSR_HYPERV_SIEF_EN                       1ULL
+#define MSR_HYPERV_SIM_EN                        1ULL
 
 #define MSR_HYPERV_GUESTOSID_VENDOR_SHIFT        48
 #define MSR_HYPERV_GUESTOSID_VENDOR_MASK         0xfULL
@@ -602,6 +627,9 @@ typedef enum {
 #define MSR_HYPERV_GUESTOSID_OS_MASK             0xfULL
 #define MSR_HYPERV_GUESTOSID_OS_WINNT_DERIVATIVE 4ULL
 
+/* MSR for forcing RTM abort to recover PMC3 (see PR 2333817) */
+#define MSR_TSX_FORCE_ABORT                      0x0000010f
+#define MSR_TSX_FORCE_ABORT_RTM_BIT_INDEX        0
 
 /*
  * MTRR bit description
@@ -659,14 +687,19 @@ typedef unsigned char MTRRType;
 
 
 
+// Platform Quality of Service (PQM) MSRs
+#define MSR_INTEL_PQM_EVTSEL    0xc8d
+#define MSR_INTEL_PQM_CTR       0xc8e
+#define MSR_INTEL_PQM_ASSOC     0xc8f
 
-/*
- * Platform Quality of Service
- */
+ // Platform Quality Enforcement (PQE) MSRs
+#define MSR_INTEL_PQE_CLOS_MASK_BASE     0xc90
+#define MSR_INTEL_PQE_CLOS_MASK_MAX      0xd8f
 
-#define MSR_INTEL_QOS_EVTSEL    0xc8d
-#define MSR_INTEL_QOS_CTR       0xc8e
-#define MSR_INTEL_QOS_ASSOC     0xc8f
+#define MSR_INTEL_PQE_CLOS_L3_MASK_BASE     0xc90
+#define MSR_INTEL_PQE_CLOS_L3_MASK_MAX      0xd0f
+#define MSR_INTEL_PQE_CLOS_L2_MASK_BASE     0xd10
+#define MSR_INTEL_PQE_CLOS_L2_MASK_MAX      0xd4f
 
 static INLINE uint32
 X86MSR_SysCallEIP(uint64 star)
@@ -687,6 +720,126 @@ X86MSR_SysRetCS(uint64 star)
 {
    return (uint16)(star >> 48);
 }
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * X86MSR_{G,S}etMSR --
+ *
+ *      Get or set an MSR in hardware. The interface should remain
+ *      agnostic to the underlying compiler and architecture.
+ *
+ *----------------------------------------------------------------------
+ */
+
+#ifdef __GNUC__
+/*
+ * Checked against the Intel manual and GCC --hpreg
+ * volatile because the msr can change without the compiler knowing it
+ * (when we use wrmsr).
+ */
+#ifdef VM_X86_64
+static INLINE uint64
+X86MSR_GetMSR(uint32 cx)
+{
+   uint64 msr;
+   __asm__ __volatile__(
+      "rdmsr; shlq $32, %%rdx; orq %%rdx, %%rax"
+      : "=a" (msr)
+      : "c" (cx)
+      : "%rdx"
+   );
+
+   return msr;
+}
+
+static INLINE void
+X86MSR_SetMSR(uint32 cx, uint64 value)
+{
+   __asm__ __volatile__(
+      "wrmsr"
+      : /* no outputs */
+      : "a" ((uint32) value),
+        "d" ((uint32)(value >> 32)),
+        "c" (cx)
+    );
+}
+#else // __GNUC__ && !VM_X86_64
+static INLINE uint64
+X86MSR_GetMSR(uint32 cx)
+{
+   uint64 msr;
+   __asm__ __volatile__(
+      "rdmsr"
+      : "=A" (msr)
+      : "c"  (cx)
+   );
+
+   return msr;
+}
+
+static INLINE void
+X86MSR_SetMSR(uint32 cx, uint64 value)
+{
+   __asm__ __volatile__(
+      "wrmsr"
+      : /* no outputs */
+      : "A" (value),
+        "c" (cx)
+    );
+}
+#endif
+#elif defined _MSC_VER // !__GNUC__ && _MSC_VER
+#ifdef _WIN64
+unsigned __int64  __readmsr(unsigned long);
+void              __writemsr(unsigned long, unsigned __int64);
+#pragma intrinsic(__readmsr, __writemsr)
+static INLINE uint64
+X86MSR_GetMSR(uint32 cx)
+{
+   return __readmsr((unsigned long)cx);
+}
+
+static INLINE void
+X86MSR_SetMSR(uint32 cx, uint64 value)
+{
+   __writemsr((unsigned long)(cx), (unsigned __int64)(value));
+}
+#else // !__GNUC__ && _MSC_VER && !_WIN64
+#pragma warning( disable : 4035)
+static INLINE uint64
+X86MSR_GetMSR(uint32 input)
+{
+   __asm push ecx
+   __asm mov  ecx, input
+   /* 0x0f 0x32 -> edx:eax = rdmsr[ecx] */
+   __asm _emit 0x0f __asm _emit 0x32
+   __asm pop ecx
+}
+
+static INLINE void
+X86MSR_SetMSR(uint32 input, uint64 value)
+{
+      uint32 hival = (uint32)((value) >> 32);
+      uint32 loval = (uint32)value;
+      __asm push edx
+      __asm push ecx
+      __asm push eax
+      __asm mov  eax, loval
+      __asm mov  edx, hival
+      __asm mov  ecx, input
+      /* 0x0f 0x30 -> wrmsr[ecx] = edx:eax */
+      __asm _emit 0x0f __asm _emit 0x30
+      __asm pop  eax
+      __asm pop  ecx
+      __asm pop  edx
+}
+#pragma warning (default: 4035)
+#endif
+#else // !__GNUC__ && !_MSC_VER
+#error No compiler defined for RDMSR/WRMSR.
+#endif
 
 
 #if defined __cplusplus

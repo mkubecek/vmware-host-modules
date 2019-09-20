@@ -52,7 +52,7 @@ extern "C" {
 typedef struct PageListEntry {
    CompressedBPN cbpn;
    Bool voided;
-   uint8 _pad[2];
+   uint8 _pad[1];
 } PageListEntry;
 #pragma pack(pop) 
 

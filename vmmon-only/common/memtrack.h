@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998,2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998,2017-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -43,8 +43,8 @@ typedef struct MemTrackEntry {
 typedef void (MemTrackCleanupCb)(void *cData, MemTrackEntry *entry);
 
 extern struct MemTrack *MemTrack_Init(VMDriver *vm);
-extern unsigned MemTrack_Cleanup(struct MemTrack *mt, MemTrackCleanupCb *cb,
-                                 void *cbData);
+extern PageCnt MemTrack_Cleanup(struct MemTrack *mt, MemTrackCleanupCb *cb,
+                                void *cbData);
 extern MemTrackEntry *MemTrack_Add(struct MemTrack *mt, VPN64 vpn, MPN mpn);
 extern MemTrackEntry *MemTrack_LookupVPN(struct MemTrack *mt, VPN64 vpn);
 extern MemTrackEntry *MemTrack_LookupMPN(struct MemTrack *mt, MPN mpn);

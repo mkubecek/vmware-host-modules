@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998 VMware, Inc. All rights reserved.
+ * Copyright (C) 2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -16,28 +16,32 @@
  *
  *********************************************************/
 
-#ifndef _INITBLOCK_H
-#define _INITBLOCK_H
+/*
+ * sharedAreaType.h --
+ *
+ *      This file contains shared area type definitions.
+ */
 
+#ifndef _SHAREDAREATYPE_H_
+#define _SHAREDAREATYPE_H_
 
-#define INCLUDE_ALLOW_VMX
 #define INCLUDE_ALLOW_VMCORE
+#define INCLUDE_ALLOW_VMKERNEL
+#define INCLUDE_ALLOW_VMX
 #define INCLUDE_ALLOW_VMMON
+#define INCLUDE_ALLOW_USERLEVEL
+#define INCLUDE_ALLOW_MODULE
+
 #include "includeCheck.h"
 
+typedef enum {
+   SHARED_AREA_PER_VM_VMX = 0,
+   SHARED_AREA_INTER_VCPU_VMX,
+   SHARED_AREA_PER_VCPU_VMX,
+   SHARED_AREA_PER_VM,
+   SHARED_AREA_INTER_VCPU,
+   SHARED_AREA_PER_VCPU,
+   NUM_SHARED_AREAS
+} SharedAreaType;
 
-#include "basic_initblock.h"
-
-
-#define MAX_LOGFILE_NAME_LENGTH 256
-#define MAX_MONITOR_REGIONS     8
-#define INIT_BLOCK_MAGIC     (0x1789+14)
-
-
-/*
- * Option flags 
- */
-/* None yet */
-
-
-#endif
+#endif // _SHAREDAREATYPE_H_

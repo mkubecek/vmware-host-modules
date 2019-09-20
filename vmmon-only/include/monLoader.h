@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2015-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 2015-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -31,8 +31,8 @@
  * contains code and data statically built, empty but allocated space, shared
  * and run-time initialized content.  The monitor loader header regularizes
  * encoding of address space information, allowing a common representation and
- * common code to be re-used for different contexts (vmmon for hosted, vmkernel
- * for ESX, and the VMX while deprivileging of bootstrap is ongoing).
+ * common code to be re-used for different contexts (vmmon for hosted
+ * and vmkernel for ESX).
  *
  * The Header
  * ==========
@@ -87,7 +87,6 @@
  * MonLoaderCallout_Init(): Initialize MonLoader callouts.
  * MonLoaderCallout_GetSharedHostPage(subIdx, page): Get shared host page MPN.
  * MonLoaderCallout_GetSharedUserPage(subIdx, page): Get shared user page MPN.
- * MonLoaderCallout_SetEntrypoint(): Sets the entry code/stack for execution.
  *
  * Building vs Importing
  * =====================
@@ -119,20 +118,53 @@
 #define _MON_LOADER
 
 #include "vm_basic_types.h"
-#include "x86paging_common.h"
-#include "x86types.h" /* PT_L1E */
+#include "vm_pagetable.h"
 #include "vcpuid.h"   /* Vcpuid */
+
+#if defined VM_X86_64
+#include "x86paging_64.h"
+#elif defined VM_ARM_64
+#include "arm64_vmsa.h"
+#endif
 
 #define ML_NAME_MAX 16
 
 /* ML perms are simple and abbreviated. */
+
+#if defined VM_X86_64
 
 #define ML_PERM_RWX (PTE_P | PTE_RW)
 #define ML_PERM_RW  (PTE_P | PTE_RW | PTE_NX)
 #define ML_PERM_RO  (PTE_P |          PTE_NX)
 #define ML_PERM_RX   PTE_P
 
+#define ML_PERM_TBL   ML_PERM_RWX
 #define ML_PERM_MASK (PTE_P| PTE_RW | PTE_NX | PTE_US)
+
+#define ML_PERM_PRESENT(_flags)     (((_flags) & PTE_P) != 0)
+#define ML_PERM_WRITEABLE(_flags)   (((_flags) & PTE_RW) != 0)
+
+#define ML_PTE_2_PFN(_pte)          LM_PTE_2_PFN(_pte)
+
+#elif defined VM_ARM_64
+
+#define _ML_PERM_COMMON (ARM_PTE_BLOCK_AP(ARM_AP_PL0)   | ARM_PTE_BLOCK_AF | \
+                         ARM_PTE_BLOCK_SH(ARM_SH_OUTER) | ARM_PTE_BLOCK_L3_TYPE)
+#define ARM_PTE_BLOCK_AP_RO ARM_PTE_BLOCK_AP(ARM_AP_RO)
+
+#define ML_PERM_RW   (_ML_PERM_COMMON |                       ARM_PTE_BLOCK_XN)
+#define ML_PERM_RO   (_ML_PERM_COMMON | ARM_PTE_BLOCK_AP_RO | ARM_PTE_BLOCK_XN)
+#define ML_PERM_RX   (_ML_PERM_COMMON | ARM_PTE_BLOCK_AP_RO                   )
+
+#define ML_PERM_TBL   ML_PERM_RW
+#define ML_PERM_MASK (_ML_PERM_COMMON | ARM_PTE_BLOCK_AP_RO | ARM_PTE_BLOCK_XN)
+
+#define ML_PERM_PRESENT(_flags)   (((_flags) & ARM_PTE_VALID) != 0)
+#define ML_PERM_WRITEABLE(_flags) (((_flags) & ARM_PTE_BLOCK_AP_RO) == 0)
+
+#define ML_PTE_2_PFN(_pte)    (((_pte) & ARM_PTE_PFN_MASK) >> PT_PTE_PFN_SHIFT)
+
+#endif
 
 #define ML_PERMS_MATCH(x,p) (((x) & ML_PERM_MASK) == ((p) & ML_PERM_MASK))
 
@@ -150,10 +182,10 @@ typedef enum {
    ML_CONTENT_SHARE,         /* Share data from external source. */
 } MonLoaderContentType;
 
-#define CONTENT_TO_PTLEVEL(x) (x == ML_CONTENT_PAGETABLE_L4 ? 4 : \
-                               x == ML_CONTENT_PAGETABLE_L3 ? 3 : \
-                               x == ML_CONTENT_PAGETABLE_L2 ? 2 : \
-                               x == ML_CONTENT_PAGETABLE_L1 ? 1 : \
+#define CONTENT_TO_PTLEVEL(x) (x == ML_CONTENT_PAGETABLE_L4 ? PT_LEVEL_4 : \
+                               x == ML_CONTENT_PAGETABLE_L3 ? PT_LEVEL_3 : \
+                               x == ML_CONTENT_PAGETABLE_L2 ? PT_LEVEL_2 : \
+                               x == ML_CONTENT_PAGETABLE_L1 ? PT_LEVEL_1 : \
                                0)
 
 /* Sources of content, for pages not zeroed, unmapped or otherwise special. */
@@ -183,11 +215,14 @@ typedef struct {
    } blobSrc;
    uint64               bspOnly;           /* Process only on BSP. */
    uint64               subIndex;          /* Region ID for ML_CONTENT_COPY. */
-   uint64               procVmmon;         /* Processed by the vmmon on hosted. */
 } MonLoaderEntry;
 
 
-/* Packed for easy consumption by bootstrap-offsets.pl. */
+/*
+ * Packed for easy consumption by bootstrap-offsets.pl. If the contents of the
+ * MonLoaderHeader struct are changed then $HEADER_SIZE must be updated
+ * accordingly in bootstrap-offsets.pl.
+ */
 #pragma pack(push, 1)
 typedef struct MonLoaderHeader {
    uint64         magic;
@@ -199,6 +234,8 @@ typedef struct MonLoaderHeader {
    /* ss:rip */
    uint16         stackSelector;
    VA64           stackEntrypoint;
+   LPN64          monStartLPN;
+   LPN64          monEndLPN;
    MonLoaderEntry entries[];
 } MonLoaderHeader;
 #pragma pack(pop)
@@ -217,16 +254,13 @@ MPN  MonLoaderCallout_GetPageRoot(struct MonLoaderEnvContext *, Vcpuid);
 Bool MonLoaderCallout_GetPTE(struct MonLoaderEnvContext *, MPN, unsigned,
                              Vcpuid, PT_L1E *);
 Bool MonLoaderCallout_ImportPage(struct MonLoaderEnvContext *, MPN, Vcpuid);
-Bool MonLoaderCallout_Init(void *, struct MonLoaderEnvContext **);
+Bool MonLoaderCallout_Init(void *, struct MonLoaderEnvContext **, unsigned);
 Bool MonLoaderCallout_MapMPNInPTE(struct MonLoaderEnvContext *, MPN, unsigned,
                                   uint64, MPN, Vcpuid);
 MPN  MonLoaderCallout_GetSharedUserPage(struct MonLoaderEnvContext *, uint64,
                                         unsigned, Vcpuid);
 MPN  MonLoaderCallout_GetSharedHostPage(struct MonLoaderEnvContext *, uint64,
                                         unsigned, Vcpuid);
-Bool MonLoaderCallout_IsPrivileged(struct MonLoaderEnvContext *);
-Bool MonLoaderCallout_SetEntrypoint(struct MonLoaderEnvContext *, uint16, VA64,
-                                    uint16, VA64);
 MPN  MonLoaderCallout_GetBlobMpn(struct MonLoaderEnvContext *, uint64);
 
 typedef enum MonLoaderError {
@@ -237,7 +271,6 @@ typedef enum MonLoaderError {
    ML_ERROR_ARGS,
    ML_ERROR_CALLOUT_INIT,
    ML_ERROR_CALLOUT_COPY,
-   ML_ERROR_CALLOUT_ENTRYPOINT,
    ML_ERROR_CALLOUT_GETPTE,
    ML_ERROR_CALLOUT_MAPINPTE,
    ML_ERROR_CALLOUT_PAGEROOT_GET,
@@ -259,8 +292,12 @@ typedef enum MonLoaderError {
 } MonLoaderError;
 
 
-/* A subindex above shared area subindices for sharing of MonLoaderHeader. */
+/*
+ * Values above shared area subindices for sharing of MonLoaderHeader
+ * and htSchedStateMap.
+ */
 #define MONLOADER_HEADER_IDX 6
+#define MONLOADER_HT_MAP_IDX 7
 
 
 MonLoaderError MonLoader_Process(MonLoaderHeader *header, unsigned numVCPUs,

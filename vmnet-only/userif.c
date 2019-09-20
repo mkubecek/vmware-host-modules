@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998,2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998,2017,2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -367,12 +367,12 @@ VNetUserIfReceive(VNetJack       *this, // IN
    VNetUserIF *userIf = (VNetUserIF*)this->private;
    uint8 *dest = SKB_2_DESTMAC(skb);
    unsigned long flags;
-   
+
    if (!UP_AND_RUNNING(userIf->port.flags)) {
       userIf->stats.droppedDown++;
       goto drop_packet;
    }
-   
+
    if (!VNetPacketMatch(dest,
                         userIf->port.paddr,
                         (const uint8 *)userIf->port.exactFilter,
@@ -382,13 +382,17 @@ VNetUserIfReceive(VNetJack       *this, // IN
       userIf->stats.droppedMismatch++;
       goto drop_packet;
    }
-   
+
    if (skb_queue_len(&userIf->packetQueue) >= vnet_max_qlen) {
       userIf->stats.droppedOverflow++;
       goto drop_packet;
    }
-   
-   if (skb->len > ETHER_MAX_QUEUED_PACKET) {
+
+   /*
+    * The check would be more accurate if based on the current MTU value
+    * of the corresponding vmnet interface. PR 2267716 is filed to track this.
+    */
+   if (skb->len > ETHER_MAX_JUMBO_FRAME_LEN) {
       userIf->stats.droppedLargePacket++;
       goto drop_packet;
    }
@@ -752,7 +756,7 @@ VNetUserIfRead(VNetPort    *port, // IN
  *----------------------------------------------------------------------
  */
 
-static int 
+static int
 VNetUserIfWrite(VNetPort    *port, // IN
                 struct file *filp, // IN
                 const char  *buf,  // IN
@@ -762,11 +766,14 @@ VNetUserIfWrite(VNetPort    *port, // IN
    struct sk_buff *skb;
 
    /*
-    * Check size
+    * Check size.
+    *
+    * Regarding the upper count limit the check would be more accurate
+    * if based on the current MTU value of the corresponding vmnet interface.
+    * PR 2267716 is filed to track this.
     */
-   
-   if (count < sizeof (struct ethhdr) || 
-       count > ETHER_MAX_QUEUED_PACKET) {
+   if (count < sizeof (struct ethhdr) ||
+       count > ETHER_MAX_JUMBO_FRAME_LEN) {
       return -EINVAL;
    }
 

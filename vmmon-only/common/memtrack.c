@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -96,7 +96,7 @@
  * Modify this value to increase the maximum number of tracked pages
  * per MemTrack instance.
  */
-#define MEMTRACK_MAX_TRACKED        MBYTES_2_PAGES(4096)
+#define MEMTRACK_MAX_TRACKED        GBYTES_2_PAGES(119)
 
 /*
  * Linux uses a 3-level directory, because we want to keep allocations
@@ -148,7 +148,7 @@ typedef uint64 MemTrackHTKey;
 
 typedef struct MemTrack {
    VMDriver         *vm;            /* The VM instance. */
-   unsigned          numPages;      /* Number of pages tracked. */
+   PageCnt           numPages;      /* Number of pages tracked. */
    MemTrackDir1      dir1;          /* First level directory. */
    MemTrackHT        vpnHashTable;  /* VPN to entry hashtable. */
    MemTrackHT       *mpnHashTable;  /* MPN to entry hashtable. */
@@ -197,7 +197,7 @@ MemTrackAllocPage(void)
 
 #define MEMTRACK_ALLOCDFN(_name, _itype, _otype)   \
    static INLINE _otype *                          \
-   _name(_itype *arg, unsigned pos)                \
+   _name(_itype *arg, uint64 pos)                  \
    {                                               \
       if (arg->dir[pos] == NULL) {                 \
          arg->dir[pos] = MemTrackAllocPage();      \
@@ -273,8 +273,8 @@ MemTrackHTInsert(MemTrackHT *ht,          // IN
 static void
 MemTrackCleanup(MemTrack *mt)    // IN
 {
-   unsigned idx;
-   unsigned p1;
+   PageCnt idx;
+   uint64 p1;
    MemTrackDir1 *dir1;
    Bool freeBackMap = mt != NULL && mt->mpnHashTable != NULL;
 
@@ -284,7 +284,7 @@ MemTrackCleanup(MemTrack *mt)    // IN
    dir1 = &mt->dir1;
 
    for (p1 = 0; p1 < MEMTRACK_DIR1_ENTRIES; p1++) {
-      unsigned p2;
+      uint64 p2;
       MemTrackDir2 *dir2 = MEMTRACK_GETDIR2(dir1, p1);
 
       if (dir2 == NULL) {
@@ -339,7 +339,7 @@ MemTrack *
 MemTrack_Init(VMDriver *vm) // IN:
 {
    MemTrack *mt;
-   unsigned idx;
+   PageCnt idx;
 
 #if defined(MEMTRACK_3LEVEL)
    ASSERT_ON_COMPILE(sizeof *mt <= PAGE_SIZE);
@@ -359,7 +359,8 @@ MemTrack_Init(VMDriver *vm) // IN:
       MemTrackHTPage *htPage = MemTrackAllocPage();
 
       if (htPage == NULL) {
-         Warning("MemTrack failed to allocate VPN hash table (%d).\n", idx);
+         Warning("MemTrack failed to allocate VPN hash table (%"FMT64"d).\n",
+                 idx);
          goto error;
       }
       mt->vpnHashTable.pages[idx] = htPage;
@@ -374,7 +375,8 @@ MemTrack_Init(VMDriver *vm) // IN:
    for (idx = 0; idx < MEMTRACK_HT_PAGES; idx++) {
       MemTrackHTPage *htPage = MemTrackAllocPage();
       if (htPage == NULL) {
-         Warning("MemTrack failed to allocate MPN hash table (%d).\n", idx);
+         Warning("MemTrack failed to allocate MPN hash table (%"FMT64"d).\n",
+                 idx);
          goto error;
       }
       mt->mpnHashTable->pages[idx] = htPage;
@@ -409,8 +411,8 @@ MemTrack_Add(MemTrack *mt,    // IN
              VPN64 vpn,       // IN
              MPN mpn)         // IN
 {
-   unsigned idx = mt->numPages;
-   unsigned p1, p2, p3;
+   PageCnt idx = mt->numPages;
+   uint64 p1, p2, p3;
    MemTrackEntry *ent;
    MemTrackDir1 *dir1 = &mt->dir1;
    MemTrackDir2 *dir2;
@@ -535,16 +537,16 @@ MemTrack_LookupMPN(MemTrack *mt, // IN
  *----------------------------------------------------------------------
  */
 
-unsigned
+PageCnt
 MemTrack_Cleanup(MemTrack *mt,            // IN
                  MemTrackCleanupCb *cb,   // IN
                  void *cData)             // IN
 {
-   unsigned idx;
-   unsigned count = 0;
+   PageCnt idx;
+   PageCnt count = 0;
 
    for (idx = 0; idx < mt->numPages; idx++) {
-      unsigned p1, p2, p3;
+      uint64 p1, p2, p3;
       MemTrackEntry *ent;
       MemTrackDir1 *dir1 = &mt->dir1;
       MEMTRACK_IDX2DIR(idx, p1, p2, p3);

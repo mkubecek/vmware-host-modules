@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998,2018-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -27,27 +27,14 @@
 #include <linux/mutex.h>
 #include <linux/sched.h>
 #include <linux/semaphore.h>
+#include <linux/rwsem.h>
 #include <linux/wait.h>
 
 #include "vmx86.h"
 #include "driver_vmcore.h"
 
 
-/*
- * Used to track a piece of memory that's been mapped into the kernel from
- * userlevel.
- */
-typedef struct VMMappedUserMem {
-   void *addr;
-   size_t numPages;
-   struct page *pages[0];
-} VMMappedUserMem;
-
-
-/*
- * Per-instance driver state
- */
-
+/* Per-instance driver state */
 struct VMDriver;
 
 /* 16 pages (64KB) looks as a good limit for one allocation */
@@ -56,7 +43,15 @@ struct VMDriver;
 typedef struct Device {
    struct Device   *next;
    struct VMDriver *vm;
-
+   /*
+    * This RW semaphore protects accesses to the VMDriver to
+    * avoid racing between various ioctls, and the creation
+    * and removal of the VM in question. The lock is read-acquired
+    * by ioctls that reference the VMDriver, and write-acquired by
+    * ioctls or device callbacks that allocate or destory the
+    * VMDriver.
+    */
+   struct rw_semaphore vmDriverRWSema;
    /*
     * The semaphore protect accesses to size4Gb and pages4Gb
     * in mmap(). mmap() may happen only once, and all other
@@ -64,7 +59,7 @@ typedef struct Device {
     * only after successful mmap.
     */
    struct semaphore lock4Gb;
-   unsigned int size4Gb;
+   PageCnt size4Gb;
    struct page *pages4Gb[VMMON_MAX_LOWMEM_PAGES];
 } Device;
 

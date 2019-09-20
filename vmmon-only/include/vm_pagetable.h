@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2014-2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 2014-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -40,22 +40,25 @@
 /*
  * These definitions suit both the x64 and arm64 architectures. In particular
  * - At all levels, a page table is a 4KB page containing 512 8-byte entries.
- * - Each entry maps 39, 30, 21 and 12 bits at the respective page table
+ * - Each entry maps 48, 39, 30, 21 and 12 bits at the respective page table
  *   levels (with standard page sizes).
  */
 
-typedef uint64 PT_L4E;
-typedef uint64 PT_L3E;
-typedef uint64 PT_L2E;
-typedef uint64 PT_L1E;
+typedef uint64 PT_Entry;
+typedef PT_Entry PT_L5E;
+typedef PT_Entry PT_L4E;
+typedef PT_Entry PT_L3E;
+typedef PT_Entry PT_L2E;
+typedef PT_Entry PT_L1E;
 
 typedef enum {
    PT_LEVEL_1 = 1,
    PT_LEVEL_2,
    PT_LEVEL_3,
    PT_LEVEL_4,
+   PT_LEVEL_5,
    PT_LEVEL_STOP = PT_LEVEL_1,
-   PT_MAX_LEVELS = PT_LEVEL_4
+   PT_MAX_LEVELS = PT_LEVEL_5
 } PT_Level;
 
 #define PT_PTE_SIZE           8
@@ -76,6 +79,7 @@ typedef enum {
 
 /* Address space size (in 4KB pages) covered by a level-_l page table entry. */
 #define PT_PAGES_PER_LE(_l)   ((uint64)1 << PT_LE_PG_SHIFT(_l))
+#define PT_PAGES_PER_L5E      PT_PAGES_PER_LE(PT_LEVEL_5)
 #define PT_PAGES_PER_L4E      PT_PAGES_PER_LE(PT_LEVEL_4)
 #define PT_PAGES_PER_L3E      PT_PAGES_PER_LE(PT_LEVEL_3)
 #define PT_PAGES_PER_L2E      PT_PAGES_PER_LE(PT_LEVEL_2)
@@ -86,6 +90,7 @@ typedef enum {
  * address space size (in bytes) covered by a level-_l page table entry.
  */
 #define PT_LE_SHIFT(_l)       (PAGE_SHIFT + PT_LE_PG_SHIFT(_l))
+#define PT_L5E_SHIFT          PT_LE_SHIFT(PT_LEVEL_5)
 #define PT_L4E_SHIFT          PT_LE_SHIFT(PT_LEVEL_4)
 #define PT_L3E_SHIFT          PT_LE_SHIFT(PT_LEVEL_3)
 #define PT_L2E_SHIFT          PT_LE_SHIFT(PT_LEVEL_2)
@@ -93,6 +98,7 @@ typedef enum {
 
 /* Address space size (in bytes) covered by a level-_l page table entry. */
 #define PT_LE_SIZE(_l)        ((uint64)1 << PT_LE_SHIFT(_l))
+#define PT_L5E_SIZE           PT_LE_SIZE(PT_LEVEL_5)
 #define PT_L4E_SIZE           PT_LE_SIZE(PT_LEVEL_4)
 #define PT_L3E_SIZE           PT_LE_SIZE(PT_LEVEL_3)
 #define PT_L2E_SIZE           PT_LE_SIZE(PT_LEVEL_2)
@@ -103,6 +109,7 @@ typedef enum {
  * determine the offset (== index) of the level-_l page table entry.
  */
 #define PT_LA_2_LOFF(_a, _l)  (((_a) >> PT_LE_SHIFT(_l)) & PT_OFF_MASK)
+#define PT_LA_2_L5OFF(_a)     PT_LA_2_LOFF(_a, PT_LEVEL_5)
 #define PT_LA_2_L4OFF(_a)     PT_LA_2_LOFF(_a, PT_LEVEL_4)
 #define PT_LA_2_L3OFF(_a)     PT_LA_2_LOFF(_a, PT_LEVEL_3)
 #define PT_LA_2_L2OFF(_a)     PT_LA_2_LOFF(_a, PT_LEVEL_2)
@@ -113,6 +120,7 @@ typedef enum {
  * determine the offset (== index) of the level-_l page table entry.
  */
 #define PT_LPN_2_LOFF(_a, _l) (((_a) >> PT_LE_PG_SHIFT(_l)) & PT_OFF_MASK)
+#define PT_LPN_2_L5OFF(_a)    PT_LPN_2_LOFF(_a, PT_LEVEL_5)
 #define PT_LPN_2_L4OFF(_a)    PT_LPN_2_LOFF(_a, PT_LEVEL_4)
 #define PT_LPN_2_L3OFF(_a)    PT_LPN_2_LOFF(_a, PT_LEVEL_3)
 #define PT_LPN_2_L2OFF(_a)    PT_LPN_2_LOFF(_a, PT_LEVEL_2)

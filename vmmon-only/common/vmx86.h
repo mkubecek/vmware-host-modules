@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -32,13 +32,14 @@
 #include "x86msr.h"
 #include "modulecall.h"
 #include "vcpuid.h"
-#include "initblock.h"
 #include "iocontrols.h"
 #include "numa_defs.h"
 #include "rateconv.h"
 #include "vmmem_shared.h"
 #include "apic.h"
 #include "bootstrap_vmm.h"
+#include "sharedAreaVmmon.h"
+#include "statVarsVmmon.h"
 
 typedef struct TSCDelta {
    Atomic_uint64 min;
@@ -55,23 +56,19 @@ struct VmmBlobInfo;
 typedef struct VMDriver {
    /* Unique (in the driver), strictly positive, VM ID used by userland. */
    int                     userID;
-
    Vcpuid                  numVCPUs;         /* Number of vcpus in VM. */
-
    struct VMDriver        *nextDriver;       /* Next on list of all VMDrivers */
-
    struct VMHost          *vmhost;           /* Host-specific fields. */
-
    MPN                    *ptRootMpns;       /* numVCPUs-sized array. */
    struct VmmBlobInfo     *blobInfo;         /* VMM bootstrap blob info. */
-
+   SharedAreaVmmon        *sharedArea;       /* VMMon shared area info. */
+   StatVarsVmmon          *statVars;         /* VMMon stat vars info. */
    /* Pointers to the crossover pages shared with the monitor. */
    struct VMCrossPage    **crosspage;        /* numVCPUs-sized array. */
    struct MemTrack        *ptpTracker;       /* Tracks page table patch pages */
    struct MemTrack        *vmmTracker;       /* Tracks allocated VMM pages */
    VCPUSet                *crosscallWaitSet; /* numVCPUs-sized array. */
    APICDescriptor          hostAPIC;
-
    struct MemTrack        *memtracker;       /* Memory tracker pointer */
    Bool                    checkFuncFailed;
    struct PerfCounter     *perfCounter;
@@ -81,6 +78,7 @@ typedef struct VMDriver {
    Atomic_uint64           ptscLatest;
    int64                  *ptscOffsets;      /* numVCPUs-sized array. */
    Atomic_uint32          *currentHostCpu;   /* numVCPUs-sized array. */
+   PageCnt                 numPTPPages;      /* Num PTP pages allocated. */
 } VMDriver;
 
 typedef struct MonLoaderArgs {
@@ -110,7 +108,7 @@ typedef struct PseudoTSC {
 
 extern PseudoTSC pseudoTSC;
 
-#define MAX_LOCKED_PAGES (-1)
+#define MAX_LOCKED_PAGES MAX_PPN
 
 extern void Vmx86_CacheNXState(void);
 extern VMDriver *Vmx86_CreateVM(VA64 bsBlob,
@@ -121,11 +119,10 @@ extern Bool Vmx86_ProcessBootstrap(VMDriver *vm,
                                    uint32 numBytes,
                                    uint32 headerOffset,
                                    uint16 numVCPUs,
-                                   UserVA64 *ptRootVAs,
+                                   PerVcpuPages *perVcpuPages,
                                    VMSharedRegion *shRegions);
 extern int Vmx86_LookupUserMPN(VMDriver *vm, VA64 uAddr, MPN *mpn);
 extern int Vmx86_ReleaseVM(VMDriver *vm);
-extern int Vmx86_InitVM(VMDriver *vm, InitBlock *initParams);
 extern int Vmx86_LateInitVM(VMDriver *vm);
 extern int Vmx86_RunVM(VMDriver *vm, Vcpuid vcpuid);
 extern void Vmx86_YieldToSet(VMDriver *vm, Vcpuid currVcpu, const VCPUSet *req,
@@ -142,22 +139,21 @@ extern int Vmx86_UnlockPage(VMDriver *vm, VA64 uAddr);
 extern int Vmx86_UnlockPageByMPN(VMDriver *vm, MPN mpn, VA64 uAddr);
 extern MPN Vmx86_GetRecycledPage(VMDriver *vm);
 extern int Vmx86_ReleaseAnonPage(VMDriver *vm, MPN mpn);
-extern int Vmx86_AllocLockedPages(VMDriver *vm, VA64 addr,
-                                  unsigned numPages, Bool kernelMPNBuffer,
-                                  Bool ignoreLimits);
-extern int Vmx86_FreeLockedPages(VMDriver *vm, VA64 addr,
-                                 unsigned numPages, Bool kernelMPNBuffer);
+extern int64 Vmx86_AllocLockedPages(VMDriver *vm, VA64 addr,
+                                    PageCnt numPages, Bool kernelMPNBuffer,
+                                    Bool ignoreLimits);
+extern int Vmx86_FreeLockedPages(VMDriver *vm, MPN *mpns, PageCnt numPages);
 extern MPN Vmx86_GetNextAnonPage(VMDriver *vm, MPN mpn);
+extern MPN Vmx86_GetNumAnonPages(VMDriver *vm);
 extern MPN Vmx86_AllocLowPage(VMDriver *vm, Bool ignoreLimits);
 extern void *Vmx86_Calloc(size_t numElements,
                           size_t elementSize,
-                          int nonPageable);
+                          Bool nonPageable);
 extern void  Vmx86_Free(void *ptr);
 
 extern int32 Vmx86_GetNumVMs(void);
-extern int32 Vmx86_GetTotalMemUsage(void);
-extern Bool Vmx86_SetConfiguredLockedPagesLimit(unsigned limit);
-extern void Vmx86_SetDynamicLockedPagesLimit(unsigned limit);
+extern Bool Vmx86_SetConfiguredLockedPagesLimit(PageCnt limit);
+extern void Vmx86_SetDynamicLockedPagesLimit(PageCnt limit);
 extern Bool Vmx86_GetMemInfo(VMDriver *curVM,
                              Bool curVMOnly,
                              VMMemInfoArgs *args,
