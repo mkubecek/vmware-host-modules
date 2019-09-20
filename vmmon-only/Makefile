@@ -136,9 +136,6 @@ ifdef VMX86_DEBUG
 CC_OPTS += -DVMX86_DEBUG
 endif
 
-# Add Spectre options when available
-CC_OPTS += $(call vm_check_gcc,-mindirect-branch=thunk -mindirect-branch-register,)
-
 include $(SRCROOT)/Makefile.kernel
 
 else
