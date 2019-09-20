@@ -1227,7 +1227,7 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       }
 
    case IOCTL_VMX86_WRITE_PAGE: {
-#if VMX86_DEVEL
+#ifdef VMX86_DEVEL
          VMMReadWritePage req;
 
          retval = HostIF_CopyFromUser(&req, ioarg, sizeof req);
