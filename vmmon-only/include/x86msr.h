@@ -119,6 +119,7 @@ MSRQuery;
 #define MSR_ARCH_CAPABILITIES_RSBA                (1ULL << 2)
 #define MSR_ARCH_CAPABILITIES_NOL1F_VMENTRY       (1ULL << 3)
 #define MSR_ARCH_CAPABILITIES_SSB_NO              (1ULL << 4)
+#define MSR_ARCH_CAPABILITIES_MDS_NO              (1ULL << 5)
 
 #define MSR_FLUSH_CMD                        0x10b
 #define MSR_FLUSH_CMD_FLUSH_L1D                   (1ULL << 0)
@@ -128,6 +129,7 @@ MSRQuery;
 #define MSR_SPEC_CTRL_SSBD                        (1UL << 2)
 
 #define MSR_PRED_CMD_IBPB                         (1UL << 0)
+
 
 #define MSR_MISC_FEATURES_ENABLES            0x140
 
