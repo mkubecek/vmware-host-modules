@@ -102,7 +102,9 @@ static unsigned int compat_skb_frag_size(const skb_frag_t *frag)
 
 static unsigned int compat_skb_frag_off(const skb_frag_t *frag)
 {
-#if COMPAT_LINUX_VERSION_CHECK_LT(5, 4, 0)
+#if COMPAT_LINUX_VERSION_CHECK_LT(5, 4, 0) && \
+	!(defined(CONFIG_SUSE_VERSION) && CONFIG_SUSE_VERSION == 15 && \
+	  defined(CONFIG_SUSE_PATCHLEVEL) && CONFIG_SUSE_PATCHLEVEL >= 2)
 	return frag->page_offset;
 #else
 	return skb_frag_off(frag);
