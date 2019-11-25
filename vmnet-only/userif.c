@@ -81,7 +81,9 @@ extern unsigned int  vnet_max_qlen;
 #   define skb_frag_page(frag) (frag)->page
 #   define skb_frag_size(frag) (frag)->size
 #endif
-#if COMPAT_LINUX_VERSION_CHECK_LT(5, 4, 0)
+#if COMPAT_LINUX_VERSION_CHECK_LT(5, 4, 0) && \
+    !(defined(CONFIG_SUSE_VERSION) && CONFIG_SUSE_VERSION == 15 && \
+      defined(CONFIG_SUSE_PATCHLEVEL) && CONFIG_SUSE_PATCHLEVEL >= 2)
 #   define skb_frag_off(frag) (frag)->page_offset
 #endif
 
