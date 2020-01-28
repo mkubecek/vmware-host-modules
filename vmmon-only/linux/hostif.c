@@ -2320,7 +2320,7 @@ SetVMAPICAddr(VMDriver *vm, // IN/OUT: driver state
    volatile void *hostapic;
 
    ASSERT_ON_COMPILE(APICR_SIZE <= PAGE_SIZE);
-   hostapic = (volatile void *) ioremap_nocache(ma, PAGE_SIZE);
+   hostapic = (volatile void *) ioremap(ma, PAGE_SIZE);
    if (hostapic) {
       if ((APIC_VERSIONREG(hostapic) & 0xF0) == 0x10) {
 	 vm->hostAPIC.base = (volatile uint32 (*)[4]) hostapic;
