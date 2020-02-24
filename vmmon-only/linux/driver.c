@@ -35,7 +35,6 @@
 #include "compat_version.h"
 #include "compat_module.h"
 #include "compat_page.h"
-#include "compat_timekeeping32.h"
 
 #include "usercalldefs.h"
 
@@ -742,14 +741,12 @@ void
 LinuxDriverWakeUp(Bool selective)  // IN:
 {
    if (selective && linuxState.pollList != NULL) {
-      struct timeval tv;
       VmTimeType now;
       VMLinux *p;
       VMLinux *next;
 
       HostIF_PollListLock(1);
-      do_gettimeofday(&tv);
-      now = tv.tv_sec * 1000000ULL + tv.tv_usec;
+      now = ktime_get_ns() / NSEC_PER_USEC;
 
       for (p = linuxState.pollList; p != NULL; p = next) {
          next = p->pollForw;
@@ -816,12 +813,10 @@ LinuxDriverPoll(struct file *filp,  // IN:
       }
    } else {
       if (linuxState.fastClockThread && vmLinux->pollTimeoutPtr != NULL) {
-         struct timeval tv;
+         u64 now = ktime_get_ns() / NSEC_PER_USEC;
 
-         do_gettimeofday(&tv);
          poll_wait(filp, &vmLinux->pollQueue, wait);
-         vmLinux->pollTime = *vmLinux->pollTimeoutPtr +
-                                       tv.tv_sec * 1000000ULL + tv.tv_usec;
+         vmLinux->pollTime = *vmLinux->pollTimeoutPtr + now;
          if (vmLinux->pollBack == NULL) {
             HostIF_PollListLock(2);
             if (vmLinux->pollBack == NULL) {
