@@ -100,7 +100,6 @@
 #include "vmmonInt.h"
 #include "versioned_atomic.h"
 #include "compat_poll.h"
-#include "compat_timekeeping32.h"
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 #   define global_zone_page_state global_page_state
@@ -176,13 +175,7 @@ static DECLARE_TASKLET(timerTasklet, HostIFWakeupClockThread, 0);
  */
 #define LOCKED_PAGE_SLACK 10000
 
-static struct {
-   Atomic_uint64     uptimeBase;
-   VersionedAtomic   version;
-   uint64            monotimeBase;
-   unsigned long     jiffiesBase;
-   struct timer_list timer;
-} uptimeState;
+u64 uptime_base;
 
 /*
  * First Page Locking strategy
@@ -1701,146 +1694,6 @@ HostIF_WaitForFreePages(unsigned int timeoutMs)  // IN:
 /*
  *----------------------------------------------------------------------
  *
- * HostIFReadUptimeWork --
- *
- *      Reads the current uptime.  The uptime is based on getimeofday,
- *      which provides the needed high resolution.  However, we don't
- *      want uptime to be warped by e.g. calls to settimeofday.  So, we
- *      use a jiffies based monotonic clock to sanity check the uptime.
- *      If the uptime is more than one second from the monotonic time,
- *      we assume that the time of day has been set, and recalculate the
- *      uptime base to get uptime back on track with monotonic time.  On
- *      the other hand, we do expect jiffies based monotonic time and
- *      timeofday to have small drift (due to NTP rate correction, etc).
- *      We handle this by rebasing the jiffies based monotonic clock
- *      every second (see HostIFUptimeResyncMono).
- *      
- * Results:
- *      The uptime, in units of UPTIME_FREQ.  Also returns the jiffies
- *      value that was used in the monotonic time calculation.
- *
- * Side effects:
- *      May reset the uptime base in the case gettimeofday warp was 
- *      detected.
- *
- *----------------------------------------------------------------------
- */
-
-static uint64
-HostIFReadUptimeWork(unsigned long *j)  // OUT: current jiffies 
-{
-   struct timeval tv;
-   uint64 monotime, uptime, upBase, monoBase;
-   int64 diff;
-   uint32 version;
-   unsigned long jifs, jifBase;
-   unsigned int attempts = 0;
-
-   /* Assert that HostIF_InitUptime has been called. */
-   ASSERT(uptimeState.timer.function);
-
- retry:
-   do {
-      version  = VersionedAtomic_BeginTryRead(&uptimeState.version);
-      jifs     = jiffies;
-      jifBase  = uptimeState.jiffiesBase;
-      monoBase = uptimeState.monotimeBase;
-   } while (!VersionedAtomic_EndTryRead(&uptimeState.version, version));
-
-   do_gettimeofday(&tv);
-   upBase = Atomic_Read64(&uptimeState.uptimeBase);
-   
-   monotime = (uint64)(jifs - jifBase) * (UPTIME_FREQ / HZ);
-   monotime += monoBase;
-
-   uptime = tv.tv_usec * (UPTIME_FREQ / 1000000) + tv.tv_sec * UPTIME_FREQ;
-   uptime += upBase;
-   
-   /* 
-    * Use the jiffies based monotonic time to sanity check gettimeofday.
-    * If they differ by more than one second, assume the time of day has
-    * been warped, and use the jiffies time to undo (most of) the warp.
-    */
-
-   diff = uptime - monotime;
-   if (UNLIKELY(diff < -UPTIME_FREQ || diff > UPTIME_FREQ)) {
-      /* Compute a new uptimeBase to get uptime back on track. */
-      uint64 newUpBase = monotime - (uptime - upBase);
-
-      attempts++;
-      if (!Atomic_CMPXCHG64(&uptimeState.uptimeBase, &upBase, &newUpBase) && 
-          attempts < 5) {
-         /* Another thread updated uptimeBase.  Recalculate uptime. */
-         goto retry;
-      }
-      uptime = monotime;
-
-      Log("%s: detected settimeofday: fixed uptimeBase old %"FMT64"u "
-          "new %"FMT64"u attempts %u\n", __func__,
-          upBase, newUpBase, attempts);
-   }
-   *j = jifs;
-
-   return uptime;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * HostIFUptimeResyncMono --
- *
- *      Timer that fires ever second to resynchronize the jiffies based
- *      monotonic time with the uptime.
- *
- * Results:
- *      None
- *
- * Side effects:
- *      Resets the monotonic time bases so that jiffies based monotonic
- *      time does not drift from gettimeofday over the long term.
- *
- *----------------------------------------------------------------------
- */
-
-static void
-HostIFUptimeResyncMono(compat_timer_arg_t unused)  // IN: ignored
-{
-   unsigned long jifs;
-   uintptr_t flags;
-
-   /* 
-    * Read the uptime and the corresponding jiffies value.  This will
-    * also correct the uptime (which is based on time of day) if needed
-    * before we rebase monotonic time (which is based on jiffies).
-    */
-
-   uint64 uptime = HostIFReadUptimeWork(&jifs);
-
-   /* 
-    * Every second, recalculate monoBase and jiffiesBase to squash small
-    * drift between gettimeofday and jiffies.  Also, this prevents
-    * (jiffies - jiffiesBase) wrap on 32-bits.
-    */
-
-   SAVE_FLAGS(flags);
-   CLEAR_INTERRUPTS();
-   VersionedAtomic_BeginWrite(&uptimeState.version);
-
-   uptimeState.monotimeBase = uptime;
-   uptimeState.jiffiesBase  = jifs;
-
-   VersionedAtomic_EndWrite(&uptimeState.version);
-   RESTORE_FLAGS(flags);
-
-   /* Reschedule this timer to expire in one second. */
-   mod_timer(&uptimeState.timer, jifs + HZ);
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
  * HostIF_InitUptime --
  *
  *      Initialize the uptime clock's state.
@@ -1849,8 +1702,7 @@ HostIFUptimeResyncMono(compat_timer_arg_t unused)  // IN: ignored
  *      None
  *
  * Side effects:
- *      Sets the initial values for the uptime state, and schedules
- *      the uptime timer.
+ *      Sets the initial value for the uptime base.
  *
  *----------------------------------------------------------------------
  */
@@ -1858,16 +1710,7 @@ HostIFUptimeResyncMono(compat_timer_arg_t unused)  // IN: ignored
 void
 HostIF_InitUptime(void)
 {
-   struct timeval tv;
-
-   uptimeState.jiffiesBase = jiffies;
-   do_gettimeofday(&tv);
-   Atomic_Write64(&uptimeState.uptimeBase, 
-                  -(tv.tv_usec * (UPTIME_FREQ / 1000000) + 
-                    tv.tv_sec * UPTIME_FREQ));
-
-   compat_timer_setup(&uptimeState.timer, HostIFUptimeResyncMono, 0);
-   mod_timer(&uptimeState.timer, jiffies + HZ);
+   uptime_base = ktime_get_ns();
 }
 
 
@@ -1876,13 +1719,13 @@ HostIF_InitUptime(void)
  *
  * HostIF_CleanupUptime --
  *
- *      Cleanup uptime state, called at module unloading time.
+ *      No-op, left for backward compatibility.
  *
  * Results:
  *      None
  *
  * Side effects:
- *      Deschedule the uptime timer.
+ *      None
  *
  *----------------------------------------------------------------------
  */
@@ -1890,7 +1733,6 @@ HostIF_InitUptime(void)
 void
 HostIF_CleanupUptime(void)
 {
-   del_timer_sync(&uptimeState.timer);
 }
 
 
@@ -1914,9 +1756,10 @@ HostIF_CleanupUptime(void)
 uint64
 HostIF_ReadUptime(void)
 {
-   unsigned long jifs;
+   u64 tm;
 
-   return HostIFReadUptimeWork(&jifs);
+   tm = ktime_get_ns();
+   return (tm - uptime_base) / (NSEC_PER_SEC / UPTIME_FREQ);
 }
 
 
