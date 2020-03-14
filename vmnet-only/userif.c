@@ -78,11 +78,11 @@ static int  VNetUserIfSetUplinkState(VNetPort *port, uint8 linkUp);
 extern unsigned int  vnet_max_qlen;
 
 #if COMPAT_LINUX_VERSION_CHECK_LT(3, 2, 0)
-#   define compat_kmap(page) kmap(page)
-#   define compat_kunmap(page) kunmap(page)
-#else
-#   define compat_kmap(page) kmap((page).p)
-#   define compat_kunmap(page) kunmap((page).p)
+#   define skb_frag_page(frag) (frag)->page
+#   define skb_frag_size(frag) (frag)->size
+#endif
+#if COMPAT_LINUX_VERSION_CHECK_LT(5, 4, 0)
+#   define skb_frag_off(frag) (frag)->page_offset
 #endif
 
 /*
@@ -568,20 +568,20 @@ VNetCsumCopyDatagram(const struct sk_buff *skb,	// IN: skb to copy
    for (frag = skb_shinfo(skb)->frags;
 	frag != skb_shinfo(skb)->frags + skb_shinfo(skb)->nr_frags;
 	frag++) {
-      if (frag->size > 0) {
+      if (skb_frag_size(frag) > 0) {
 	 unsigned int tmpCsum;
 	 const void *vaddr;
 
-	 vaddr = compat_kmap(frag->page);
-	 tmpCsum = csum_and_copy_to_user(vaddr + frag->page_offset,
-					 curr, frag->size, 0, &err);
-	 compat_kunmap(frag->page);
+	 vaddr = kmap(skb_frag_page(frag));
+	 tmpCsum = csum_and_copy_to_user(vaddr + skb_frag_off(frag),
+					 curr, skb_frag_size(frag), 0, &err);
+	 kunmap(skb_frag_page(frag));
 
 	 if (err) {
 	    return err;
 	 }
 	 csum = csum_block_add(csum, tmpCsum, curr - buf);
-	 curr += frag->size;
+	 curr += skb_frag_size(frag);
       }
    }
 
