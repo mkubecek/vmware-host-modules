@@ -69,7 +69,7 @@
 #endif
 
 #if LOGLEVEL >= 4
-static struct timeval vnetTime;
+static u64 vnetTime;
 #endif
 
 typedef struct VNetBridge VNetBridge;
@@ -693,7 +693,7 @@ VNetBridgeReceiveFromVNet(VNetJack        *this, // IN: jack
          netif_rx(clone);
 #endif
 #	 if LOGLEVEL >= 4
-	 do_gettimeofday(&vnetTime);
+	 vnetTime = ktime_get_ns();
 #	 endif
       }
    }
@@ -1492,12 +1492,11 @@ VNetBridgeReceiveFromDev(struct sk_buff *skb,         // IN: packet to receive
 
 #  if LOGLEVEL >= 4
    {
-      struct timeval now;
-      do_gettimeofday(&now);
+      u64 now;
+
+      now = ktime_get_ns();
       LOG(3, (KERN_DEBUG "bridge-%s: time %d\n",
-	      bridge->name,
-	      (int)((now.tv_sec * 1000000 + now.tv_usec)
-                    - (vnetTime.tv_sec * 1000000 + vnetTime.tv_usec))));
+	      bridge->name, (int)((now - vnetTime) / NSEC_PER_USEC)));
    }
 #  endif
 
