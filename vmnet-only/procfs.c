@@ -161,11 +161,11 @@ VNetProcOpen(struct inode *inode,   // IN:
 }
 
 /* Our procfs callbacks.  We only need to specialize open. */
-static struct file_operations fops = {
-   .open    = VNetProcOpen,
-   .read    = seq_read,
-   .llseek  = seq_lseek,
-   .release = single_release,
+static struct proc_ops fops = {
+   .proc_open    = VNetProcOpen,
+   .proc_read    = seq_read,
+   .proc_lseek   = seq_lseek,
+   .proc_release = single_release,
 };
 #endif
 
