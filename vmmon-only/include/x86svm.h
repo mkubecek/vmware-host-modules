@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2005-2014,2017-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 2005-2014,2017-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -141,6 +141,7 @@
 #define SVM_VMCB_NPTCTL_NP_ENABLE          (1 << 0)
 #define SVM_VMCB_NPTCTL_SEV_ENABLE         (1 << 1)
 #define SVM_VMCB_NPTCTL_SEV_ES_ENABLE      (1 << 2)
+#define SVM_VMCB_NPTCTL_GMET_ENABLE        (1 << 3)
 
 /* VMCB.virtExt */
 #define SVM_VMCB_VIRTEXT_LBR_ENABLE        (1 << 0)
@@ -251,6 +252,7 @@
 #define SVM_EXITCODE_MMIO_READ           0x80000001   // SW only
 #define SVM_EXITCODE_MMIO_WRITE          0x80000002   // SW only
 #define SVM_EXITCODE_NMI_COMPLETE        0x80000003   // SW only
+#define SVM_EXITCODE_AP_JUMP_TABLE       0x80000005   // SW only
 #define SVM_EXITCODE_UNSUPPORTED         0x8000FFFF   // SW only
 #define SVM_EXITCODE_INVALID             (-1ULL)
 
@@ -312,6 +314,10 @@
 #define SVM_NPFEXIT_ID             (1 << 4)
 #define SVM_NPFEXIT_FINAL_ADDR     (1ULL << 32)    /* Rev. C */
 #define SVM_NPFEXIT_PTE_ACCESS     (1ULL << 33)    /* Rev. C */
+
+/* ExitInfo1 for AP jump table exits */
+#define SVM_APEXIT_SET            0x0
+#define SVM_APEXIT_GET            0x1
 
 /* Event Injection */
 #define SVM_INTINFO_VECTOR_MASK   0x000000ff

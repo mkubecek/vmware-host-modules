@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2015-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 2015-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -95,9 +95,10 @@
  *       _V  -- virtualized
  *       _NV -- not virtualized
  *   _access is one of:
- *       _NA -- no access
- *       _RW -- read/write access
- *       _RO -- read-only access
+ *       _NA  -- no access
+ *       _RW  -- read/write access
+ *       _RO  -- read-only access
+ *       _URW -- read/write acess for the ULM only
  *   _sticky is one of:
  *       _S  -- sticky
  *       _NS -- non-sticky
@@ -109,9 +110,9 @@
 VMCS_SET_START(16)
 /* 16-bit control fields. */
 VMCS_GROUP_START(16, CTL)
-VMCS_FIELD(VPID,                    0x0000, _S16, _TC,  0,  _C,  _V, _NA,  _S)
-VMCS_FIELD(PI_NOTIFY,               0x0002, _S16, _TC,  1, _NC, _NV, _NA,  _S)
-VMCS_FIELD(EPTP_INDEX,              0x0004, _S16, _TC,  2, _NC,  _V, _NA, _NS)
+VMCS_FIELD(VPID,                    0x0000, _S16, _TC,  0,  _C,  _V, _URW,  _S)
+VMCS_FIELD(PI_NOTIFY,               0x0002, _S16, _TC,  1, _NC, _NV,  _NA,  _S)
+VMCS_FIELD(EPTP_INDEX,              0x0004, _S16, _TC,  2, _NC,  _V, _URW, _NS)
 VMCS_UNUSED(                        0x0006, _S16, _TC,  3)
 VMCS_UNUSED(                        0x0008, _S16, _TC,  4)
 VMCS_UNUSED(                        0x000A, _S16, _TC,  5)
@@ -328,16 +329,16 @@ VMCS_GROUP_END(64, DATA)
 
 /* 64-bit guest state. */
 VMCS_GROUP_START(64, GUEST)
-VMCS_FIELD(LINK_PTR,                0x2800, _S64, _TG,  0, _NC,  _V, _NA, _NS)
-VMCS_FIELD(DEBUGCTL,                0x2802, _S64, _TG,  1, _NC,  _V, _NA, _NS)
-VMCS_FIELD(PAT,                     0x2804, _S64, _TG,  2, _NC,  _V, _NA, _NS)
-VMCS_FIELD(EFER,                    0x2806, _S64, _TG,  3, _NC,  _V, _NA, _NS)
-VMCS_FIELD(PGC,                     0x2808, _S64, _TG,  4, _NC,  _V, _NA, _NS)
-VMCS_FIELD(PDPTE0,                  0x280A, _S64, _TG,  5, _NC,  _V, _RW, _NS)
-VMCS_FIELD(PDPTE1,                  0x280C, _S64, _TG,  6, _NC,  _V, _RW, _NS)
-VMCS_FIELD(PDPTE2,                  0x280E, _S64, _TG,  7, _NC,  _V, _RW, _NS)
-VMCS_FIELD(PDPTE3,                  0x2810, _S64, _TG,  8, _NC,  _V, _RW, _NS)
-VMCS_FIELD(BNDCFGS,                 0x2812, _S64, _TG,  9, _NC,  _V, _NA, _NS)
+VMCS_FIELD(LINK_PTR,                0x2800, _S64, _TG,  0, _NC,  _V,  _NA, _NS)
+VMCS_FIELD(DEBUGCTL,                0x2802, _S64, _TG,  1, _NC,  _V,  _NA, _NS)
+VMCS_FIELD(PAT,                     0x2804, _S64, _TG,  2, _NC,  _V,  _NA, _NS)
+VMCS_FIELD(EFER,                    0x2806, _S64, _TG,  3, _NC,  _V, _URW, _NS)
+VMCS_FIELD(PGC,                     0x2808, _S64, _TG,  4, _NC,  _V,  _NA, _NS)
+VMCS_FIELD(PDPTE0,                  0x280A, _S64, _TG,  5, _NC,  _V,  _RW, _NS)
+VMCS_FIELD(PDPTE1,                  0x280C, _S64, _TG,  6, _NC,  _V,  _RW, _NS)
+VMCS_FIELD(PDPTE2,                  0x280E, _S64, _TG,  7, _NC,  _V,  _RW, _NS)
+VMCS_FIELD(PDPTE3,                  0x2810, _S64, _TG,  8, _NC,  _V,  _RW, _NS)
+VMCS_FIELD(BNDCFGS,                 0x2812, _S64, _TG,  9, _NC,  _V,  _NA, _NS)
 VMCS_UNUSED(                        0x2814, _S64, _TG,  10)
 VMCS_UNUSED(                        0x2816, _S64, _TG,  11)
 VMCS_UNUSED(                        0x2818, _S64, _TG,  12)
@@ -403,24 +404,24 @@ VMCS_SET_END(64)
 VMCS_SET_START(32)
 /* 32-bit control fields. */
 VMCS_GROUP_START(32, CTL)
-VMCS_FIELD(PIN_VMEXEC_CTL,          0x4000, _S32, _TC,  0,  _C,  _V, _NA,  _S)
-VMCS_FIELD(CPU_VMEXEC_CTL,          0x4002, _S32, _TC,  1,  _C,  _V, _NA,  _S)
-VMCS_FIELD(XCP_BITMAP,              0x4004, _S32, _TC,  2, _NC,  _V, _NA,  _S)
-VMCS_FIELD(PF_ERR_MASK,             0x4006, _S32, _TC,  3, _NC,  _V, _NA,  _S)
-VMCS_FIELD(PF_ERR_MATCH,            0x4008, _S32, _TC,  4, _NC,  _V, _NA,  _S)
-VMCS_FIELD(CR3_TARG_COUNT,          0x400A, _S32, _TC,  5, _NC,  _V, _NA,  _S)
-VMCS_FIELD(VMEXIT_CTL,              0x400C, _S32, _TC,  6, _NC,  _V, _NA,  _S)
-VMCS_FIELD(VMEXIT_MSR_STORE_COUNT,  0x400E, _S32, _TC,  7, _NC,  _V, _NA,  _S)
-VMCS_FIELD(VMEXIT_MSR_LOAD_COUNT,   0x4010, _S32, _TC,  8, _NC,  _V, _NA,  _S)
-VMCS_FIELD(VMENTRY_CTL,             0x4012, _S32, _TC,  9, _NC,  _V, _NA,  _S)
-VMCS_FIELD(VMENTRY_MSR_LOAD_COUNT,  0x4014, _S32, _TC, 10, _NC,  _V, _NA,  _S)
-VMCS_FIELD(VMENTRY_INTR_INFO,       0x4016, _S32, _TC, 11, _NC,  _V, _NA, _NS)
-VMCS_FIELD(VMENTRY_XCP_ERR,         0x4018, _S32, _TC, 12, _NC,  _V, _NA,  _S)
-VMCS_FIELD(VMENTRY_INSTR_LEN,       0x401A, _S32, _TC, 13, _NC,  _V, _NA,  _S)
-VMCS_FIELD(TPR_THRESHOLD,           0x401C, _S32, _TC, 14,  _C,  _V, _NA,  _S)
-VMCS_FIELD(2ND_VMEXEC_CTL,          0x401E, _S32, _TC, 15,  _C,  _V, _NA,  _S)
-VMCS_FIELD(PAUSE_LOOP_GAP,          0x4020, _S32, _TC, 16, _NC,  _V, _NA,  _S)
-VMCS_FIELD(PAUSE_LOOP_WINDOW,       0x4022, _S32, _TC, 17, _NC,  _V, _NA,  _S)
+VMCS_FIELD(PIN_VMEXEC_CTL,          0x4000, _S32, _TC,  0,  _C,  _V, _URW,  _S)
+VMCS_FIELD(CPU_VMEXEC_CTL,          0x4002, _S32, _TC,  1,  _C,  _V, _URW,  _S)
+VMCS_FIELD(XCP_BITMAP,              0x4004, _S32, _TC,  2, _NC,  _V, _URW,  _S)
+VMCS_FIELD(PF_ERR_MASK,             0x4006, _S32, _TC,  3, _NC,  _V,  _NA,  _S)
+VMCS_FIELD(PF_ERR_MATCH,            0x4008, _S32, _TC,  4, _NC,  _V,  _NA,  _S)
+VMCS_FIELD(CR3_TARG_COUNT,          0x400A, _S32, _TC,  5, _NC,  _V,  _NA,  _S)
+VMCS_FIELD(VMEXIT_CTL,              0x400C, _S32, _TC,  6, _NC,  _V, _URW,  _S)
+VMCS_FIELD(VMEXIT_MSR_STORE_COUNT,  0x400E, _S32, _TC,  7, _NC,  _V,  _NA,  _S)
+VMCS_FIELD(VMEXIT_MSR_LOAD_COUNT,   0x4010, _S32, _TC,  8, _NC,  _V,  _NA,  _S)
+VMCS_FIELD(VMENTRY_CTL,             0x4012, _S32, _TC,  9, _NC,  _V, _URW,  _S)
+VMCS_FIELD(VMENTRY_MSR_LOAD_COUNT,  0x4014, _S32, _TC, 10, _NC,  _V,  _NA,  _S)
+VMCS_FIELD(VMENTRY_INTR_INFO,       0x4016, _S32, _TC, 11, _NC,  _V, _URW, _NS)
+VMCS_FIELD(VMENTRY_XCP_ERR,         0x4018, _S32, _TC, 12, _NC,  _V, _URW,  _S)
+VMCS_FIELD(VMENTRY_INSTR_LEN,       0x401A, _S32, _TC, 13, _NC,  _V, _URW,  _S)
+VMCS_FIELD(TPR_THRESHOLD,           0x401C, _S32, _TC, 14,  _C,  _V,  _NA,  _S)
+VMCS_FIELD(2ND_VMEXEC_CTL,          0x401E, _S32, _TC, 15,  _C,  _V, _URW,  _S)
+VMCS_FIELD(PAUSE_LOOP_GAP,          0x4020, _S32, _TC, 16, _NC,  _V,  _NA,  _S)
+VMCS_FIELD(PAUSE_LOOP_WINDOW,       0x4022, _S32, _TC, 17, _NC,  _V,  _NA,  _S)
 VMCS_UNUSED(                        0x4024, _S32, _TC, 18)
 VMCS_UNUSED(                        0x4026, _S32, _TC, 19)
 VMCS_UNUSED(                        0x4028, _S32, _TC, 20)
@@ -551,14 +552,14 @@ VMCS_SET_END(32)
 VMCS_SET_START(NAT)
 /* natural-width control fields. */
 VMCS_GROUP_START(NAT, CTL)
-VMCS_FIELD(CR0_GHMASK,              0x6000,  _SN, _TC,  0,  _C,  _V, _NA,  _S)
-VMCS_FIELD(CR4_GHMASK,              0x6002,  _SN, _TC,  1,  _C,  _V, _NA,  _S)
-VMCS_FIELD(CR0_SHADOW,              0x6004,  _SN, _TC,  2, _NC,  _V, _NA,  _S)
-VMCS_FIELD(CR4_SHADOW,              0x6006,  _SN, _TC,  3, _NC,  _V, _NA,  _S)
-VMCS_FIELD(CR3_TARGVAL0,            0x6008,  _SN, _TC,  4, _NC,  _V, _NA,  _S)
-VMCS_FIELD(CR3_TARGVAL1,            0x600A,  _SN, _TC,  5, _NC,  _V, _NA,  _S)
-VMCS_FIELD(CR3_TARGVAL2,            0x600C,  _SN, _TC,  6, _NC,  _V, _NA,  _S)
-VMCS_FIELD(CR3_TARGVAL3,            0x600E,  _SN, _TC,  7, _NC,  _V, _NA,  _S)
+VMCS_FIELD(CR0_GHMASK,              0x6000,  _SN, _TC,  0,  _C,  _V, _URW,  _S)
+VMCS_FIELD(CR4_GHMASK,              0x6002,  _SN, _TC,  1,  _C,  _V, _URW,  _S)
+VMCS_FIELD(CR0_SHADOW,              0x6004,  _SN, _TC,  2, _NC,  _V,  _NA,  _S)
+VMCS_FIELD(CR4_SHADOW,              0x6006,  _SN, _TC,  3, _NC,  _V,  _NA,  _S)
+VMCS_FIELD(CR3_TARGVAL0,            0x6008,  _SN, _TC,  4, _NC,  _V,  _NA,  _S)
+VMCS_FIELD(CR3_TARGVAL1,            0x600A,  _SN, _TC,  5, _NC,  _V,  _NA,  _S)
+VMCS_FIELD(CR3_TARGVAL2,            0x600C,  _SN, _TC,  6, _NC,  _V,  _NA,  _S)
+VMCS_FIELD(CR3_TARGVAL3,            0x600E,  _SN, _TC,  7, _NC,  _V,  _NA,  _S)
 VMCS_UNUSED(                        0x6010,  _SN, _TC,  8)
 VMCS_UNUSED(                        0x6012,  _SN, _TC,  9)
 VMCS_UNUSED(                        0x6014,  _SN, _TC,  10)

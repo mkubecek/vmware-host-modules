@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -68,8 +68,6 @@ static void LinuxDriverQueue(Device *device);
 static void LinuxDriverDequeue(Device *device);
 static Bool LinuxDriverCheckPadding(void);
 
-#define VMMON_UNKNOWN_SWAP_SIZE -1ULL
-
 struct VMXLinuxState linuxState;
 
 
@@ -95,20 +93,8 @@ long LinuxDriver_Ioctl(struct file *filp, u_int iocmd,
                        unsigned long ioarg);
 
 static int LinuxDriver_Close(struct inode *inode, struct file *filp);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
-static vm_fault_t LinuxDriverFault(struct vm_fault *fault);
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
-static int LinuxDriverFault(struct vm_fault *fault);
-#else
-static int LinuxDriverFault(struct vm_area_struct *vma, struct vm_fault *fault);
-#endif
-static int LinuxDriverMmap(struct file *filp, struct vm_area_struct *vma);
 
 static unsigned int LinuxDriverEstimateTSCkHz(void);
-
-static struct vm_operations_struct vmuser_mops = {
-        .fault  = LinuxDriverFault
-};
 
 static struct file_operations vmuser_fops;
 static struct timer_list tscTimer;
@@ -291,9 +277,11 @@ init_module(void)
       return -ENOEXEC;
    }
 
+   if (!Vmx86_CreateHVIOBitmap()) {
+      return -ENOMEM;
+   }
    linuxState.fastClockThread = NULL;
    linuxState.fastClockRate = 0;
-   linuxState.swapSize = VMMON_UNKNOWN_SWAP_SIZE;
 
    /*
     * Initialize the file_operations structure. Because this code is always
@@ -307,7 +295,6 @@ init_module(void)
    vmuser_fops.compat_ioctl = LinuxDriver_Ioctl;
    vmuser_fops.open = LinuxDriver_Open;
    vmuser_fops.release = LinuxDriver_Close;
-   vmuser_fops.mmap = LinuxDriverMmap;
 
 #ifdef VMX86_DEVEL
    devel_init_module();
@@ -328,7 +315,7 @@ init_module(void)
    if (retval) {
       Warning("Module %s: error registering with major=%d minor=%d\n",
               linuxState.deviceName, linuxState.major, linuxState.minor);
-
+      Vmx86_CleanupHVIOBitmap();
       return -ENOENT;
    }
    Log("Module %s: registered with major=%d minor=%d\n",
@@ -377,6 +364,7 @@ cleanup_module(void)
 
    del_timer_sync(&tscTimer);
 
+   Vmx86_CleanupHVIOBitmap();
    Task_Terminate();
    // Make sure fastClockThread is dead
    HostIF_FastClockLock(1);
@@ -414,7 +402,6 @@ LinuxDriver_Open(struct inode *inode, // IN
    }
    memset(device, 0, sizeof *device);
 
-   sema_init(&device->lock4Gb, 1);
    init_rwsem(&device->vmDriverRWSema);
 
    filp->private_data = device;
@@ -423,104 +410,6 @@ LinuxDriver_Open(struct inode *inode, // IN
    Vmx86_Open();
 
    return 0;
-}
-
-
-/*
- *-----------------------------------------------------------------------------
- *
- * LinuxDriverAllocPages --
- *
- *    Allocate physically contiguous block of memory with specified order.
- *    Pages in the allocated block are configured so that caller can pass
- *    independent pages to the VM.
- *
- * Results:
- *    Zero on success, non-zero (error code) on failure.
- *
- * Side effects:
- *    None
- *
- *-----------------------------------------------------------------------------
- */
-
-static int
-LinuxDriverAllocPages(unsigned int order,   // IN
-                      struct page **pg,     // OUT
-                      PageCnt size)         // IN
-{
-   struct page* page = alloc_pages(GFP_HIGHUSER, order);
-   if (page) {
-      /*
-       * Grab an extra reference on all pages except first one - first
-       * one was already refcounted by alloc_pages.
-       *
-       * Under normal situation all pages except first one in the block
-       * have refcount zero.  As we pass these pages to the VM, we must
-       * bump their count, otherwise VM will release these pages every
-       * time they would be unmapped from user's process, causing crash.
-       *
-       * Note that this depends on Linux VM internals.  It works on all
-       * kernels we care about.
-       */
-      PageCnt i, orderToNumPages = 1 << order;
-      for (i = 0; i < orderToNumPages; i++) {
-         if (i) {
-            /*
-             * Debug kernels assert that page->_count is not zero when
-             * calling get_page. We use init_page_count as a temporary
-             * workaround. PR 894174
-             */
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 16)
-            ASSERT(page_count(page) == 0);
-            init_page_count(page);
-#else
-            get_page(page);
-#endif
-         }
-         if (i >= size) {
-            put_page(page);
-         } else {
-            void *addr = kmap(page);
-            memset(addr, 0, PAGE_SIZE);
-            kunmap(page);
-            *pg++ = page;
-         }
-         page++;
-      }
-      return 0;
-   }
-   return -ENOMEM;
-}
-
-
-/*
- *-----------------------------------------------------------------------------
- *
- * LinuxDriverDestructor4Gb --
- *
- *    Deallocate all directly mappable memory.
- *
- * Results:
- *    None
- *
- * Side effects:
- *    None
- *
- *-----------------------------------------------------------------------------
- */
-
-static void
-LinuxDriverDestructor4Gb(Device *device) // IN
-{
-   PageCnt pg;
-   if (!device->size4Gb) {
-      return;
-   }
-   for (pg = 0; pg < device->size4Gb; pg++) {
-      put_page(device->pages4Gb[pg]);
-   }
-   device->size4Gb = 0;
 }
 
 
@@ -555,193 +444,11 @@ LinuxDriver_Close(struct inode *inode, // IN
 
    Vmx86_Close();
 
-   /*
-    * Destroy all low memory allocations.
-    * We are closing the struct file here, so clearly no other process
-    * uses it anymore, and we do not need to hold the semaphore.
-    */
-
-   LinuxDriverDestructor4Gb(device);
-
    kfree(device);
    filp->private_data = NULL;
 
    return 0;
 }
-
-
-/*
- *-----------------------------------------------------------------------------
- *
- * LinuxDriverFault --
- *
- *      Callback for returning allocated page for memory mapping
- *
- * Results:
- *    NoPage:
- *      Page or page address on success, NULL or 0 on failure.
- *    Fault:
- *      Error code; 0, minor page fault.
- *
- * Side effects:
- *      None.
- *
- *-----------------------------------------------------------------------------
- */
-
-static
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
-vm_fault_t
-#else
-int
-#endif
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
-LinuxDriverFault(struct vm_fault *fault)     //IN/OUT
-#else
-LinuxDriverFault(struct vm_area_struct *vma, //IN
-                 struct vm_fault *fault)     //IN/OUT
-#endif
-{
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
-   struct vm_area_struct *vma = fault->vma;
-#endif
-   Device *device = (Device *) vma->vm_file->private_data;
-   PageNum pg;
-   struct page* page;
-
-   pg = fault->pgoff;
-   pg = VMMON_MAP_OFFSET(pg);
-   if (pg >= device->size4Gb) {
-      return VM_FAULT_SIGBUS;
-   }
-   page = device->pages4Gb[pg];
-   get_page(page);
-   fault->page = page;
-   return 0;
-}
-
-
-/*
- *-----------------------------------------------------------------------------
- *
- * LinuxDriverAllocContig --
- *
- *      Create mapping for contiguous memory areas.
- *
- * Results:
- *
- *      0       on success,
- *      -EINVAL on invalid arguments or
- *      -ENOMEM on out of memory
- *
- * Side effects:
- *      Pages for mapping are allocated.
- *
- *-----------------------------------------------------------------------------
- */
-
-static int LinuxDriverAllocContig(Device *device,
-                                  struct vm_area_struct *vma,
-                                  unsigned long off,
-                                  PageCnt size)
-{
-   unsigned long vmaOrder = VMMON_MAP_ORDER(off);
-   PageCnt vmaAllocSize, i;
-
-   if (VMMON_MAP_RSVD(off)) {
-      /* Reserved bits set... */
-      return -EINVAL;
-   }
-   if (VMMON_MAP_OFFSET(off)) {
-      /* We do not need non-zero offsets... */
-      return -EINVAL;
-   }
-   if (size > VMMON_MAP_OFFSET_MASK + 1) {
-      /* Size is too big to fit to our window. */
-      return -ENOMEM;
-   }
-
-   /* 16 pages looks like a good limit... */
-   if (size > VMMON_MAX_LOWMEM_PAGES) {
-      return -ENOMEM;
-   }
-   /* Sorry. Only one mmap per one open. */
-   down(&device->lock4Gb);
-   if (device->size4Gb) {
-      up(&device->lock4Gb);
-      return -EINVAL;
-   }
-   vmaAllocSize = 1 << vmaOrder;
-   for (i = 0; i < size; i += vmaAllocSize) {
-      int err = LinuxDriverAllocPages(vmaOrder, device->pages4Gb + i, size - i);
-      if (err) {
-         while (i > 0) {
-            put_page(device->pages4Gb[--i]);
-         }
-         up(&device->lock4Gb);
-         return err;
-      }
-   }
-   device->size4Gb = size;
-   up(&device->lock4Gb);
-   vma->vm_ops = &vmuser_mops;
-   return 0;
-}
-
-
-/*
- *-----------------------------------------------------------------------------
- *
- * LinuxDriverMmap --
- *
- *      Create mapping for lowmem or locked memory.
- *
- * Results:
- *
- *      0       on success,
- *      -EINVAL on invalid arguments or
- *      -ENOMEM on out of memory
- *
- * Side effects:
- *      Pages for mapping are allocated.
- *
- *-----------------------------------------------------------------------------
- */
-
-static int
-LinuxDriverMmap(struct file *filp,
-                struct vm_area_struct *vma)
-{
-   Device *device = (Device *) filp->private_data;
-   PageCnt size;
-   int err;
-
-   /* Only shared mappings */
-   if (!(vma->vm_flags & VM_SHARED)) {
-      return -EINVAL;
-   }
-   if ((vma->vm_end | vma->vm_start) & (PAGE_SIZE - 1)) {
-      return -EINVAL;
-   }
-   size = (vma->vm_end - vma->vm_start) >> PAGE_SHIFT;
-   if (size < 1) {
-      return -EINVAL;
-   }
-   down_read(&device->vmDriverRWSema);
-   if (device->vm) {
-      err = -EINVAL;
-   } else {
-      err = LinuxDriverAllocContig(device, vma, vma->vm_pgoff, size);
-   }
-   up_read(&device->vmDriverRWSema);
-   if (err) {
-      return err;
-   }
-   /* Clear VM_IO, otherwise SuSE's kernels refuse to do get_user_pages */
-   vma->vm_flags &= ~VM_IO;
-   return 0;
-}
-
 
 typedef Bool (*SyncFunc)(void *data, unsigned cpu);
 
@@ -1328,25 +1035,12 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
    }
 
    case IOCTL_VMX86_APIC_INIT: {
-      VMAPICInfo info;
-      Bool setVMPtr;
-      Bool probe;
-
-      retval = HostIF_CopyFromUser(&info, ioarg, sizeof info);
-      if (retval != 0) {
-         break;
-      }
-      setVMPtr = ((info.flags & APIC_FLAG_DISABLE_NMI) != 0);
-      probe = ((info.flags & APIC_FLAG_PROBE) != 0);
-
       /*
-       * Kernel uses NMIs for deadlock detection - set APIC VMptr so that
-       * NMIs get disabled in the monitor.
+       * Kernel uses NMIs for deadlock detection - so we always have to find
+       * APIC so that NMIs get disabled in the monitor.
        */
-
-      setVMPtr = TRUE;
-
-      retval = HostIF_APICInit(vm, setVMPtr, probe) ? 0 : -ENODEV;
+      HostIF_APICInit(vm);
+      retval = 0;
       break;
    }
 
@@ -1596,17 +1290,6 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
        } else {
          retval = -EBUSY;
       }
-      break;
-   }
-
-   case IOCTL_VMX86_SET_HOST_SWAP_SIZE: {
-      uint64 swapSize;
-      retval = HostIF_CopyFromUser(&swapSize, ioarg, sizeof swapSize);
-      if (retval != 0) {
-         Warning("Could not copy swap size from user, status %ld\n", retval);
-         break;
-      }
-      linuxState.swapSize = swapSize;
       break;
    }
 

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -143,9 +143,12 @@ PtrToVA64(void const *ptr) // IN
  * does not break vmcore compatibility.
  *
  * See bora/doc/vmcore details.
+ *
+ * If you increment VMMON_VERSION, you must also increment
+ * the NT specific VMX86_DRIVER_VERSION.
  */
 
-#define VMMON_VERSION           (385 << 16 | 0)
+#define VMMON_VERSION           (393 << 16 | 0)
 #define VMMON_VERSION_MAJOR(v)  ((uint32) (v) >> 16)
 #define VMMON_VERSION_MINOR(v)  ((uint16) (v))
 
@@ -253,18 +256,10 @@ enum IOCTLCmd {
 
 #if defined __linux__
    IOCTLCMD(SET_UID),		// VMX86_DEVEL only
-#endif
-
-#if defined __linux__ || defined __APPLE__
    IOCTLCMD(GET_ALL_CPUID),
 #endif
 
-#if defined _WIN32 || defined __APPLE__
-   IOCTLCMD(ALLOC_CONTIG_PAGES),
-#endif
-
 #if defined _WIN32
-   IOCTLCMD(FREE_CONTIG_PAGES),
    IOCTLCMD(HARD_LIMIT_MONITOR_STATUS), // used by vmauthd on Windows
    IOCTLCMD(CHANGE_HARD_LIMIT),         // used by vmauthd on Windows
    IOCTLCMD(READ_DISASM_PROC_BINARY),
@@ -272,6 +267,7 @@ enum IOCTLCmd {
    IOCTLCMD(SET_MEMORY_PARAMS),
    IOCTLCMD(REMEMBER_KHZ_ESTIMATE),
    IOCTLCMD(REMAP_SCATTER_LIST),
+   IOCTLCMD(REMAP_SCATTER_LIST_RO),     // map the list as read-only
    IOCTLCMD(UNMAP_SCATTER_LIST),
 #endif
 
@@ -279,10 +275,6 @@ enum IOCTLCmd {
    IOCTLCMD(GET_NUM_RESPONDING_CPUS),
    IOCTLCMD(INIT_DRIVER),
    IOCTLCMD(BLUEPILL),
-#endif
-
-#if defined __linux__
-   IOCTLCMD(SET_HOST_SWAP_SIZE),
 #endif
 
    IOCTLCMD(GET_UNAVAIL_PERF_CTRS),
@@ -336,8 +328,6 @@ enum IOCTLCmd {
 #define IOCTL_VMX86_UPDATE_MEM_INFO     VMIOCTL_BUFFERED(UPDATE_MEM_INFO)
 #define IOCTL_VMX86_HARD_LIMIT_MONITOR_STATUS   VMIOCTL_BUFFERED(HARD_LIMIT_MONITOR_STATUS)
 #define IOCTL_VMX86_CHANGE_HARD_LIMIT   VMIOCTL_BUFFERED(CHANGE_HARD_LIMIT)
-#define IOCTL_VMX86_ALLOC_CONTIG_PAGES  VMIOCTL_BUFFERED(ALLOC_CONTIG_PAGES)
-#define IOCTL_VMX86_FREE_CONTIG_PAGES   VMIOCTL_BUFFERED(FREE_CONTIG_PAGES)
 
 #define IOCTL_VMX86_GET_TOTAL_MEM_USAGE	VMIOCTL_BUFFERED(GET_TOTAL_MEM_USAGE)
 #define IOCTL_VMX86_GET_KHZ_ESTIMATE    VMIOCTL_BUFFERED(GET_KHZ_ESTIMATE)
@@ -367,20 +357,14 @@ enum IOCTLCmd {
 #define IOCTL_VMX86_GET_PSEUDO_TSC           VMIOCTL_NEITHER(GET_PSEUDO_TSC)
 #define IOCTL_VMX86_GET_UNAVAIL_PERF_CTRS    VMIOCTL_NEITHER(GET_UNAVAIL_PERF_CTRS)
 #define IOCTL_VMX86_GET_MONITOR_CONTEXT      VMIOCTL_BUFFERED(GET_MONITOR_CONTEXT)
-#define IOCTL_VMX86_REMAP_SCATTER_LIST VMIOCTL_BUFFERED(REMAP_SCATTER_LIST)
-#define IOCTL_VMX86_UNMAP_SCATTER_LIST VMIOCTL_BUFFERED(UNMAP_SCATTER_LIST)
+#define IOCTL_VMX86_REMAP_SCATTER_LIST    VMIOCTL_BUFFERED(REMAP_SCATTER_LIST)
+#define IOCTL_VMX86_REMAP_SCATTER_LIST_RO VMIOCTL_BUFFERED(REMAP_SCATTER_LIST_RO)
+#define IOCTL_VMX86_UNMAP_SCATTER_LIST    VMIOCTL_BUFFERED(UNMAP_SCATTER_LIST)
 #endif
 
 
 #define INIT_BLOCK_MAGIC     (0x1789 + 14)
 
-/*
- * Flags sent into APICBASE ioctl
- */
-
-#define APIC_FLAG_DISABLE_NMI       0x00000001
-#define APIC_FLAG_PROBE             0x00000002
-#define APIC_FLAG_FORCE_ENABLE      0x00000004
 
 typedef
 #include "vmware_pack_begin.h"
@@ -408,10 +392,6 @@ union {
 }
 #include "vmware_pack_end.h"
 VcpuPageRoot;
-
-typedef struct VMAPICInfo {
-   uint32 flags;
-} VMAPICInfo;
 
 #define VMX86_DRIVER_VCPUID_OFFSET 1000
 
@@ -614,39 +594,7 @@ typedef union {
    Context64 context; // OUT
 } VMMonContext;
 
-#if defined __linux__
-
-/*
- * Linux uses mmap(2) to allocate contiguous locked pages, and uses these
- * macros to marshall real arguments to mmap's made-up 'offset' argument.
- */
-
-#define VMMON_MAP_OFFSET_SHIFT  0
-#define VMMON_MAP_OFFSET_MASK   0x00000FFF
-#define VMMON_MAP_ORDER_SHIFT   12
-#define VMMON_MAP_ORDER_MASK    0xF
-#define VMMON_MAP_RSVD_SHIFT    16
-
-#define VMMON_MAP_RSVD(base)    \
-                ((base) >> VMMON_MAP_RSVD_SHIFT)
-#define VMMON_MAP_ORDER(base)   \
-                (((base) >> VMMON_MAP_ORDER_SHIFT) & VMMON_MAP_ORDER_MASK)
-#define VMMON_MAP_OFFSET(base)  \
-                (((base) >> VMMON_MAP_OFFSET_SHIFT) & VMMON_MAP_OFFSET_MASK)
-
-#define VMMON_MAP_BASE(order)   ((order) << VMMON_MAP_ORDER_SHIFT)
-
-#elif defined _WIN32
-/*
- * Windows uses an ioctl to allocate contiguous locked pages.
- */
-
-typedef struct VMAllocContiguousMem {
-   VA64   mpnList;  // IN: User VA of an array of 64-bit MPNs.
-   uint32 mpnCount; // IN
-   uint32 order;    // IN
-} VMAllocContiguousMem;
-#elif defined __APPLE__
+#if defined __APPLE__
 #   include "iocontrolsMacos.h"
 #endif
 

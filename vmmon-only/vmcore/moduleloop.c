@@ -316,13 +316,34 @@ skipTaskSwitch:;
          crosspage->args[1] = vm->numPTPPages;
       } break;
 
+      case MODULECALL_GET_HV_IO_BITMAP: {
+         crosspage->args[0] = hvIOBitmap == NULL ? INVALID_MPN :
+                                                   hvIOBitmap->mpn;
+      } break;
+
+      case MODULECALL_ALLOC_CONTIG_PAGES: {
+         PageCnt pages = crosspage->args[0];
+         HostIFContigMemMap *alloc;
+
+         HostIF_VMLock(vm, 47);
+         alloc = HostIF_AllocContigPages(vm, pages);
+         if (alloc != NULL) {
+            alloc->next = vm->contigMappings;
+            vm->contigMappings = alloc;
+            crosspage->args[1] = alloc->mpn;
+         } else {
+            crosspage->args[1] = INVALID_MPN;
+         }
+         HostIF_VMUnlock(vm, 47);
+      } break;
+
       default:
          Warning("ModuleCall %d not supported\n", crosspage->moduleCallType);
       }
       ASSERT(retval == (uint64)((uint32)retval));
       crosspage->retval = (uint32)retval;
 #if defined(__linux__)
-      cond_resched(); // Other kernels are preemptable
+      cond_resched(); // Other kernels are preemptible
 #endif
    }
 bailOut:

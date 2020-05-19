@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014,2016-2017,2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014,2016-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -155,7 +155,6 @@ _GET_LDT(Selector * const result)
    } while (0)
 
 
-/* Checked against the Intel manual and GCC --thutt */
 #define _BUILD_SET_R(func, reg)        \
    static INLINE void                  \
    func(uintptr_t r)                   \
@@ -166,24 +165,20 @@ _GET_LDT(Selector * const result)
               : "memory");             \
    }
 
-/* Not yet checked against the Intel manual and GCC --slava
- *
- * 'volatile' because CRs and DRs can change without the compiler
- * knowing it (when there is a page fault, when a breakpoint occurs,
- * and moreover it seems there is no way to teach gcc that smsw
- * clobbers cr0 for example).
- *
- * The parameter is a 'uintptr_t *' so that the size of the actual
- * parameter must exactly match the size of the hardware register.
- * This prevents the use of 32-bit variables when building 64-bit
- * code.
+/*
+ * The inline asm is marked 'volatile' because CRs and DRs can change
+ * without the compiler knowing it (when there is a page fault, when a
+ * breakpoint occurs, and moreover it seems there is no way to teach
+ * gcc that smsw clobbers cr0 for example).
  */
 #define _BUILD_GET_R(func, reg)                         \
-   static INLINE void                                   \
-   func(uintptr_t *result)                              \
+   static INLINE uintptr_t                              \
+   func(void)                                           \
    {                                                    \
+      uintptr_t result;                                 \
       __asm__ __volatile__("mov %%" #reg ", %0"         \
-                           : "=r" (*result));           \
+                           : "=r" (result));            \
+      return result;                                    \
    }
 
 _BUILD_SET_R(_SET_CR0, cr0)
@@ -374,10 +369,10 @@ CLTS(void)
    }
 
 #define _BUILD_GET_DR(func, reg)                      \
-   static INLINE void                                 \
-   func(uintptr_t *result)                            \
+   static INLINE uintptr_t                            \
+   func(void)                                         \
    {                                                  \
-      *result = __readdr(reg);                        \
+      return __readdr(reg);                           \
    }
 
 #define _BUILD_SET_CR(func, reg)                      \
@@ -388,10 +383,10 @@ CLTS(void)
    }
 
 #define _BUILD_GET_CR(func, reg)                      \
-   static INLINE void                                 \
-   func(uintptr_t *result)                            \
+   static INLINE uintptr_t                            \
+   func(void)                                         \
    {                                                  \
-      *result = __readcr##reg();                      \
+      return __readcr##reg();                         \
    }
 
 _BUILD_SET_DR(_SET_DR0, 0)
@@ -422,31 +417,13 @@ _BUILD_GET_CR(_GET_CR8, 8);
 static INLINE void
 _Set_GDT(_GETSET_DTR_TYPE *dtr)
 {
-#ifdef VM_X86_64
    _lgdt(dtr);
-#else
-   /*
-    * timetools 32-bit targets use an old version of MSVC that doesn't support
-    * the _lgdt intrinsic. Luckily, 32-bit still supports inline asm.
-    */
-   __asm mov eax, dtr
-   __asm lgdt [eax]
-#endif
 }
 
 static INLINE void
 _Get_GDT(_GETSET_DTR_TYPE *dtr)
 {
-#ifdef VM_X86_64
    _sgdt(dtr);
-#else
-   /*
-    * timetools 32-bit targets use an old version of MSVC that doesn't support
-    * the _sgdt intrinsic. Luckily, 32-bit still supports inline asm.
-    */
-   __asm mov eax, dtr
-   __asm sgdt [eax]
-#endif
 }
 
 static INLINE void
@@ -471,141 +448,6 @@ _Get_IDT(_GETSET_DTR_TYPE *dtr)
 
 #define RESTORE_FLAGS(x) __writeeflags(x)
 
-
-#ifdef VM_X86_32
-
-#define SET_TR(_tr)      _Set_TR(_tr)
-#define SET_LDT(_tr)     _Set_LDT(_tr)
-
-#define GET_TR(_tr)      do { _tr = _Get_TR();  } while (0)
-#define GET_LDT(_tr)     do { _tr = _Get_LDT(); } while (0)
-
-#define SET_CR2(_reg)    __asm mov eax, _reg __asm mov cr2, eax
-#define CLTS()           __asm clts
-
-#define FNCLEX()         __asm fnclex
-
-#define TLB_INVALIDATE_PAGE(_addr) {  \
-   void *_a = (_addr); \
-   __asm mov eax, _a __asm invlpg [eax] \
-}
-
-#define RAISE_INTERRUPT(_x)  {__asm int _x }
-#define RETURN_FROM_INT()   {__asm iretd }
-
-
-static INLINE void
-SET_DS(Selector val)
-{
-   __asm mov ax, val
-   __asm mov ds, ax
-}
-
-static INLINE void
-SET_ES(Selector val)
-{
-   __asm mov ax, val
-   __asm mov es, ax
-}
-
-static INLINE void
-SET_FS(Selector val)
-{
-   __asm mov ax, val
-   __asm mov fs, ax
-}
-
-static INLINE void
-SET_GS(Selector val)
-{
-   __asm mov ax, val
-   __asm mov gs, ax
-}
-
-static INLINE void
-SET_SS(Selector val)
-{
-   __asm mov ax, val
-   __asm mov ss, ax
-}
-
-static INLINE Selector
-GET_FS(void)
-{
-   Selector _v;
-   __asm mov _v,fs
-   return _v;
-}
-
-static INLINE Selector
-GET_GS(void)
-{
-   Selector _v;
-   __asm mov _v,gs
-   return _v;
-}
-
-static INLINE Selector
-GET_DS(void)
-{
-   Selector _v;
-   __asm mov _v,ds
-   return _v;
-}
-
-static INLINE Selector
-GET_ES(void)
-{
-   Selector _v;
-   __asm mov _v,es
-   return _v;
-}
-
-static INLINE Selector
-GET_SS(void)
-{
-   Selector _v;
-   __asm mov _v,ss
-   return _v;
-}
-
-static INLINE Selector
-GET_CS(void)
-{
-   Selector _v;
-   __asm mov _v,cs
-   return _v;
-}
-
-static INLINE void
-_Set_LDT(Selector val)
-{
-   __asm lldt val
-}
-
-static INLINE void
-_Set_TR(Selector val)
-{
-   __asm ltr val
-}
-
-static INLINE Selector
-_Get_LDT(void)
-{
-   Selector sel;
-   __asm sldt sel
-   return sel;
-}
-
-static INLINE Selector
-_Get_TR(void)
-{
-   Selector sel;
-   __asm str sel
-   return sel;
-}
-
-#endif /* !VM_X86_32 */
 #endif /* !__GNUC__ && !_MSC_VER */
 
 
@@ -618,7 +460,7 @@ _Get_TR(void)
 
 #define GET_CR_DR(regType, regNum, var) \
    do {                                 \
-      _GET_##regType##regNum(&(var));   \
+      var = _GET_##regType##regNum();   \
    } while (0)
 
 #define SET_DR0(expr) SET_CR_DR(DR, 0, expr)
@@ -648,6 +490,11 @@ _Get_TR(void)
 #define SET_CR4(expr) SET_CR_DR(CR, 4, expr)
 #define SET_CR8(expr) SET_CR_DR(CR, 8, expr)
 
+/*
+ * When the ULM macro-defines INTERRUPTS_ENABLED, attempting to define
+ * it as a function produces hard-to-diagnose compile-time errors.
+ */
+#if !defined(ULM) && !defined(INTERRUPTS_ENABLED)
 static INLINE Bool
 INTERRUPTS_ENABLED(void)
 {
@@ -655,6 +502,7 @@ INTERRUPTS_ENABLED(void)
    SAVE_FLAGS(flags);
    return ((flags & EFLAGS_IF) != 0);
 }
+#endif
 
 /*
  * [GS]ET_[GI]DT() are defined as macros wrapping a function
@@ -679,7 +527,7 @@ INTERRUPTS_ENABLED(void)
 #endif
 
 
-#if defined (__GNUC__) || (defined (_MSC_VER) && defined (VM_X86_32))
+#if defined (__GNUC__)
 static INLINE unsigned
 CURRENT_CPL(void)
 {

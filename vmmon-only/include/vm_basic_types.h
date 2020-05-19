@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -101,6 +101,7 @@
 
 #pragma warning (3 :4505) // unreferenced local function
 #pragma warning (disable :4018) // signed/unsigned mismatch
+#pragma warning (suppress:4619) // suppress warning next line (C4761 was removed in vs2019u4)
 #pragma warning (disable :4761) // integral size mismatch in argument; conversion supplied
 #pragma warning (disable :4305) // truncation from 'const int' to 'short'
 #pragma warning (disable :4244) // conversion from 'unsigned short' to 'unsigned char'
@@ -698,11 +699,11 @@ typedef void * UserVA;
 #endif
 
 /*
- * Similarly, we require a compiler that is at least vc80 (vs2005).
+ * Similarly, we require a compiler that is at least vs2012.
  * Enforce this here.
  */
-#if defined _MSC_VER && _MSC_VER < 1400
-#error "cl.exe version is too old, need vc80 or better"
+#if defined _MSC_VER && _MSC_VER < 1700
+#error "cl.exe version is too old, need vs2012 or better"
 #endif
 
 
@@ -864,12 +865,10 @@ typedef void * UserVA;
 #endif
 
 #ifndef UNUSED_TYPE
-// XXX _Pragma would better but doesn't always work right now.
 #  define UNUSED_TYPE(_parm) UNUSED_PARAM(_parm)
 #endif
 
 #ifndef UNUSED_VARIABLE
-// XXX is there a better way?
 #  define UNUSED_VARIABLE(_var) (void)_var
 #endif
 
@@ -884,26 +883,18 @@ typedef void * UserVA;
 
 /*
  * ALIGNED specifies minimum alignment in "n" bytes.
+ *
+ * NOTE: __declspec(align) has limited syntax; it must essentially be
+ *       an integer literal.  Expressions, such as sizeof(), do not
+ *       work.
  */
 
 #ifdef __GNUC__
 #define ALIGNED(n) __attribute__((__aligned__(n)))
+#elif defined(_MSC_VER)
+#define ALIGNED(n) __declspec(align(n))
 #else
 #define ALIGNED(n)
-#endif
-
-
-/*
- * Encapsulate the syntactic differences between gcc and msvc alignment control.
- * BOUNDARY must match in the prefix and suffix.
- */
-
-#ifdef _WIN32
-#define ALIGN_PREFIX(BOUNDRY) __declspec(align(BOUNDRY))
-#define ALIGN_SUFFIX(BOUNDRY)
-#else
-#define ALIGN_PREFIX(BOUNDRY)
-#define ALIGN_SUFFIX(BOUNDRY) __attribute__((__aligned__(BOUNDRY)))
 #endif
 
 
