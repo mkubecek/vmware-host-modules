@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -57,6 +57,7 @@
    MC(RELEASE_ANON_PAGES)                                                     \
    MC(LOOKUP_MPN)                                                             \
    MC(COSCHED)                                                                \
+   MC(ALLOC_CONTIG_PAGES)                                                     \
    MC(ALLOC_VMX_PAGE)                                                         \
    MC(ALLOC_TMP_GDT)                                                          \
    MC(PIN_MPN)                                                                \
@@ -69,7 +70,8 @@
    MC(BOOTSTRAP_CLEANUP)                                                      \
    MC(GET_SHARED_AREA)                                                        \
    MC(GET_STAT_VARS)                                                          \
-   MC(GET_NUM_PTP_PAGES)
+   MC(GET_NUM_PTP_PAGES)                                                      \
+   MC(GET_HV_IO_BITMAP)                                                       \
 
 /*
  *----------------------------------------------------------------------
@@ -393,7 +395,6 @@ struct VMCrossPageData {
    uint8         _pad7[4];
    uint64        wsUD2;                       // IP of ud2 instr or 0 if unset.
    uint64        specCtrl; /* host MSR_SPEC_CTRL value before world switch. */
-   uint8         _pad8[8];
 }
 #include "vmware_pack_end.h"
 VMCrossPageData;
@@ -450,7 +451,7 @@ struct VMCrossPage {
 #include "vmware_pack_end.h"
 VMCrossPage;
 
-#define CROSSPAGE_VERSION_BASE 0xc0c /* increment by 1 */
+#define CROSSPAGE_VERSION_BASE 0xc0e /* increment by 1 */
 #define CROSSPAGE_VERSION    ((CROSSPAGE_VERSION_BASE << 1) + WS_INTR_STRESS)
 
 #if !defined(VMX86_SERVER) && defined(VMM)

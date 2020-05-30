@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2006,2009-2011,2013-2015 VMware, Inc. All rights reserved.
+ * Copyright (C) 2006,2009-2011,2013-2015,2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -66,8 +66,7 @@
    SWMSR(MSR_CSTAR)         \
    SWMSR(MSR_SFMASK)        \
    SWMSR(MSR_TSC_AUX)       \
-   SWMSR(MSR_BD_TSC_RATIO)  \
-   SWMSR(MSR_BNDCFGS)
+   SWMSR(MSR_BD_TSC_RATIO)
 
 /*
  *      Data structures for dealing with the context-switched MSRs that need
@@ -94,7 +93,6 @@ typedef struct SwitchedMSRValues {
 typedef struct SwitchedMSRState {
    SwitchedMSRValues smv;
    uint8             flags[NUM_SWITCHED_MSRS];
-   uint32            _pad;
 } SwitchedMSRState;
 
 #endif

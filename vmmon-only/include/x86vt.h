@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2004-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 2004-2019 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -173,8 +173,11 @@ enum {
 /*
  * Sizes of referenced fields
  */
-#define VT_VMCS_IO_BITMAP_SIZE    (2 * PAGE_SIZE)
-#define VT_VMCS_MSR_BITMAP_SIZE   (1 * PAGE_SIZE)
+#define VT_VMCS_IO_BITMAP_PAGES   (2)
+#define VT_VMCS_IO_BITMAP_SIZE    PAGES_2_BYTES(VT_VMCS_IO_BITMAP_PAGES)
+#define VT_VMCS_MSR_BITMAP_PAGES  (1)
+#define VT_VMCS_MSR_BITMAP_SIZE   PAGES_2_BYTES(VT_VMCS_MSR_BITMAP_PAGES)
+
 
 /*
  * Execution control bit capabilities come in pairs: a "required" bit in
@@ -552,7 +555,7 @@ enum {
 #define VT_VMCS_PENDDBG_MBZ        0xfffeaff0
 
 /* Exception error must-be-zero bits for VMEntry */
-#define VT_XCP_ERR_MBZ             0xffff8000
+#define VT_XCP_ERR_MBZ             0xffff0000
 
 
 /* Exit reasons. */

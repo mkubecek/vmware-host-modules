@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2000-2015,2017-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 2000-2015,2017-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -46,6 +46,7 @@
 #define VMMEM_ANON_IOABLE_PAGE    VMMEM_FLAG_BIT(4)
 #define VMMEM_ANON_ALL_FLAGS      MASK(5)
 
+#define VMMEM_GUEST_NO_FLAGS      0
 #define VMMEM_GUEST_WRITEABLE     VMMEM_FLAG_BIT(0)
 #define VMMEM_GUEST_BREAKCOW      VMMEM_FLAG_BIT(1)
 #define VMMEM_GUEST_2M_PAGE       VMMEM_FLAG_BIT(2)

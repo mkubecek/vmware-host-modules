@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -120,6 +120,9 @@ MSRQuery;
 #define MSR_ARCH_CAPABILITIES_NOL1F_VMENTRY       (1ULL << 3)
 #define MSR_ARCH_CAPABILITIES_SSB_NO              (1ULL << 4)
 #define MSR_ARCH_CAPABILITIES_MDS_NO              (1ULL << 5)
+#define MSR_ARCH_CAPABILITIES_IF_PSCHANGE_MC_NO   (1ULL << 6)
+#define MSR_ARCH_CAPABILITIES_TSX_CTRL            (1ULL << 7)
+#define MSR_ARCH_CAPABILITIES_TAA_NO              (1ULL << 8)
 
 #define MSR_FLUSH_CMD                        0x10b
 #define MSR_FLUSH_CMD_FLUSH_L1D                   (1ULL << 0)
@@ -130,6 +133,9 @@ MSRQuery;
 
 #define MSR_PRED_CMD_IBPB                         (1UL << 0)
 
+#define MSR_TSX_CTRL                         0x122
+#define MSR_TSX_CTRL_RTM_DISABLE                  (1ULL << 0)
+#define MSR_TSX_CTRL_CPUID_CLEAR                  (1ULL << 1)
 
 #define MSR_MISC_FEATURES_ENABLES            0x140
 
@@ -147,14 +153,6 @@ MSRQuery;
 #define MSR_PERF_CAPABILITIES_PERF_METRICS_AVAILABLE (1u << 15)
 
 #define IA32_MSR_PEBS_ENABLE                      0x3f1
-
-typedef enum {
-   SL_PMC_FLAGS_NONE             = 0x00, /* No flags.                      */
-   SL_PMC_FLAGS_LBR_VA32         = 0x01, /* LBR format: 32-bit VA.         */
-   SL_PMC_FLAGS_LBR_LA64         = 0x02, /* LBR format: 64-bit LA.         */
-   SL_PMC_FLAGS_LBR_VA64         = 0x04, /* LBR format: 64-bit VA.         */
-   SL_PMC_FLAGS_LBR_PACKED_VA32  = 0x08, /* LBR format: 2x32-bit VAs.      */
-} StateLoggerPMCFlags;
 
 #define MSR_MTRR_BASE0        0x00000200
 #define MSR_MTRR_MASK0        0x00000201
@@ -452,7 +450,6 @@ typedef enum {
 
 /* MSR_EFER bits. */
 #define MSR_EFER_SCE         0x0000000000000001ULL  /* Sys call ext'ns:  r/w */
-#define MSR_EFER_RAZ         0x00000000000000feULL  /* Read as zero          */
 #define MSR_EFER_LME         0x0000000000000100ULL  /* Long mode enable: r/w */
 #define MSR_EFER_LMA         0x0000000000000400ULL  /* Long mode active: r/o */
 #define MSR_EFER_NXE         0x0000000000000800ULL  /* No-exec enable:   r/w */
@@ -460,7 +457,11 @@ typedef enum {
 #define MSR_EFER_LMSLE       0x0000000000002000ULL  /* LM seg lim enable:r/w */
 #define MSR_EFER_FFXSR       0x0000000000004000ULL  /* Fast FXSAVE:      r/w */
 #define MSR_EFER_TCE         0x0000000000008000ULL  /* Trans. cache ext. r/w */
-#define MSR_EFER_MBZ         0xffffffffffff0200ULL  /* Must be zero (resrvd) */
+/* Vendor specific EFER bits */
+#define MSR_EFER_INTEL_MBZ   0xffffffffffff02feULL  /* Must be zero (resrvd) */
+#define MSR_EFER_INTEL_RAZ   0x0000000000000000ULL  /* Read as zero          */
+#define MSR_EFER_AMD_MBZ     0xffffffffffff0200ULL  /* Must be zero (resrvd) */
+#define MSR_EFER_AMD_RAZ     0x00000000000000feULL  /* Read as zero          */
 
 #define MSR_AMD_PATCH_LOADER 0xc0010020
 
@@ -478,6 +479,8 @@ typedef enum {
 #endif
 #define MSR_K8_SYSCFG_MTRRTOM2EN         (1ULL<<21)
 #define MSR_K8_SYSCFG_TOM2FORCEMEMTYPEWB (1ULL<<22)
+#define MSR_K8_SYSCFG_SMEE               (1ULL<<23)
+
 #define MSR_K8_TOPMEM2       0xc001001d
 
 /* AMD "Greyhound" MSRs */
