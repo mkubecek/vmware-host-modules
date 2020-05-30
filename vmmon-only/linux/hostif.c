@@ -71,6 +71,7 @@
 #include "apic.h"
 #include "memDefaults.h"
 #include "vcpuid.h"
+#include "x86svm.h"
 
 #include "pgtbl.h"
 #include "versioned_atomic.h"
@@ -179,8 +180,22 @@ static struct {
 
 static void UnlockEntry(void *clientData, MemTrackEntry *entryPtr);
 
-uint8 monitorIPIVector;
-uint8 hvIPIVector;
+/*
+ * SPURIOUS_APIC_VECTOR is not defined on kernels built without APIC
+ * support.
+ */
+#ifndef SPURIOUS_APIC_VECTOR
+#define SPURIOUS_APIC_VECTOR 0
+#endif
+static const uint8 monitorIPIVector = SPURIOUS_APIC_VECTOR;
+/*
+ * POSTED_INTR_VECTOR is defined on kernels after 3.10 when built with
+ * KVM support.
+ */
+#ifndef POSTED_INTR_VECTOR
+#define POSTED_INTR_VECTOR 0
+#endif
+static const uint8 hvIPIVector = POSTED_INTR_VECTOR;
 
 /*
  *-----------------------------------------------------------------------------
@@ -923,7 +938,6 @@ HostIF_AllocLowPage(VMDriver *vm) //  IN: VM instance pointer
 
       mpn = (MPN)page_to_pfn(pg);
 
-      HostIF_VMLock(vm, 40);
       vmh = vm->vmhost;
       if (vmh->AWEPages != NULL) {
          if (PhysTrack_Test(vmh->AWEPages, mpn)) {
@@ -934,7 +948,6 @@ HostIF_AllocLowPage(VMDriver *vm) //  IN: VM instance pointer
          __free_page(pg);
          mpn = INVALID_MPN;
       }
-      HostIF_VMUnlock(vm, 40);
    }
    return mpn;
 }
@@ -962,8 +975,7 @@ HostIFFreeVMHost(VMHost *vmhost) // IN:
 {
    ASSERT(vmhost->lockedPages == NULL &&
           vmhost->AWEPages    == NULL &&
-          vmhost->crosspagePagesCount == 0 &&
-          !vmhost->hostAPICIsMapped);
+          vmhost->crosspagePagesCount == 0);
    Vmx86_Free(vmhost->crosspagePages);
    Vmx86_Free(vmhost->vcpuSemaTask);
    vmhost->crosspagePages = NULL;
@@ -1003,6 +1015,108 @@ HostIFAllocVMHost(uint32 numVCPUs) // IN:
    }
    HostIFFreeVMHost(vmhost);
    return NULL;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * HostIF_FreeContigPages --
+ *
+ *      Free an allocated memory block returned from an earlier call to
+ *      HostIF_AllocContigPages.
+ *
+ * Results:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+void
+HostIF_FreeContigPages(VMDriver *vm,             // IN: Driver state
+                       HostIFContigMemMap *map)  // IN: Object to free
+{
+   unsigned order = 0;
+
+   /*
+    * The only users of this API are the I/O and MSR bitmap allocations.
+    * Of those, the largest is the SVM I/O bitmap at 3 pages.
+    */
+   ASSERT(map->pages <= SVM_VMCB_IO_BITMAP_PAGES);
+   if (vm != NULL) {
+      PageCnt i;
+
+      for (i = 0; i < map->pages; i++) {
+         PhysTrack_Remove(vm->vmhost->AWEPages, map->mpn + i);
+      }
+   }
+   while (1u << order < map->pages) {
+      order++;
+   }
+   free_pages(PtrToVA64(map->addr), order);
+   HostIF_FreeKernelMem(map);
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * HostIF_AllocContigPages --
+ *
+ *      Allocate a range of physically contiguous memory.  Also add the pages
+ *      to the VmAnon PhysTracker if 'vm' is non-NULL.  This allows the pages
+ *      to be written to a coredump when needed.
+ *
+ * Results:
+ *      A HostIFContigMemMap object containing the start MPN of the allocated
+ *      range, or NULL on failure.
+ *
+ *----------------------------------------------------------------------
+ */
+
+HostIFContigMemMap *
+HostIF_AllocContigPages(VMDriver *vm,      // IN/OUT: driver state
+                        PageCnt numPages)  // IN: Number of pages
+{
+   HostIFContigMemMap *map;
+   unsigned order = 0;
+   /*
+    * The only users of this API are the I/O and MSR bitmap allocations.
+    * Of those, the largest is the SVM I/O bitmap at 3 pages.
+    */
+   if (numPages == 0 || numPages > SVM_VMCB_IO_BITMAP_PAGES) {
+      return NULL;
+   }
+   map = HostIF_AllocKernelMem(sizeof *map, FALSE);
+   if (map == NULL) {
+      return NULL;
+   }
+   memset(map, 0, sizeof *map);
+   while (1u << order < numPages) {
+      order++;
+   }
+   map->addr = VA64ToPtr(__get_free_pages(GFP_HIGHUSER, order));
+   if (map->addr == NULL) {
+      HostIF_FreeKernelMem(map);
+      return NULL;
+   }
+   map->pages = numPages;
+   map->mpn = MA_2_MPN(virt_to_phys(map->addr));
+
+   /*
+    * Add the allocated pages to the VMM anonymous memory phystracker.
+    * This is to ensure the pages will be written out during a coredump.
+    */
+   if (vm != NULL) {
+      PageCnt i;
+
+      ASSERT(HostIF_VMLockIsHeld(vm));
+      for (i = 0; i < map->pages; i++) {
+         PhysTrack_Add(vm->vmhost->AWEPages, map->mpn + i);
+      }
+   }
+
+   return map;
 }
 
 
@@ -1419,12 +1533,6 @@ HostIF_FreeAllResources(VMDriver *vm) // IN
          UnmapCrossPage(p, vm->crosspage[cnt]);
       }
       vm->vmhost->crosspagePagesCount = 0;
-      if (vm->vmhost->hostAPICIsMapped) {
-         ASSERT(vm->hostAPIC.base != NULL);
-         iounmap((void*)vm->hostAPIC.base);
-         vm->hostAPIC.base = NULL;
-         vm->vmhost->hostAPICIsMapped = FALSE;
-      }
       HostIFFreeVMHost(vm->vmhost);
       vm->vmhost = NULL;
    }
@@ -1623,7 +1731,6 @@ HostIF_EstimateLockedPageLimit(const VMDriver* vm,                // IN
                                     : BYTES_2_PAGES(vm->memInfo.hugePageBytes);
    PageCnt lockedPages = hugePages + reservedPages;
    PageCnt anonPages;
-   PageCnt swapPages = BYTES_2_PAGES(linuxState.swapSize);
 
    /* global_page_state is global_zone_page_state in 4.14. */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
@@ -1650,9 +1757,6 @@ HostIF_EstimateLockedPageLimit(const VMDriver* vm,                // IN
    anonPages = global_page_state(NR_ANON_PAGES);
 #endif
 
-   if (anonPages > swapPages) {
-      lockedPages += anonPages - swapPages;
-   }
    forHost = lockedPages + LOCKED_PAGE_SLACK;
    if (forHost > totalPhysicalPages) {
       forHost = totalPhysicalPages;
@@ -2297,85 +2401,6 @@ isVAReadable(VA r)  // IN:
 
    return ret == 0;
 }
-
-
-/*
- *----------------------------------------------------------------------
- *
- * SetVMAPICAddr --
- *
- *      Maps the host cpu's APIC.  The virtual address is stashed in
- *      the VMDriver structure.
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      The VMDriver structure is updated.
- *
- *----------------------------------------------------------------------
- */
-
-static void
-SetVMAPICAddr(VMDriver *vm, // IN/OUT: driver state
-              MA ma)        // IN: host APIC's ma
-{
-   volatile void *hostapic;
-
-   ASSERT_ON_COMPILE(APICR_SIZE <= PAGE_SIZE);
-   hostapic = (volatile void *) ioremap(ma, PAGE_SIZE);
-   if (hostapic) {
-      if ((APIC_VERSIONREG(hostapic) & 0xF0) == 0x10) {
-         vm->hostAPIC.base = (volatile uint32 (*)[4]) hostapic;
-         ASSERT(vm->vmhost != NULL);
-         vm->vmhost->hostAPICIsMapped = TRUE;
-      } else {
-         iounmap((void*)hostapic);
-      }
-   }
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * ProbeAPIC --
- *
- *      Attempts to map the host APIC.
- *
- *      Most versions of Linux already provide access to a mapped
- *      APIC.  This function is just a backup.
- *
- *      Caveat: We assume that the APIC physical address is the same
- *      on all host cpus.
- *
- * Results:
- *      TRUE if APIC was found, FALSE if not.
- *
- * Side effects:
- *      May map the APIC.
- *
- *----------------------------------------------------------------------
- */
-
-static Bool
-ProbeAPIC(VMDriver *vm,   // IN/OUT: driver state
-          Bool setVMPtr)  // IN: set a pointer to the APIC's virtual address
-{
-   MA ma = APIC_GetMA();
-
-   if (ma == (MA)-1) {
-      return FALSE;
-   }
-
-   if (setVMPtr) {
-      SetVMAPICAddr(vm, ma);
-   } else {
-      vm->hostAPIC.base = NULL;
-   }
-
-   return TRUE;
-}
 #endif
 
 
@@ -2384,75 +2409,50 @@ ProbeAPIC(VMDriver *vm,   // IN/OUT: driver state
  *
  * HostIF_APICInit --
  *
- *      Initialize APIC behavior.
- *      Attempts to map the host APIC into vm->hostAPIC.
+ *      Check if APIC is present, and is regular or x2 APIC.
  *
- *      We don't attempt to refresh the mapping after a host cpu
- *      migration.  Fortunately, hosts tend to use the same address
- *      for all APICs.
- *
- *      Most versions of Linux already provide a mapped APIC.  We
- *      have backup code to read APIC_BASE and map it, if needed.
+ *      We check for X2 APIC by checking X2APIC enable bit, and
+ *      for regular APIC by checking if APIC registers are mapped
+ *      as readable page (vs. not present for no APIC).
  *
  * Results:
- *      TRUE
+ *      None.
  *
  * Side effects:
- *      May map the host APIC.
+ *      None.
  *
  *----------------------------------------------------------------------
  */
-Bool
-HostIF_APICInit(VMDriver *vm,   // IN:
-                Bool setVMPtr,  // IN:
-                Bool probe)     // IN: force probing
+
+void
+HostIF_APICInit(VMDriver *vm)   // IN:
 {
 #if defined(CONFIG_SMP)         || defined(CONFIG_X86_UP_IOAPIC) || \
     defined(CONFIG_X86_UP_APIC) || defined(CONFIG_X86_LOCAL_APIC)
-   static Bool apicIPILogged = FALSE;
-   VA kAddr;
+   if (vm->hostAPIC.base == NULL && !vm->hostAPIC.isX2) {
+      static Bool apicIPILogged = FALSE;
 
-   monitorIPIVector = SPURIOUS_APIC_VECTOR;
-#if defined(POSTED_INTR_VECTOR)
-   hvIPIVector      = POSTED_INTR_VECTOR;
-#else
-   hvIPIVector      = 0;
-#endif
-
-
-   if (!apicIPILogged) {
-      Log("Monitor IPI vector: %x\n", monitorIPIVector);
-      Log("HV      IPI vector: %x\n", hvIPIVector);
-      apicIPILogged = TRUE;
-   }
-
-   if ((X86MSR_GetMSR(MSR_APIC_BASE) & APIC_MSR_X2APIC_ENABLED) != 0) {
-      if (setVMPtr) {
-         vm->hostAPIC.base = NULL;
-         vm->vmhost->hostAPICIsMapped = FALSE;
-         vm->hostAPIC.isX2 = TRUE;
+      if (!apicIPILogged) {
+         Log("Monitor IPI vector: %x\n", monitorIPIVector);
+         Log("HV      IPI vector: %x\n", hvIPIVector);
+         apicIPILogged = TRUE;
       }
-      return TRUE;
-   }
 
-   if (probe && ProbeAPIC(vm, setVMPtr)) {
-      return TRUE;
-   }
+      if ((X86MSR_GetMSR(MSR_APIC_BASE) & APIC_MSR_X2APIC_ENABLED) != 0) {
+         vm->hostAPIC.isX2 = TRUE;
+      } else {
+         VA kAddr;
 
-   /*
-    * Normal case: use Linux's pre-mapped APIC.
-    */
-   kAddr = __fix_to_virt(FIX_APIC_BASE);
-   if (!isVAReadable(kAddr)) {
-      return TRUE;
-   }
-   if (setVMPtr) {
-      vm->hostAPIC.base = (void *)kAddr;
-   } else {
-      vm->hostAPIC.base = NULL;
+         /*
+          * Old APIC: use Linux's pre-mapped APIC.
+          */
+         kAddr = __fix_to_virt(FIX_APIC_BASE);
+         if (isVAReadable(kAddr)) {
+            vm->hostAPIC.base = (void *)kAddr;
+         }
+      }
    }
 #endif
-   return TRUE;
 }
 
 

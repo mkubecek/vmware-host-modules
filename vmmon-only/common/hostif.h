@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -59,6 +59,13 @@
 
 #define CROSSCALL_SLEEP_US 1000
 
+typedef struct HostIFContigMemMap {
+   MPN mpn;
+   void *addr;
+   PageCnt pages;
+   struct HostIFContigMemMap *next;
+} HostIFContigMemMap;
+
 EXTERN Bool  HostIF_Init(VMDriver *vm, uint32 numVCPUs);
 EXTERN int   HostIF_LookupUserMPN(VMDriver *vm, VA64 uAddr, MPN *mpn);
 EXTERN void *HostIF_MapCrossPage(VMDriver *vm, VA64 uAddr);
@@ -82,13 +89,16 @@ EXTERN void  HostIF_Wait(unsigned int timeoutMs);
 EXTERN void  HostIF_WaitForFreePages(unsigned int timeoutMs);
 EXTERN void *HostIF_AllocKernelPages(PageCnt numPages, MPN *mpns);
 EXTERN void  HostIF_FreeKernelPages(PageCnt numPages, void *ptr);
+EXTERN HostIFContigMemMap *HostIF_AllocContigPages(VMDriver *vm,
+                                                   PageCnt numPages);
+EXTERN void  HostIF_FreeContigPages(VMDriver *vm, HostIFContigMemMap *mapping);
 EXTERN void  HostIF_VMLock(VMDriver *vm, int callerID);
 EXTERN void  HostIF_VMUnlock(VMDriver *vm, int callerID);
 #ifdef VMX86_DEBUG
 EXTERN Bool HostIF_VMLockIsHeld(VMDriver *vm);
 #endif
 
-EXTERN Bool  HostIF_APICInit(VMDriver *vm, Bool setVMPtr, Bool probe);
+EXTERN void  HostIF_APICInit(VMDriver *vm);
 EXTERN uint8 HostIF_GetMonitorIPIVector(void);
 EXTERN uint8 HostIF_GetHVIPIVector(void);
 EXTERN void  HostIF_GetTimerVectors(uint8 *v0, uint8 *v1);

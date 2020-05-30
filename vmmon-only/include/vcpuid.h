@@ -59,6 +59,9 @@ typedef uint32 Vcpuid;                 // VCPU number
  */
 #define MAX_SMALL_VM_VCPUS 128
 
+/* Supported limit. */
+#define MAX_SUPPORTED_VCPUS   256
+
 #if defined __cplusplus
 } // extern "C"
 #endif

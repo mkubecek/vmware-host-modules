@@ -155,7 +155,6 @@ _GET_LDT(Selector * const result)
    } while (0)
 
 
-/* Checked against the Intel manual and GCC --thutt */
 #define _BUILD_SET_R(func, reg)        \
    static INLINE void                  \
    func(uintptr_t r)                   \
@@ -166,24 +165,20 @@ _GET_LDT(Selector * const result)
               : "memory");             \
    }
 
-/* Not yet checked against the Intel manual and GCC --slava
- *
- * 'volatile' because CRs and DRs can change without the compiler
- * knowing it (when there is a page fault, when a breakpoint occurs,
- * and moreover it seems there is no way to teach gcc that smsw
- * clobbers cr0 for example).
- *
- * The parameter is a 'uintptr_t *' so that the size of the actual
- * parameter must exactly match the size of the hardware register.
- * This prevents the use of 32-bit variables when building 64-bit
- * code.
+/*
+ * The inline asm is marked 'volatile' because CRs and DRs can change
+ * without the compiler knowing it (when there is a page fault, when a
+ * breakpoint occurs, and moreover it seems there is no way to teach
+ * gcc that smsw clobbers cr0 for example).
  */
 #define _BUILD_GET_R(func, reg)                         \
-   static INLINE void                                   \
-   func(uintptr_t *result)                              \
+   static INLINE uintptr_t                              \
+   func(void)                                           \
    {                                                    \
+      uintptr_t result;                                 \
       __asm__ __volatile__("mov %%" #reg ", %0"         \
-                           : "=r" (*result));           \
+                           : "=r" (result));            \
+      return result;                                    \
    }
 
 _BUILD_SET_R(_SET_CR0, cr0)
@@ -374,10 +369,10 @@ CLTS(void)
    }
 
 #define _BUILD_GET_DR(func, reg)                      \
-   static INLINE void                                 \
-   func(uintptr_t *result)                            \
+   static INLINE uintptr_t                            \
+   func(void)                                         \
    {                                                  \
-      *result = __readdr(reg);                        \
+      return __readdr(reg);                           \
    }
 
 #define _BUILD_SET_CR(func, reg)                      \
@@ -388,10 +383,10 @@ CLTS(void)
    }
 
 #define _BUILD_GET_CR(func, reg)                      \
-   static INLINE void                                 \
-   func(uintptr_t *result)                            \
+   static INLINE uintptr_t                            \
+   func(void)                                         \
    {                                                  \
-      *result = __readcr##reg();                      \
+      return __readcr##reg();                         \
    }
 
 _BUILD_SET_DR(_SET_DR0, 0)
@@ -618,7 +613,7 @@ _Get_TR(void)
 
 #define GET_CR_DR(regType, regNum, var) \
    do {                                 \
-      _GET_##regType##regNum(&(var));   \
+      var = _GET_##regType##regNum();   \
    } while (0)
 
 #define SET_DR0(expr) SET_CR_DR(DR, 0, expr)
@@ -648,6 +643,11 @@ _Get_TR(void)
 #define SET_CR4(expr) SET_CR_DR(CR, 4, expr)
 #define SET_CR8(expr) SET_CR_DR(CR, 8, expr)
 
+/*
+ * When the ULM macro-defines INTERRUPTS_ENABLED, attempting to define
+ * it as a function produces hard-to-diagnose compile-time errors.
+ */
+#if !defined(ULM) && !defined(INTERRUPTS_ENABLED)
 static INLINE Bool
 INTERRUPTS_ENABLED(void)
 {
@@ -655,6 +655,7 @@ INTERRUPTS_ENABLED(void)
    SAVE_FLAGS(flags);
    return ((flags & EFLAGS_IF) != 0);
 }
+#endif
 
 /*
  * [GS]ET_[GI]DT() are defined as macros wrapping a function

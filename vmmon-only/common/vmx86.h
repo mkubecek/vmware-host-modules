@@ -48,6 +48,10 @@ typedef struct TSCDelta {
 
 struct VmmBlobInfo;
 
+struct HostIFContigMemMap;
+
+extern struct HostIFContigMemMap *hvIOBitmap;
+
 /*
  * VMDriver - the main data structure for the driver side of a
  *            virtual machine.
@@ -79,6 +83,12 @@ typedef struct VMDriver {
    int64                  *ptscOffsets;      /* numVCPUs-sized array. */
    Atomic_uint32          *currentHostCpu;   /* numVCPUs-sized array. */
    PageCnt                 numPTPPages;      /* Num PTP pages allocated. */
+   /*
+    * List of physically contiguous allocations associated with this VM.
+    * Access is protected by the VM lock.
+    */
+   struct HostIFContigMemMap     *contigMappings;
+
 } VMDriver;
 
 typedef struct MonLoaderArgs {
@@ -168,6 +178,8 @@ extern Bool Vmx86_GetAllMSRs(MSRQuery *query);
 extern void Vmx86_FlushVMCSAllCPUs(MA vmcs);
 extern void Vmx86_MonTimerIPI(void);
 extern void Vmx86_InitIDList(void);
+extern Bool Vmx86_CreateHVIOBitmap(void);
+extern void Vmx86_CleanupHVIOBitmap(void);
 extern Bool Vmx86_GetPageRoot(VMDriver *vm, Vcpuid vcpuid, MPN *mpn);
 extern void Vmx86_Open(void);
 extern void Vmx86_Close(void);

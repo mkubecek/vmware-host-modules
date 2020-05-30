@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998,2018-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2011,2014-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -37,9 +37,6 @@
 /* Per-instance driver state */
 struct VMDriver;
 
-/* 16 pages (64KB) looks as a good limit for one allocation */
-#define VMMON_MAX_LOWMEM_PAGES  16
-
 typedef struct Device {
    struct Device   *next;
    struct VMDriver *vm;
@@ -48,19 +45,10 @@ typedef struct Device {
     * avoid racing between various ioctls, and the creation
     * and removal of the VM in question. The lock is read-acquired
     * by ioctls that reference the VMDriver, and write-acquired by
-    * ioctls or device callbacks that allocate or destory the
+    * ioctls or device callbacks that allocate or destroy the
     * VMDriver.
     */
    struct rw_semaphore vmDriverRWSema;
-   /*
-    * The semaphore protect accesses to size4Gb and pages4Gb
-    * in mmap(). mmap() may happen only once, and all other
-    * accesses except cleanup are read-only, and may happen
-    * only after successful mmap.
-    */
-   struct semaphore lock4Gb;
-   PageCnt size4Gb;
-   struct page *pages4Gb[VMMON_MAX_LOWMEM_PAGES];
 } Device;
 
 
@@ -81,11 +69,8 @@ typedef struct VMXLinuxState {
 
    struct task_struct *fastClockThread;
    unsigned fastClockRate;
-   uint64 swapSize;
 } VMXLinuxState;
 
 extern VMXLinuxState linuxState;
-extern uint8 monitorIPIVector;
-extern uint8 hvIPIVector;
 
 #endif

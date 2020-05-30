@@ -108,6 +108,9 @@ static int vmIDsUnused;
 /* Max rate requested for fast clock by any virtual machine. */
 static unsigned globalFastClockRate;
 
+/* 3 physically contiguous pages for the I/O bitmap.  SVM only. */
+HostIFContigMemMap *hvIOBitmap;
+
 typedef struct {
    Atomic_uint32 index;
    MSRQuery *query;
@@ -690,6 +693,38 @@ Vmx86_CleanupVMMPages(VMDriver *vm)
 /*
  *----------------------------------------------------------------------
  *
+ * Vmx86CleanupContigMappings --
+ *
+ *     Frees all allocations from HostIF_AllocContigPages that are associated
+ *     with the given vm.
+ *
+ * Results:
+ *      None
+ *
+ * Side effects:
+ *      None
+ *
+ *----------------------------------------------------------------------
+ */
+
+static void
+Vmx86CleanupContigMappings(VMDriver *vm)
+{
+   HostIFContigMemMap *m, *next;
+
+   HostIF_VMLock(vm, 48);
+   for (m = vm->contigMappings; m != NULL; m = next) {
+      next = m->next;
+      HostIF_FreeContigPages(vm, m);
+   }
+   HostIF_VMUnlock(vm, 48);
+   vm->contigMappings = NULL;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * Vmx86FreeAllVMResources
  *
  *     Free the resources allocated for a vm that is not registered
@@ -732,7 +767,9 @@ Vmx86FreeAllVMResources(VMDriver *vm)
          StatVarsVmmon_Cleanup(vm->statVars);
          vm->statVars = NULL;
       }
-
+      if (vm->contigMappings != NULL) {
+         Vmx86CleanupContigMappings(vm);
+      }
       HostIF_FreeAllResources(vm);
 
       Vmx86FreeVMDriver(vm);
@@ -2042,7 +2079,9 @@ Vmx86_AllocLowPage(VMDriver *vm,      // IN: VMDriver
       return INVALID_MPN;
    }
 
+   HostIF_VMLock(vm, 49);
    mpn = HostIF_AllocLowPage(vm);
+   HostIF_VMUnlock(vm, 49);
 
    if (mpn == INVALID_MPN) {
       Vmx86UnreserveFreePages(vm, 1);
@@ -3391,5 +3430,67 @@ Vmx86_GetMonitorContext(VMDriver *vm,       // IN: The VM instance.
    context->r14 = cpData->monR14;
    context->r15 = cpData->monR15;
    context->rip = cpData->monRIP;
+   return TRUE;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Vmx86_CleanupHVIOBitmap --
+ *
+ *      Free any resources that were allocated for the HV I/O bitmap.
+ *
+ * Results:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+void
+Vmx86_CleanupHVIOBitmap(void)
+{
+   if (hvIOBitmap != NULL) {
+      HostIF_FreeContigPages(NULL, hvIOBitmap);
+      hvIOBitmap = NULL;
+   }
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Vmx86_CreateHVIOBitmap --
+ *
+ *      Called on driver load to create and initialize the host wide SVM I/O
+ *      bitmap.  This item is a physically contiguous region of
+ *      SVM_VMCB_IO_BITMAP_PAGES pages and is initialized to all-bits-set.
+ *
+ * Results:
+ *      TRUE on success or FALSE on failure.
+ *
+ *----------------------------------------------------------------------
+ */
+
+Bool
+Vmx86_CreateHVIOBitmap(void)
+{
+   if (!CPUID_HostSupportsSVM()) {
+      return TRUE;
+   }
+   if (vmx86_apple) {
+      /*
+       * This function is not called on MacOS.  No supported MacOS system is
+       * available for AMD so that platform has no need to create the SVM I/O
+       * bitmap.
+       */
+      return TRUE;
+   }
+   hvIOBitmap = HostIF_AllocContigPages(NULL, SVM_VMCB_IO_BITMAP_PAGES);
+   if (hvIOBitmap == NULL) {
+      Warning("Failed to allocate SVM I/O bitmap.\n");
+      return FALSE;
+   }
+   memset(hvIOBitmap->addr, 0xff, SVM_VMCB_IO_BITMAP_SIZE);
    return TRUE;
 }
