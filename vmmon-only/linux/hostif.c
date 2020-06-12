@@ -100,6 +100,7 @@
 #include "vmmonInt.h"
 #include "versioned_atomic.h"
 #include "compat_poll.h"
+#include "compat_mmap_lock.h"
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 #   define global_zone_page_state global_page_state
@@ -1206,7 +1207,7 @@ HostIFGetUserPages(void *uvAddr,          // IN
 {
    int retval;
 
-   down_read(&current->mm->mmap_sem);
+   mmap_read_lock(current->mm);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
    retval = get_user_pages((unsigned long)uvAddr, numPages, 0, ppages, NULL);
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
@@ -1215,7 +1216,7 @@ HostIFGetUserPages(void *uvAddr,          // IN
    retval = get_user_pages(current, current->mm, (unsigned long)uvAddr,
                            numPages, 0, 0, ppages, NULL);
 #endif
-   up_read(&current->mm->mmap_sem);
+   mmap_read_unlock(current->mm);
 
    return retval != numPages;
 }
