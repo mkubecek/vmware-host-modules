@@ -47,6 +47,7 @@
 
 #include "vnetInt.h"
 #include "compat_skbuff.h"
+#include "compat_mmap_lock.h"
 #include "vmnetInt.h"
 #include "vm_atomic.h"
 #include "vm_assert.h"
@@ -141,7 +142,7 @@ UserifLockPage(VA addr) // IN
    struct page *page = NULL;
    int retval;
 
-   down_read(&current->mm->mmap_sem);
+   mmap_read_lock(current->mm);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
    retval = get_user_pages(addr, 1, FOLL_WRITE, &page, NULL);
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
@@ -150,7 +151,7 @@ UserifLockPage(VA addr) // IN
    retval = get_user_pages(current, current->mm, addr,
                            1, 1, 0, &page, NULL);
 #endif
-   up_read(&current->mm->mmap_sem);
+   mmap_read_unlock(current->mm);
 
    if (retval != 1) {
       return NULL;
