@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014,2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -20,15 +20,12 @@
 #define INCLUDE_ALLOW_VMMON
 #include "includeCheck.h"
 
-UC(CALL_START)
-UC(BEGIN_BACK_TO_HOST)
-UC(SWITCHED_TO_MODULE)
-UC(VMX_SELECT_RETURN)
-UC(VMX_HANDLER_START)
-UC(VMX_SIGNAL)
-UC(MODULE_SIGNAL)
-UC(SWITCHING_TO_MONITOR)
-UC(DONE_BACK_TO_HOST)
-UC(CALL_END)
+UC(CALL_START,             FALSE)
+UC(BEGIN_BACK_TO_HOST,     FALSE)
+UC(SWITCHED_TO_MODULE,     TRUE)
+UC(VMX_HANDLER_START,      FALSE)
+UC(SWITCHING_TO_MONITOR,   TRUE)
+UC(DONE_BACK_TO_HOST,      FALSE)
+UC(CALL_END,               FALSE)
 
 #undef UC

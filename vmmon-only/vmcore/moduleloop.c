@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -75,6 +75,7 @@ Vmx86_RunVM(VMDriver *vm,   // IN:
    uint64           retval    = MODULECALL_USERRETURN;
    VMCrossPageData *crosspage;
    int              bailValue = 0;
+   Bool             switchOk = TRUE;
 
    ASSERT(vcpuid < vm->numVCPUs);
    if (vm->crosspage[vcpuid] == NULL) {
@@ -95,9 +96,9 @@ Vmx86_RunVM(VMDriver *vm,   // IN:
        * Task_Switch changes the world to the monitor.
        * The monitor is waiting in the BackToHost routine.
        */
-      UCTIMESTAMP(crosspage, SWITCHING_TO_MONITOR);
-      Task_Switch(vm, vcpuid);
-      UCTIMESTAMP(crosspage, SWITCHED_TO_MODULE);
+      UCTIMESTAMP(crosspage->ucTimeStamps, SWITCHING_TO_MONITOR);
+      switchOk = Task_Switch(vm, vcpuid);
+      UCTIMESTAMP(crosspage->ucTimeStamps, SWITCHED_TO_MODULE);
 
       /*
        * Wake up anything that was waiting for this vcpu to run
@@ -118,6 +119,11 @@ Vmx86_RunVM(VMDriver *vm,   // IN:
 skipTaskSwitch:;
 
       retval = MODULECALL_USERRETURN;
+
+      if (UNLIKELY(!switchOk)) {
+         bailValue = USERCALL_SWITCHERR;
+         goto bailOut;
+      }
 
       if (crosspage->userCallType != MODULECALL_USERCALL_NONE) {
          /*
@@ -281,6 +287,10 @@ skipTaskSwitch:;
 
       case MODULECALL_GET_HV_IPI_VECTOR: {
          retval = HostIF_GetHVIPIVector();
+      } break;
+
+      case MODULECALL_GET_PERF_CTR_VECTOR: {
+         retval = HostIF_GetPerfCtrVector();
       } break;
 
       case MODULECALL_GET_HOST_TIMER_VECTORS: {

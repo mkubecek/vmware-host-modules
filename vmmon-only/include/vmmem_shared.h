@@ -32,6 +32,7 @@
 #define INCLUDE_ALLOW_VMKERNEL
 #define INCLUDE_ALLOW_VMX
 #include "includeCheck.h"
+#include "community_source.h"
 
 /*
  * Page remapping definitions.
@@ -97,10 +98,12 @@ typedef struct PlatformPageInfoList {
 #define VMMEM_SERVICES_CLEAR_MASK(typeMask, type)         \
            (typeMask & ~VMMEM_SERVICES_TYPE_2_MASK(type))
 
+#define MDEF_DRAINER
+
 #define VMMEM_SERVICES_DEFS                                       \
    MDEF(VMMEM_SERVICES_TYPE_P2M,         P2MUpdate_FilterPages)   \
    MDEF(VMMEM_SERVICES_TYPE_SWAP,        BusMemSwap_FilterPages)  \
-   MDEF(VMMEM_SERVICES_TYPE_DIRTY_CLEAR, DirtyDrainer_ClearDirty)
+   MDEF_DRAINER
 
 #define MDEF(_type, _cb) _type,
 typedef enum VmMemServices_Type {

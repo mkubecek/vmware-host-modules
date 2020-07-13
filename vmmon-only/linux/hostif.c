@@ -188,6 +188,7 @@ static void UnlockEntry(void *clientData, MemTrackEntry *entryPtr);
 #define SPURIOUS_APIC_VECTOR 0
 #endif
 static const uint8 monitorIPIVector = SPURIOUS_APIC_VECTOR;
+
 /*
  * POSTED_INTR_VECTOR is defined on kernels after 3.10 when built with
  * KVM support.
@@ -196,6 +197,15 @@ static const uint8 monitorIPIVector = SPURIOUS_APIC_VECTOR;
 #define POSTED_INTR_VECTOR 0
 #endif
 static const uint8 hvIPIVector = POSTED_INTR_VECTOR;
+
+/*
+ * perfCtrVector may leak, choose highest priority interrupt that is
+ * consistently ack'd by all current linux kernels.
+ */
+#ifndef ERROR_APIC_VECTOR
+#define ERROR_APIC_VECTOR 0xFE
+#endif
+static const uint8 perfCtrVector = ERROR_APIC_VECTOR;
 
 /*
  *-----------------------------------------------------------------------------
@@ -618,38 +628,6 @@ HostIF_FastClockUnlock(int callerID) // IN
 /*
  *----------------------------------------------------------------------
  *
- * MapCrossPage & UnmapCrossPage
- *
- *    Both x86-64 and ia32 need to map crosspage to an executable
- *    virtual address. We use the vmap interface instead of kmap
- *    due to bug 43907.
- *
- * Side effects:
- *
- *    UnmapCrossPage assumes that the page has been refcounted up
- *    so it takes care of the put_page.
- *
- *----------------------------------------------------------------------
- */
-static void *
-MapCrossPage(struct page *p)  // IN:
-{
-   return vmap(&p, 1, VM_MAP, VM_PAGE_KERNEL_EXEC);
-}
-
-
-static void
-UnmapCrossPage(struct page *p,  // IN:
-               void *va)        // IN:
-{
-   vunmap(va);
-   put_page(p);
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
  * HostIFHostMemInit --
  *
  *      Initialize per-VM pages lists.
@@ -974,11 +952,8 @@ static void
 HostIFFreeVMHost(VMHost *vmhost) // IN:
 {
    ASSERT(vmhost->lockedPages == NULL &&
-          vmhost->AWEPages    == NULL &&
-          vmhost->crosspagePagesCount == 0);
-   Vmx86_Free(vmhost->crosspagePages);
+          vmhost->AWEPages    == NULL);
    Vmx86_Free(vmhost->vcpuSemaTask);
-   vmhost->crosspagePages = NULL;
    vmhost->vcpuSemaTask   = NULL;
    HostIF_FreeKernelMem(vmhost);
 }
@@ -1007,14 +982,14 @@ HostIFAllocVMHost(uint32 numVCPUs) // IN:
    if (vmhost == NULL) {
       return NULL;
    }
-   if ((vmhost->crosspagePages =
-        Vmx86_Calloc(numVCPUs, sizeof *vmhost->crosspagePages, TRUE)) != NULL &&
-       (vmhost->vcpuSemaTask =
-        Vmx86_Calloc(numVCPUs, sizeof *vmhost->vcpuSemaTask, TRUE))   != NULL) {
-      return vmhost;
+   vmhost->vcpuSemaTask = Vmx86_Calloc(numVCPUs, sizeof *vmhost->vcpuSemaTask,
+                                       TRUE);
+   if (vmhost->vcpuSemaTask == NULL) {
+      HostIFFreeVMHost(vmhost);
+      return NULL;
    }
-   HostIFFreeVMHost(vmhost);
-   return NULL;
+
+   return vmhost;
 }
 
 
@@ -1519,20 +1494,12 @@ UnlockEntry(void *clientData,         // IN:
 void
 HostIF_FreeAllResources(VMDriver *vm) // IN
 {
-   unsigned int cnt;
-
    HostIFHostMemCleanup(vm);
    if (vm->memtracker) {
       MemTrack_Cleanup(vm->memtracker, UnlockEntry, vm);
       vm->memtracker = NULL;
    }
    if (vm->vmhost) {
-      ASSERT(vm->vmhost->crosspagePagesCount <= vm->numVCPUs);
-      for (cnt = vm->vmhost->crosspagePagesCount; cnt > 0; ) {
-         struct page* p = vm->vmhost->crosspagePages[--cnt];
-         UnmapCrossPage(p, vm->crosspage[cnt]);
-      }
-      vm->vmhost->crosspagePagesCount = 0;
       HostIFFreeVMHost(vm->vmhost);
       vm->vmhost = NULL;
    }
@@ -2154,15 +2121,15 @@ HostIF_CopyToUser(VA64 dst,         // OUT
 /*
  *-----------------------------------------------------------------------------
  *
- * HostIF_MapCrossPage --
+ * HostIF_AllocCrossPage --
  *
- *    Map the cross page in the kernel address space given a user VA.  The
- *    kernel mapping must not overlap the monitor's 64MB VA space (bug 32922).
+ *    Allocate and map a page suitable for use as a cross page.  The
+ *    mapping must not overlap the monitor's 64MB VA space (bug 32922).
  *    In practice, the host kernel does not return mappings in that range.
  *    This is checked in TaskCreatePTPatch() which gracefully fails if it must.
  *
  * Results:
- *    The kernel virtual address on success
+ *    The virtual address of the cross page on success.
  *    NULL on failure
  *
  * Side effects:
@@ -2171,32 +2138,69 @@ HostIF_CopyToUser(VA64 dst,         // OUT
  *-----------------------------------------------------------------------------
  */
 
-void *
-HostIF_MapCrossPage(VMDriver *vm, // IN
-                    VA64 uAddr)   // IN
+VMCrossPage *
+HostIF_AllocCrossPage(VMDriver *vm)
 {
-   void *p = VA64ToPtr(uAddr);
-   struct page *page;
-   VA           vPgAddr;
-   VA           ret;
+   struct page *page = alloc_page(GFP_KERNEL);
+   void        *vPgAddr;
 
-   if (HostIFGetUserPages(p, &page, 1)) {
+   if (page == NULL) {
       return NULL;
    }
-   vPgAddr = (VA) MapCrossPage(page);
-   HostIF_VMLock(vm, 27);
-   if (vm->vmhost->crosspagePagesCount >= vm->numVCPUs) {
-      HostIF_VMUnlock(vm, 27);
-      UnmapCrossPage(page, (void*)vPgAddr);
-
-      return NULL;
+   /*
+    * The task switch code needs to map crosspage to a page with RWX permission.
+    * We use the vmap interface instead of kmap due to bug 43907.
+    */
+   vPgAddr = vmap(&page, 1, VM_MAP, VM_PAGE_KERNEL_EXEC);
+   if (vPgAddr == NULL) {
+      __free_page(page);
    }
-   vm->vmhost->crosspagePages[vm->vmhost->crosspagePagesCount++] = page;
-   HostIF_VMUnlock(vm, 27);
+   return vPgAddr;
+}
 
-   ret = vPgAddr | (((VA)p) & (PAGE_SIZE - 1));
 
-   return (void*)ret;
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * HostIF_GetCrossPageMPN --
+ *
+ *    Look up and return the backing MPN for the given crosspage object.
+ *
+ * Results:
+ *    The crosspage's MPN on success or INVALID_MPN on failure.
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+MPN
+HostIF_GetCrossPageMPN(VMCrossPage *crosspage)
+{
+   struct page *pg = vmalloc_to_page(crosspage);
+
+   if (pg != NULL) {
+      return page_to_pfn(pg);
+   }
+   return INVALID_MPN;
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * HostIF_FreeCrossPage --
+ *
+ *    Free a cross page that was allocated earlier via HostIF_AllocCrossPage.
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+void
+HostIF_FreeCrossPage(VMDriver *vm, VMCrossPage *crosspage)
+{
+   struct page *p = vmalloc_to_page(crosspage);
+
+   vunmap(crosspage);
+   __free_page(p);
 }
 
 
@@ -2527,6 +2531,32 @@ uint8
 HostIF_GetHVIPIVector(void)
 {
    return hvIPIVector;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * HostIF_GetPerfCtrVector --
+ *
+ *      Return a vector the monitor can use for perf counters.
+ *      This needs to be a high priority interrupt that is always ack'd
+ *      by the kernel because they can leak in edge cases.
+ *
+ * Results:
+ *     The vector for perf counter events.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+uint8
+HostIF_GetPerfCtrVector(void)
+{
+   ASSERT_ON_COMPILE(perfCtrVector == 0xFE);
+   return perfCtrVector;
 }
 
 

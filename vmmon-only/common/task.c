@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -945,7 +945,7 @@ TaskVerifyPTPatches(VMDriver *vm,
                     VMCrossPageData *cpData)
 {
    LPN64 xgCPN = LA_2_LPN(cpData->crossGDTLA);
-   LPN64 xpCPN = LA_2_LPN(cpData->crossPageLA);
+   LPN64 xpCPN = LA_2_LPN(cpData->crosspageLA);
    MPN   xpMPN = MA_2_MPN(cpData->crosspageMA);
    MA    cr3   = cpData->monCR3;
    return TaskVerifyPTMap(vm, cr3, xpCPN, xpMPN) &&
@@ -1554,7 +1554,7 @@ TaskCreatePTPatch(VMDriver        *vm,
 /*
  *-----------------------------------------------------------------------------
  *
- * TaskCreatePTPatches
+ * TaskCreatePTPatches --
  *
  *      Creates VMM mappings for the crosspage and crossGDT that match
  *      those from the vmmon address space, so that they are mapped at
@@ -1577,7 +1577,7 @@ TaskCreatePTPatches(VMDriver    *vm,
 {
    VMCrossPageData * const cpData = &crosspage->crosspageData;
    LPN64                   xgCPN  = LA_2_LPN(cpData->crossGDTLA);
-   LPN64                   xpCPN  = LA_2_LPN(cpData->crossPageLA);
+   LPN64                   xpCPN  = LA_2_LPN(cpData->crosspageLA);
    MPN                     xpMPN  = MA_2_MPN(cpData->crosspageMA);
    /*
     * Set up patches that the BackToHost code will use to map the
@@ -1612,9 +1612,10 @@ TaskCreatePTPatches(VMDriver    *vm,
  */
 
 Bool
-Task_InitCrosspage(VMDriver *vm,               // IN
-                   LPN monStartLPN,            // IN
-                   LPN monEndLPN,              // IN
+Task_InitCrosspage(VMDriver     *vm,           // IN
+                   LPN           monStartLPN,  // IN
+                   LPN           monEndLPN,    // IN
+                   const void   *cpTemplate,   // IN
                    PerVcpuPages *perVcpuPages) // IN
 {
    Vcpuid vcpuid;
@@ -1626,24 +1627,14 @@ Task_InitCrosspage(VMDriver *vm,               // IN
 
    ASSERT(0 < vm->numVCPUs && vm->numVCPUs <= MAX_VCPUS);
    for (vcpuid = 0; vcpuid < vm->numVCPUs; vcpuid++) {
-      VA64             crossPageUserAddr = perVcpuPages[vcpuid].crosspage;
-      VMCrossPage     *p = HostIF_MapCrossPage(vm, crossPageUserAddr);
+      VMCrossPage     *p = vm->crosspage[vcpuid];
       VMCrossPageData *cpData;
       MPN              crossPageMPN;
 
-      if (p == NULL) {
-         return FALSE;
-      }
+      crossPageMPN = HostIF_GetCrossPageMPN(p);
+      ASSERT(crossPageMPN != INVALID_MPN);
+      memcpy(p, cpTemplate, sizeof *p);
       cpData = &p->crosspageData;
-
-      HostIF_VMLock(vm, 38);
-      if (HostIF_LookupUserMPN(vm, crossPageUserAddr, &crossPageMPN) !=
-          PAGE_LOOKUP_SUCCESS ||
-          crossPageMPN == 0) {
-         HostIF_VMUnlock(vm, 38);
-         return FALSE;
-      }
-      HostIF_VMUnlock(vm, 38);
 
       /*
        * The version of the crosspage must be the first four bytes of the
@@ -1660,12 +1651,8 @@ Task_InitCrosspage(VMDriver *vm,               // IN
                  (int)CROSSPAGE_VERSION, cpData->version);
          return FALSE;
       }
-      if (!pseudoTSC.initialized) {
-         Warning("%s*: PseudoTSC has not been initialized\n", __FUNCTION__);
-         return FALSE;
-      }
       cpData->crosspageMA = MPN_2_MA(crossPageMPN);
-      cpData->crossPageLA = (LA64)(uintptr_t)p;
+      cpData->crosspageLA = (LA64)(uintptr_t)p;
       cpData->crossGDTLA = HOST_KERNEL_VA_2_LA((VA)crossGDT);
       cpData->crossGDTHKLADesc.offset = HOST_KERNEL_VA_2_LA((VA)crossGDT);
       cpData->crossGDTHKLADesc.limit  = sizeof(CrossGDT) - 1;
@@ -1713,7 +1700,6 @@ Task_InitCrosspage(VMDriver *vm,               // IN
       cpData->timerIntrTS           = MAX_ABSOLUTE_TS;
       cpData->hstTimerExpiry        = MAX_ABSOLUTE_TS;
       cpData->monTimerExpiry        = MAX_ABSOLUTE_TS;
-      vm->crosspage[vcpuid]         = p;
 
       TaskInitHostSwitchIDT(p);
    }
@@ -2447,16 +2433,13 @@ TaskShouldRetryWorldSwitch(VMCrossPage *crosspage)
  *      state.
  *
  * Results:
- *      None.
- *
- * Side effects:
- *      Jump to the monitor. Has no direct effect on the host-visible
- *      state except that it might generate an interrupt.
+ *      TRUE - If a #UD did not occur during the context switch.
+ *      FALSE - Otherwise.
  *
  *-----------------------------------------------------------------------------
  */
 
-void
+Bool
 Task_Switch(VMDriver *vm,  // IN
             Vcpuid vcpuid) // IN
 {
@@ -2478,6 +2461,7 @@ Task_Switch(VMDriver *vm,  // IN
    uint32 pCPU;
    MPN hvRootMPN;
    Descriptor *tempGDTBase;
+   Bool switchOk = TRUE;
 #ifdef CYCLE_SPEC_CTRL
    Bool specCtrlEqual = FALSE;
    uint64 readSpecCtrlValue = 0;
@@ -2864,7 +2848,8 @@ Task_Switch(VMDriver *vm,  // IN
             RAISE_INTERRUPT(EXC_MC);
          }
          if (UNLIKELY(TaskGotException(crosspage, EXC_UD))) {
-            Warning("#UD occurred on switch back to host; dumping core.\n");
+            switchOk = FALSE;
+            Warning("#UD occurred on switch back to host.\n");
          }
 #ifdef CYCLE_SPEC_CTRL
          if (UNLIKELY(!specCtrlEqual)) {
@@ -2976,4 +2961,5 @@ Task_Switch(VMDriver *vm,  // IN
 
    RESTORE_FLAGS(flags);
    TaskRestoreNMI(&vm->hostAPIC, lint0NMI, lint1NMI, pcNMI, thermalNMI);
+   return switchOk;
 }

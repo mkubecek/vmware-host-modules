@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -129,6 +129,7 @@ extern Bool Vmx86_ProcessBootstrap(VMDriver *vm,
                                    uint32 numBytes,
                                    uint32 headerOffset,
                                    uint16 numVCPUs,
+                                   const void *crosspage,
                                    PerVcpuPages *perVcpuPages,
                                    VMSharedRegion *shRegions);
 extern int Vmx86_LookupUserMPN(VMDriver *vm, VA64 uAddr, MPN *mpn);

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014,2017,2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014,2017,2019-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -125,7 +125,7 @@ PTSC_MHz(void)
 
 #if defined(VM_X86_64) || defined(VM_ARM_64)
 
-/* 
+/*
  * Conversions to/from cycles.  Note that the conversions operate on
  * signed values, so be careful when taking the difference of two
  * VmAbsoluteTS (which is unsigned) that that value is not out of range
@@ -197,13 +197,13 @@ VmAbsoluteTS PTSC_Get(void);
 
 #endif
 
-/* 
+/*
  *-----------------------------------------------------------------------------
  *
  * PTSC_HasSynchronizedTSCs --
  *
  *      Returns TRUE iff the platform TSCs are known to be synchronized.
- * 
+ *
  *-----------------------------------------------------------------------------
  */
 
@@ -214,7 +214,7 @@ PTSC_HasSynchronizedTSCs(void)
 }
 
 
-/* 
+/*
  *-----------------------------------------------------------------------------
  *
  * PTSC_HostAdjustedTSCs --
@@ -229,6 +229,39 @@ static INLINE Bool
 PTSC_HostAdjustedTSCs(void)
 {
    return ptscInfo.hwTSCsAdjusted;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * PTSC_AdvanceTimer --
+ *
+ *      Advance '*deadline' in 'period' increments such that it is
+ *      greater than 'now'.  Return the number of ticks incremented.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static INLINE uint64
+PTSC_AdvanceTimer(VmAbsoluteTS now,
+                  VmIntervalTS period,
+                  VmAbsoluteTS *deadline)
+{
+   VmAbsoluteTS d = *deadline;
+   if (now >= d) {
+      uint64 count = 1;
+      d += period;
+      if (UNLIKELY(now >= d)) {
+         uint64 t = (now - d) / period + 1;
+         VmIntervalTS diff = t * period;
+         count += t;
+         d += diff;
+      }
+      *deadline = d;
+      return count;
+   }
+   return 0;
 }
 
 #endif /* ifndef _PTSC_H_ */

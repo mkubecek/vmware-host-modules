@@ -79,8 +79,6 @@ typedef struct VMHost {
     */
    Mutex vmMutex;
 
-   unsigned int         crosspagePagesCount;
-   struct page        **crosspagePages;      /* ptr to numVCPUs-sized array */
    struct task_struct **vcpuSemaTask;        /* ptr to numVCPUs-sized array */
 
    /*

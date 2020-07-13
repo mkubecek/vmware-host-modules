@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -570,6 +570,62 @@ Vmx86_Calloc(size_t numElements, // IN
 /*
  *-----------------------------------------------------------------------------
  *
+ * Vmx86AllocCrossPages --
+ *
+ *      Allocate numVCPUs pages suitable to be used as the VCPU's
+ *      crosspage area.
+ *
+ * Results:
+ *      TRUE if the required crosspages are allocated successfully.
+ *      FALSE otherwise.
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+static Bool
+Vmx86AllocCrossPages(VMDriver *vm)
+{
+   Vcpuid v;
+
+   for (v = 0; v < vm->numVCPUs; v++) {
+      vm->crosspage[v] = HostIF_AllocCrossPage(vm);
+      if (vm->crosspage[v] == NULL) {
+         return FALSE;
+      }
+      memset(vm->crosspage[v], 0, PAGE_SIZE);
+   }
+   return TRUE;
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * Vmx86FreeCrossPages --
+ *
+ *      Free the crosspages allocated for the given VM.
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+static void
+Vmx86FreeCrossPages(VMDriver *vm)
+{
+   Vcpuid v;
+
+   if (vm->crosspage != NULL) {
+      for (v = 0; v < vm->numVCPUs; v++) {
+         if (vm->crosspage[v] != NULL) {
+            HostIF_FreeCrossPage(vm, vm->crosspage[v]);
+         }
+      }
+   }
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
  * Vmx86FreeVMDriver --
  *
  *      Release kernel memory allocated for the driver structure.
@@ -749,6 +805,7 @@ Vmx86FreeAllVMResources(VMDriver *vm)
 
       Vmx86_SetHostClockRate(vm, 0);
 
+      Vmx86FreeCrossPages(vm);
       if (vm->ptpTracker != NULL) {
          Task_SwitchPTPPageCleanup(vm);
       }
@@ -1177,6 +1234,7 @@ Vmx86_ProcessBootstrap(VMDriver *vm,
                        uint32 numBytes,
                        uint32 headerOffset,
                        uint16 numVCPUs,
+                       const void *crosspage,
                        PerVcpuPages *perVcpuPages,
                        VMSharedRegion *shRegions)
 {
@@ -1197,12 +1255,21 @@ Vmx86_ProcessBootstrap(VMDriver *vm,
       goto error;
    }
 
+   if (!pseudoTSC.initialized) {
+      Warning("%s: PseudoTSC has not been initialized\n", __FUNCTION__);
+      goto error;
+   }
+
+   if (!Vmx86AllocCrossPages(vm)) {
+      Warning("Failed to allocate cross pages.\n");
+      goto error;
+   }
    /*
     * Initialize the driver's part of the cross-over page used to
     * talk to the monitor.
     */
    if (!Task_InitCrosspage(vm, header->monStartLPN, header->monEndLPN,
-                           perVcpuPages)) {
+                           crosspage, perVcpuPages)) {
       Warning("Error initializing crosspage\n");
       goto error;
    }

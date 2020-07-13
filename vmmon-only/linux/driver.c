@@ -818,6 +818,7 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
                                          args->numBytes,
                                          args->headerOffset,
                                          args->numVCPUs,
+                                         args->crosspage,
                                          args->perVcpuPages,
                                          args->shRegions)) {
          retval = -ENOMEM;
@@ -1077,6 +1078,23 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       ipiVectors.hvIPIVector      = HostIF_GetHVIPIVector();
 
       retval = HostIF_CopyToUser(ioarg, &ipiVectors, sizeof ipiVectors);
+      break;
+   }
+
+   case IOCTL_VMX86_GET_SWITCH_ERROR_ADDR: {
+      VMSwitchErrorArgs args;
+
+      retval = HostIF_CopyFromUser(&args, ioarg, sizeof args);
+      if (retval != 0) {
+         break;
+      }
+      if (args.vcpuid >= vm->numVCPUs || vm->crosspage == NULL ||
+          vm->crosspage[args.vcpuid] == NULL) {
+         retval = -EINVAL;
+         break;
+      }
+      args.addr = vm->crosspage[args.vcpuid]->crosspageData.wsUD2;
+      retval = HostIF_CopyToUser(ioarg, &args, sizeof args);
       break;
    }
 

@@ -66,6 +66,7 @@
    MC(ALLOC_ANON_LOW_PAGE)                                                    \
    MC(GET_MON_IPI_VECTOR)                                                     \
    MC(GET_HV_IPI_VECTOR)                                                      \
+   MC(GET_PERF_CTR_VECTOR)                                                    \
    MC(GET_HOST_TIMER_VECTORS)                                                 \
    MC(BOOTSTRAP_CLEANUP)                                                      \
    MC(GET_SHARED_AREA)                                                        \
@@ -109,8 +110,8 @@ typedef enum ModuleCallType {
  */
 
 #if defined(VMX86_UCCOST) && !defined(VMX86_SERVER)
-#define UCTIMESTAMP(cp, stamp) \
-             do { (cp)->ucTimeStamps[UCCOST_ ## stamp] = RDTSC(); } while (0)
+#define UCTIMESTAMP(ptr, stamp) \
+             do { (ptr)[UCCOST_ ## stamp] = RDTSC(); } while (0)
 #else
 #define UCTIMESTAMP(cp, stamp)
 #endif
@@ -130,7 +131,7 @@ typedef struct UCCostResults {
 } UCCostResults;
 
 typedef enum UCCostStamp {
-#define UC(x) UCCOST_ ## x,
+#define UC(x, y) UCCOST_ ## x,
 #include "uccostTable.h"
    UCCOST_MAX
 } UCCostStamp;
@@ -236,9 +237,16 @@ VMMPageTablePatch;
  * - the largest stack use instantaneously possible by #DB handling code
  * - one high-water uint32 used to detect stack overflows when debugging
  *
- * 184 bytes is slightly more than enough as of 2015/03/17 -- fjacobs.
+ * A breakdown of the worst-case exception handler stack usage (SwitchUDHandler)
+ * is: 5 * uint64 (Hardware) + 1 * uint64 (RAX) + 1 * uint64 (RBX) +
+ *     1 * uint64 (RCX) + 1 * uint64 (call) + 2 * uint64 (sidt) = 11 * uint64
+ * This is a slight over-estimate of the possible usage at any time but there
+ * is plenty of space available in the cross page data area.
+ *
+ * 264 (11 * sizeof(uint64) * 3) bytes is slightly more than enough as of
+ * 2020/06/14.
  */
-#define TINY_STACK_SIZE      184
+#define TINY_STACK_SIZE      264
 
 /*
  *----------------------------------------------------------------------
@@ -297,7 +305,7 @@ struct VMCrossPageData {
    uint64   crosspageMA;
 
    uint64   hostDR[8];
-   LA64     crossPageLA;       // where host/PTP map the cross page
+   LA64     crosspageLA;       // where host/PTP map the cross page
    LA64     crossGDTLA;        // where host/PTP map the cross GDT
    uint16   hostInitial64CS;
    uint8    hostDRSaved;       // Host DR spilled to hostDR[x].
@@ -337,6 +345,7 @@ struct VMCrossPageData {
 
 #if !defined(VMX86_SERVER)
    uint64 ucTimeStamps[UCCOST_MAX];
+   uint8  _ucPad[8];
 #endif
 
    SwitchedMSRState switchedMSRState;
@@ -451,7 +460,7 @@ struct VMCrossPage {
 #include "vmware_pack_end.h"
 VMCrossPage;
 
-#define CROSSPAGE_VERSION_BASE 0xc0e /* increment by 1 */
+#define CROSSPAGE_VERSION_BASE 0xc11 /* increment by 1 */
 #define CROSSPAGE_VERSION    ((CROSSPAGE_VERSION_BASE << 1) + WS_INTR_STRESS)
 
 #if !defined(VMX86_SERVER) && defined(VMM)
