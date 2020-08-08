@@ -108,7 +108,9 @@
 
 static unsigned long get_nr_slab_unreclaimable(void)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
+   return global_node_page_state_pages(NR_SLAB_UNRECLAIMABLE_B);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
    return global_node_page_state(NR_SLAB_UNRECLAIMABLE);
 #else
    return global_page_state(NR_SLAB_UNRECLAIMABLE);
