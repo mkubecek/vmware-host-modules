@@ -1739,8 +1739,11 @@ HostIF_EstimateLockedPageLimit(const VMDriver* vm,                // IN
 #else
    lockedPages += global_page_state(NR_PAGETABLE);
 #endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
+   /* NR_SLAB_* converted to byte counters in 5.9 */
+   lockedPages += global_node_page_state_pages(NR_SLAB_UNRECLAIMABLE_B);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
    /* NR_SLAB_* moved from zone to node in 4.13. */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
    lockedPages += global_node_page_state(NR_SLAB_UNRECLAIMABLE);
 #else
    lockedPages += global_page_state(NR_SLAB_UNRECLAIMABLE);
