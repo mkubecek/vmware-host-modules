@@ -70,6 +70,7 @@
 
 #include <asm/io.h>
 #include <asm/uaccess.h>
+#include <asm/irq_vectors.h>
 #include <linux/mc146818rtc.h>
 #include <linux/capability.h>
 #include <linux/kthread.h>
