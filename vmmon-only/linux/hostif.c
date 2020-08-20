@@ -48,6 +48,7 @@
 #include <asm/io.h>
 #include <asm/page.h>
 #include <asm/uaccess.h>
+#include <asm/irq_vectors.h>
 #include <linux/capability.h>
 #include <linux/kthread.h>
 #include <linux/wait.h>
