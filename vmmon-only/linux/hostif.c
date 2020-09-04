@@ -2261,7 +2261,11 @@ HostIF_SemaphoreWait(VMDriver *vm,   // IN:
     * reading no bytes (EAGAIN - non blocking fd) or sizeof(uint64).
     */
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+   res = kernel_read(file, (char *) &value, sizeof value, &file->f_pos);
+#else
    res = file->f_op->read(file, (char *) &value, sizeof value, &file->f_pos);
+#endif
 
    if (res == sizeof value) {
       res = MX_WAITNORMAL;
@@ -2374,7 +2378,11 @@ HostIF_SemaphoreSignal(uint64 *args)  // IN:
     * it be present.
     */
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+   res = kernel_write(file, (char *) &value, sizeof value, &file->f_pos);
+#else
    res = file->f_op->write(file, (char *) &value, sizeof value, &file->f_pos);
+#endif
 
    if (res == sizeof value) {
       res = MX_WAITNORMAL;
