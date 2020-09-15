@@ -48,10 +48,10 @@
 #ifdef __linux__
 #   include "driver-config.h"
 /*
- * linux/frame.h dates back to 4.5-rc5, we need the ANNOTATE_INTRA_FUNCTION_CALL
- * definition from it which came in with 5.7.
+ * linux/frame.h dates back to 4.6-rc1, we need the STACK_FRAME_NON_STANDARD
+ * definition from it which is there from the start.
  */
-#   if LINUX_VERSION_CODE > KERNEL_VERSION(5, 7, 0)
+#   if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
 #      include <linux/frame.h>
 #   endif
 #endif
