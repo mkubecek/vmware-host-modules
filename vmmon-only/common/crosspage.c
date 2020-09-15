@@ -141,7 +141,7 @@ CPDATA const VMCrossPageData cpDataTemplate = {
 
    .monTask.IOMapBase = sizeof(Task64),
 
-   .monGDTR.limit  = GDT_LIMIT,
+   .monGDTR.limit  = VMMON_GDT_LIMIT,
    .monGDTR.offset = GDT_START_VA,
 
    .shadowDR[6].ureg64 = DR6_DEFAULT,
