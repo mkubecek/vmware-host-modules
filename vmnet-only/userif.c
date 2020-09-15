@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998,2017,2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998,2017,2019,2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -81,7 +81,9 @@ extern unsigned int  vnet_max_qlen;
 #   define skb_frag_page(frag) (frag)->page
 #   define skb_frag_size(frag) (frag)->size
 #endif
-#if COMPAT_LINUX_VERSION_CHECK_LT(5, 4, 0)
+#if COMPAT_LINUX_VERSION_CHECK_LT(5, 4, 0) && \
+    !(defined(CONFIG_SUSE_VERSION) && CONFIG_SUSE_VERSION == 15 && \
+      defined(CONFIG_SUSE_PATCHLEVEL) && CONFIG_SUSE_PATCHLEVEL >= 2)
 #   define skb_frag_off(frag) (frag)->page_offset
 #endif
 

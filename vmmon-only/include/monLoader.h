@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2015-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 2015-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -296,9 +296,10 @@ typedef enum MonLoaderError {
  * Values above shared area subindices for sharing of MonLoaderHeader
  * and htSchedStateMap.
  */
-#define MONLOADER_HEADER_IDX 6
-#define MONLOADER_HT_MAP_IDX 7
-
+#define MONLOADER_HEADER_IDX          6
+#define MONLOADER_HT_MAP_IDX          7
+#define MONLOADER_CROSS_PAGE_CODE_IDX 8
+#define MONLOADER_CROSS_PAGE_DATA_IDX 9
 
 MonLoaderError MonLoader_Process(MonLoaderHeader *header, unsigned numVCPUs,
                                  void *args, unsigned *line, Vcpuid *vcpu);

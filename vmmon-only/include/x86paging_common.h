@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -92,6 +92,7 @@
 #define PF_RSVD         0x0008
 #define PF_ID           0x0010
 #define PF_PK           0x0020
+#define PF_SS           0x0040
 #define PF_SGX          0x8000
 
 /*
@@ -108,5 +109,13 @@ typedef struct {
    uint64   pcid;    /* Bits 63:12 reserved.                   */
    uint64   la;      /* Used for single address invalidation.  */
 } InvpcidArg;
+
+typedef enum {
+   PM_FLAT,        /* non paging mode                                      */
+   PM_2_LEVEL,     /* classic 32 bit non-pae style paging mode.            */
+   PM_3_LEVEL,     /* classic 32 bit pae style paging mode.                */
+   PM_4_LEVEL,     /* long mode style paging mode (including compat mode). */
+   PM_NUM     = 4, /* number of different paging modes.                    */
+} PagingMode;
 
 #endif /* _X86PAGING_COMMON_H_ */

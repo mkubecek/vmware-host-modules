@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014, 2016-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014, 2016-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -60,7 +60,7 @@ typedef uint32 Vcpuid;                 // VCPU number
 #define MAX_SMALL_VM_VCPUS 128
 
 /* Supported limit. */
-#define MAX_SUPPORTED_VCPUS   256
+#define MAX_SUPPORTED_VCPUS   (FEATURE_STATE_IS_ENABLED(MonsterVM) ? 768 : 256)
 
 #if defined __cplusplus
 } // extern "C"

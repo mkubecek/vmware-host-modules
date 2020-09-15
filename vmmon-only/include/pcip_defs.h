@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2009-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 2009-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -66,7 +66,6 @@ typedef enum PCIPassthru_IntrType {
    (PCIPASSTHRU_INTR_MSI | PCIPASSTHRU_INTR_MSI_INT)
 
 typedef struct FPTIntrProxyInfo {
-   uint32            adapterIndex;
    uint32            vectorIndex;
    MonitorIdemAction actionID;
 } FPTIntrProxyInfo;
@@ -76,9 +75,15 @@ typedef struct UPTIntrProxyInfo {
    MonitorIdemAction actionID;
 } UPTIntrProxyInfo;
 
+typedef struct MPTIntrProxyInfo {
+   uint32            adapterIndex;
+   MonitorIdemAction actionID;
+} MPTIntrProxyInfo;
+
 typedef union PCIPassthru_IntrProxyInfo {
    FPTIntrProxyInfo fpt;
    UPTIntrProxyInfo upt;
+   MPTIntrProxyInfo mpt;
 } PCIPassthru_IntrProxyInfo;
 
 typedef enum PCIPassthru_ErrorType {

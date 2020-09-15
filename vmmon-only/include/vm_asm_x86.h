@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014,2016-2017,2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014,2016-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -417,31 +417,13 @@ _BUILD_GET_CR(_GET_CR8, 8);
 static INLINE void
 _Set_GDT(_GETSET_DTR_TYPE *dtr)
 {
-#ifdef VM_X86_64
    _lgdt(dtr);
-#else
-   /*
-    * timetools 32-bit targets use an old version of MSVC that doesn't support
-    * the _lgdt intrinsic. Luckily, 32-bit still supports inline asm.
-    */
-   __asm mov eax, dtr
-   __asm lgdt [eax]
-#endif
 }
 
 static INLINE void
 _Get_GDT(_GETSET_DTR_TYPE *dtr)
 {
-#ifdef VM_X86_64
    _sgdt(dtr);
-#else
-   /*
-    * timetools 32-bit targets use an old version of MSVC that doesn't support
-    * the _sgdt intrinsic. Luckily, 32-bit still supports inline asm.
-    */
-   __asm mov eax, dtr
-   __asm sgdt [eax]
-#endif
 }
 
 static INLINE void
@@ -466,141 +448,6 @@ _Get_IDT(_GETSET_DTR_TYPE *dtr)
 
 #define RESTORE_FLAGS(x) __writeeflags(x)
 
-
-#ifdef VM_X86_32
-
-#define SET_TR(_tr)      _Set_TR(_tr)
-#define SET_LDT(_tr)     _Set_LDT(_tr)
-
-#define GET_TR(_tr)      do { _tr = _Get_TR();  } while (0)
-#define GET_LDT(_tr)     do { _tr = _Get_LDT(); } while (0)
-
-#define SET_CR2(_reg)    __asm mov eax, _reg __asm mov cr2, eax
-#define CLTS()           __asm clts
-
-#define FNCLEX()         __asm fnclex
-
-#define TLB_INVALIDATE_PAGE(_addr) {  \
-   void *_a = (_addr); \
-   __asm mov eax, _a __asm invlpg [eax] \
-}
-
-#define RAISE_INTERRUPT(_x)  {__asm int _x }
-#define RETURN_FROM_INT()   {__asm iretd }
-
-
-static INLINE void
-SET_DS(Selector val)
-{
-   __asm mov ax, val
-   __asm mov ds, ax
-}
-
-static INLINE void
-SET_ES(Selector val)
-{
-   __asm mov ax, val
-   __asm mov es, ax
-}
-
-static INLINE void
-SET_FS(Selector val)
-{
-   __asm mov ax, val
-   __asm mov fs, ax
-}
-
-static INLINE void
-SET_GS(Selector val)
-{
-   __asm mov ax, val
-   __asm mov gs, ax
-}
-
-static INLINE void
-SET_SS(Selector val)
-{
-   __asm mov ax, val
-   __asm mov ss, ax
-}
-
-static INLINE Selector
-GET_FS(void)
-{
-   Selector _v;
-   __asm mov _v,fs
-   return _v;
-}
-
-static INLINE Selector
-GET_GS(void)
-{
-   Selector _v;
-   __asm mov _v,gs
-   return _v;
-}
-
-static INLINE Selector
-GET_DS(void)
-{
-   Selector _v;
-   __asm mov _v,ds
-   return _v;
-}
-
-static INLINE Selector
-GET_ES(void)
-{
-   Selector _v;
-   __asm mov _v,es
-   return _v;
-}
-
-static INLINE Selector
-GET_SS(void)
-{
-   Selector _v;
-   __asm mov _v,ss
-   return _v;
-}
-
-static INLINE Selector
-GET_CS(void)
-{
-   Selector _v;
-   __asm mov _v,cs
-   return _v;
-}
-
-static INLINE void
-_Set_LDT(Selector val)
-{
-   __asm lldt val
-}
-
-static INLINE void
-_Set_TR(Selector val)
-{
-   __asm ltr val
-}
-
-static INLINE Selector
-_Get_LDT(void)
-{
-   Selector sel;
-   __asm sldt sel
-   return sel;
-}
-
-static INLINE Selector
-_Get_TR(void)
-{
-   Selector sel;
-   __asm str sel
-   return sel;
-}
-
-#endif /* !VM_X86_32 */
 #endif /* !__GNUC__ && !_MSC_VER */
 
 
@@ -680,7 +527,7 @@ INTERRUPTS_ENABLED(void)
 #endif
 
 
-#if defined (__GNUC__) || (defined (_MSC_VER) && defined (VM_X86_32))
+#if defined (__GNUC__)
 static INLINE unsigned
 CURRENT_CPL(void)
 {

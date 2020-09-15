@@ -72,6 +72,7 @@
 #include "memDefaults.h"
 #include "vcpuid.h"
 #include "x86svm.h"
+#include "crosspage.h"
 
 #include "pgtbl.h"
 #include "versioned_atomic.h"
@@ -188,6 +189,7 @@ static void UnlockEntry(void *clientData, MemTrackEntry *entryPtr);
 #define SPURIOUS_APIC_VECTOR 0
 #endif
 static const uint8 monitorIPIVector = SPURIOUS_APIC_VECTOR;
+
 /*
  * POSTED_INTR_VECTOR is defined on kernels after 3.10 when built with
  * KVM support.
@@ -196,6 +198,15 @@ static const uint8 monitorIPIVector = SPURIOUS_APIC_VECTOR;
 #define POSTED_INTR_VECTOR 0
 #endif
 static const uint8 hvIPIVector = POSTED_INTR_VECTOR;
+
+/*
+ * perfCtrVector may leak, choose highest priority interrupt that is
+ * consistently ack'd by all current linux kernels.
+ */
+#ifndef ERROR_APIC_VECTOR
+#define ERROR_APIC_VECTOR 0xFE
+#endif
+#define PERF_CTR_VECTOR ERROR_APIC_VECTOR
 
 /*
  *-----------------------------------------------------------------------------
@@ -618,38 +629,6 @@ HostIF_FastClockUnlock(int callerID) // IN
 /*
  *----------------------------------------------------------------------
  *
- * MapCrossPage & UnmapCrossPage
- *
- *    Both x86-64 and ia32 need to map crosspage to an executable
- *    virtual address. We use the vmap interface instead of kmap
- *    due to bug 43907.
- *
- * Side effects:
- *
- *    UnmapCrossPage assumes that the page has been refcounted up
- *    so it takes care of the put_page.
- *
- *----------------------------------------------------------------------
- */
-static void *
-MapCrossPage(struct page *p)  // IN:
-{
-   return vmap(&p, 1, VM_MAP, VM_PAGE_KERNEL_EXEC);
-}
-
-
-static void
-UnmapCrossPage(struct page *p,  // IN:
-               void *va)        // IN:
-{
-   vunmap(va);
-   put_page(p);
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
  * HostIFHostMemInit --
  *
  *      Initialize per-VM pages lists.
@@ -974,11 +953,8 @@ static void
 HostIFFreeVMHost(VMHost *vmhost) // IN:
 {
    ASSERT(vmhost->lockedPages == NULL &&
-          vmhost->AWEPages    == NULL &&
-          vmhost->crosspagePagesCount == 0);
-   Vmx86_Free(vmhost->crosspagePages);
+          vmhost->AWEPages    == NULL);
    Vmx86_Free(vmhost->vcpuSemaTask);
-   vmhost->crosspagePages = NULL;
    vmhost->vcpuSemaTask   = NULL;
    HostIF_FreeKernelMem(vmhost);
 }
@@ -1007,14 +983,14 @@ HostIFAllocVMHost(uint32 numVCPUs) // IN:
    if (vmhost == NULL) {
       return NULL;
    }
-   if ((vmhost->crosspagePages =
-        Vmx86_Calloc(numVCPUs, sizeof *vmhost->crosspagePages, TRUE)) != NULL &&
-       (vmhost->vcpuSemaTask =
-        Vmx86_Calloc(numVCPUs, sizeof *vmhost->vcpuSemaTask, TRUE))   != NULL) {
-      return vmhost;
+   vmhost->vcpuSemaTask = Vmx86_Calloc(numVCPUs, sizeof *vmhost->vcpuSemaTask,
+                                       TRUE);
+   if (vmhost->vcpuSemaTask == NULL) {
+      HostIFFreeVMHost(vmhost);
+      return NULL;
    }
-   HostIFFreeVMHost(vmhost);
-   return NULL;
+
+   return vmhost;
 }
 
 
@@ -1519,20 +1495,12 @@ UnlockEntry(void *clientData,         // IN:
 void
 HostIF_FreeAllResources(VMDriver *vm) // IN
 {
-   unsigned int cnt;
-
    HostIFHostMemCleanup(vm);
    if (vm->memtracker) {
       MemTrack_Cleanup(vm->memtracker, UnlockEntry, vm);
       vm->memtracker = NULL;
    }
    if (vm->vmhost) {
-      ASSERT(vm->vmhost->crosspagePagesCount <= vm->numVCPUs);
-      for (cnt = vm->vmhost->crosspagePagesCount; cnt > 0; ) {
-         struct page* p = vm->vmhost->crosspagePages[--cnt];
-         UnmapCrossPage(p, vm->crosspage[cnt]);
-      }
-      vm->vmhost->crosspagePagesCount = 0;
       HostIFFreeVMHost(vm->vmhost);
       vm->vmhost = NULL;
    }
@@ -1739,7 +1707,10 @@ HostIF_EstimateLockedPageLimit(const VMDriver* vm,                // IN
    lockedPages += global_page_state(NR_PAGETABLE);
 #endif
    /* NR_SLAB_* moved from zone to node in 4.13. */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
+   lockedPages += global_node_page_state_pages(NR_SLAB_UNRECLAIMABLE_B);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
    lockedPages += global_node_page_state(NR_SLAB_UNRECLAIMABLE);
 #else
    lockedPages += global_page_state(NR_SLAB_UNRECLAIMABLE);
@@ -2154,49 +2125,36 @@ HostIF_CopyToUser(VA64 dst,         // OUT
 /*
  *-----------------------------------------------------------------------------
  *
- * HostIF_MapCrossPage --
+ * HostIFGetCrossPageMPNWork --
+ * HostIF_GetCrossPageCodeMPN --
+ * HostIF_GetCrossPageDataMPN --
  *
- *    Map the cross page in the kernel address space given a user VA.  The
- *    kernel mapping must not overlap the monitor's 64MB VA space (bug 32922).
- *    In practice, the host kernel does not return mappings in that range.
- *    This is checked in TaskCreatePTPatch() which gracefully fails if it must.
- *
- * Results:
- *    The kernel virtual address on success
- *    NULL on failure
- *
- * Side effects:
- *    None
  *
  *-----------------------------------------------------------------------------
  */
 
-void *
-HostIF_MapCrossPage(VMDriver *vm, // IN
-                    VA64 uAddr)   // IN
+static MPN
+HostIFGetCrossPageMPNWork(void *va)
 {
-   void *p = VA64ToPtr(uAddr);
-   struct page *page;
-   VA           vPgAddr;
-   VA           ret;
+   struct page *pg = vmalloc_to_page(va);
 
-   if (HostIFGetUserPages(p, &page, 1)) {
-      return NULL;
+   if (pg != NULL) {
+      return page_to_pfn(pg);
    }
-   vPgAddr = (VA) MapCrossPage(page);
-   HostIF_VMLock(vm, 27);
-   if (vm->vmhost->crosspagePagesCount >= vm->numVCPUs) {
-      HostIF_VMUnlock(vm, 27);
-      UnmapCrossPage(page, (void*)vPgAddr);
 
-      return NULL;
-   }
-   vm->vmhost->crosspagePages[vm->vmhost->crosspagePagesCount++] = page;
-   HostIF_VMUnlock(vm, 27);
+   return INVALID_MPN;
+}
 
-   ret = vPgAddr | (((VA)p) & (PAGE_SIZE - 1));
+MPN
+HostIF_GetCrossPageDataMPN(VMCrossPageData *crosspageData)
+{
+   return HostIFGetCrossPageMPNWork(crosspageData);
+}
 
-   return (void*)ret;
+MPN
+HostIF_GetCrossPageCodeMPN(void)
+{
+   return HostIFGetCrossPageMPNWork((void *)CrossPage_CodePage);
 }
 
 
@@ -2531,6 +2489,32 @@ HostIF_GetHVIPIVector(void)
 
 
 /*
+ *----------------------------------------------------------------------
+ *
+ * HostIF_GetPerfCtrVector --
+ *
+ *      Return a vector the monitor can use for perf counters.
+ *      This needs to be a high priority interrupt that is always ack'd
+ *      by the kernel because they can leak in edge cases.
+ *
+ * Results:
+ *     The vector for perf counter events.
+ *
+ * Side effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+uint8
+HostIF_GetPerfCtrVector(void)
+{
+   ASSERT_ON_COMPILE(PERF_CTR_VECTOR == 0xFE);
+   return PERF_CTR_VECTOR;
+}
+
+
+/*
  *-----------------------------------------------------------------------------
  *
  * HostIF_SemaphoreWait --
@@ -2553,11 +2537,12 @@ HostIF_SemaphoreWait(VMDriver *vm,   // IN:
                      uint64 *args)   // IN:
 {
    struct file *file;
-   mm_segment_t old_fs;
    int res;
    int waitFD = args[0];
    int timeoutms = args[2];
    uint64 value;
+   struct poll_wqueues table;
+   unsigned int mask;
 
    ASSERT(vcpuid < vm->numVCPUs);
 
@@ -2566,33 +2551,29 @@ HostIF_SemaphoreWait(VMDriver *vm,   // IN:
       return MX_WAITERROR;
    }
 
-   old_fs = get_fs();
-   set_fs(KERNEL_DS);
-
-   {
-      struct poll_wqueues table;
-      unsigned int mask;
-
-      poll_initwait(&table);
-      current->state = TASK_INTERRUPTIBLE;
-      mask = file->f_op->poll(file, &table.pt);
-      if (!(mask & (POLLIN | POLLERR | POLLHUP))) {
-         vm->vmhost->vcpuSemaTask[vcpuid] = current;
-         schedule_timeout(timeoutms * HZ / 1000);  // convert to Hz
-         vm->vmhost->vcpuSemaTask[vcpuid] = NULL;
-      }
-      current->state = TASK_RUNNING;
-      poll_freewait(&table);
+   poll_initwait(&table);
+   current->state = TASK_INTERRUPTIBLE;
+   mask = file->f_op->poll(file, &table.pt);
+   if (!(mask & (POLLIN | POLLERR | POLLHUP))) {
+      vm->vmhost->vcpuSemaTask[vcpuid] = current;
+      schedule_timeout(timeoutms * HZ / 1000);  // convert to Hz
+      vm->vmhost->vcpuSemaTask[vcpuid] = NULL;
    }
+   current->state = TASK_RUNNING;
+   poll_freewait(&table);
 
    /*
     * Userland only writes in multiples of sizeof(uint64). This will allow
     * the code to happily deal with a pipe or an eventfd. We only care about
     * reading no bytes (EAGAIN - non blocking fd) or sizeof(uint64).
+    *
+    * Upstream Linux changed the function parameter types/ordering in 4.14.0.
     */
-
-   res = file->f_op->read(file, (char *) &value, sizeof value, &file->f_pos);
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+   res = kernel_read(file, file->f_pos, (char *)&value, sizeof value);
+#else
+   res = kernel_read(file, &value, sizeof value, &file->f_pos);
+#endif
    if (res == sizeof value) {
       res = MX_WAITNORMAL;
    } else {
@@ -2601,7 +2582,6 @@ HostIF_SemaphoreWait(VMDriver *vm,   // IN:
       }
    }
 
-   set_fs(old_fs);
    fput(file);
 
    /*
@@ -2689,7 +2669,6 @@ int
 HostIF_SemaphoreSignal(uint64 *args)  // IN:
 {
    struct file *file;
-   mm_segment_t old_fs;
    int res;
    int signalFD = args[1];
    uint64 value = 1;  // make an eventfd happy should it be there
@@ -2699,22 +2678,23 @@ HostIF_SemaphoreSignal(uint64 *args)  // IN:
       return MX_WAITERROR;
    }
 
-   old_fs = get_fs();
-   set_fs(KERNEL_DS);
-
    /*
     * Always write sizeof(uint64) bytes. This works fine for eventfd and
     * pipes. The data written is formatted to make an eventfd happy should
     * it be present.
+    *
+    * Upstream Linux changed the function parameter types/ordering in 4.14.0.
     */
-
-   res = file->f_op->write(file, (char *) &value, sizeof value, &file->f_pos);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+   res = kernel_write(file, (char *)&value, sizeof value, file->f_pos);
+#else
+   res = kernel_write(file, &value, sizeof value, &file->f_pos);
+#endif
 
    if (res == sizeof value) {
       res = MX_WAITNORMAL;
    }
 
-   set_fs(old_fs);
    fput(file);
 
    /*

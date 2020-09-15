@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014,2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -16,16 +16,28 @@
  *
  *********************************************************/
 
-#define INCLUDE_ALLOW_VMCORE
-#define INCLUDE_ALLOW_VMMON
-#include "includeCheck.h"
+#ifndef _CROSSPAGE_H_
+#define _CROSSPAGE_H_
 
-UC(CALL_START,             FALSE)
-UC(BEGIN_BACK_TO_HOST,     FALSE)
-UC(SWITCHED_TO_MODULE,     TRUE)
-UC(VMX_HANDLER_START,      FALSE)
-UC(SWITCHING_TO_MONITOR,   TRUE)
-UC(DONE_BACK_TO_HOST,      FALSE)
-UC(CALL_END,               FALSE)
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-#undef UC
+struct VMCrossPageData;
+
+extern void HostToVmm(struct VMCrossPageData *crosspageWIN, void *unused1,
+                      void *unused2, struct VMCrossPageData *crosspageSYSV);
+extern const VMCrossPageData cpDataTemplate;
+
+extern void SwitchDBHandler(void);
+extern void SwitchUDHandler(void);
+extern void SwitchNMIHandler(void);
+extern void SwitchMCEHandler(void);
+extern void CrossPage_CodePage(void);
+extern void CrossPage_CodeEnd(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2016-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 2016-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -447,7 +447,7 @@ MonLoaderGetSharedRegionMPN(MonLoaderEnvContext *ctx,
  *
  * MonLoaderCallout_GetSharedUserPage --
  *
- *      Gets a user-provided shared page's MPN for a VCPU.
+ *      Gets a shared page's MPN for a VCPU.
  *
  * Returns:
  *      An MPN or INVALID_MPN.
@@ -478,7 +478,14 @@ MonLoaderCallout_GetSharedHostPage(MonLoaderEnvContext *ctx,      // IN
                                    unsigned             page,     // IN
                                    Vcpuid               vcpu)     // IN
 {
-   return MonLoaderGetSharedRegionMPN(ctx, subIndex, vcpu, page);
+   switch (subIndex) {
+   case MONLOADER_CROSS_PAGE_DATA_IDX:
+      return HostIF_GetCrossPageDataMPN(ctx->vm->crosspage[vcpu]);
+   case MONLOADER_CROSS_PAGE_CODE_IDX:
+      return HostIF_GetCrossPageCodeMPN();
+   default:
+      return MonLoaderGetSharedRegionMPN(ctx, subIndex, vcpu, page);
+   }
 }
 
 

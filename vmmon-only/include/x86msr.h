@@ -113,6 +113,20 @@ MSRQuery;
 #define MSR_TSC_AUX           0xc0000103
 #define MSR_BD_TSC_RATIO      0xc0000104
 
+/* CET MSRs */
+#define MSR_U_CET                            0x6a0
+#define MSR_S_CET                            0x6a2
+#define MSR_CET_SH_STK_EN                         (1ULL << 0)
+#define MSR_CET_WR_SHSTK_EN                       (1ULL << 1)
+#define MSR_PL0_SSP                          0x6a4
+#define MSR_PL1_SSP                          0x6a5
+#define MSR_PL2_SSP                          0x6a6
+#define MSR_PL3_SSP                          0x6a7
+#define MSR_ISST_ADDR                        0x6a8
+
+#define MSR_TEST_CTRL                        0x33
+#define MSR_TEST_CTRL_SPLIT_LOCK_DETECT           (1ULL << 29)
+
 #define IA32_MSR_ARCH_CAPABILITIES           0x10a
 #define MSR_ARCH_CAPABILITIES_RDCL_NO             (1ULL << 0)
 #define MSR_ARCH_CAPABILITIES_IBRS_ALL            (1ULL << 1)
@@ -480,6 +494,8 @@ MSRQuery;
 #define MSR_K8_SYSCFG_MTRRTOM2EN         (1ULL<<21)
 #define MSR_K8_SYSCFG_TOM2FORCEMEMTYPEWB (1ULL<<22)
 #define MSR_K8_SYSCFG_SMEE               (1ULL<<23)
+#define MSR_K8_SYSCFG_SNPE               (1ULL<<24)
+#define MSR_K8_SYSCFG_VMPLE              (1ULL<<25)
 
 #define MSR_K8_TOPMEM2       0xc001001d
 
@@ -521,13 +537,22 @@ MSRQuery;
 /* SEV related MSRs. */
 #define MSR_VMPAGE_FLUSH           0xc001011e
 #define MSR_GHCB_PA                0xc0010130
+#define MSR_GHCB_PA_FUNCTION_MASK       0xfff
 #define MSR_GHCB_PA_SEVINFO_HV              1
 #define MSR_GHCB_PA_SEVINFO_REQ             2
 #define MSR_GHCB_PA_AP_JUMP_TABLE           3
+#define MSR_GHCB_PA_CPUID_REQ               4
+#define MSR_GHCB_PA_CPUID_RESP              5
+#define MSR_GHCB_PA_TERMINATE             256
 #define MSR_SEV_STATUS             0xc0010131
 
 #define MSR_SEV_STATUS_SEV_EN      0x0000000000000001ULL // SEV is enabled
 #define MSR_SEV_STATUS_SEV_ES_EN   0x0000000000000002ULL // SEV-ES is enabled
+#define MSR_SEV_STATUS_SEV_SNP_EN  0x0000000000000004ULL // SEV-SNP is enabled
+
+/* SEV-SNP (Secure Nested Paging) MSRs. */
+#define MSR_RMP_BASE              0xc0010132 // Address of first byte of RMP
+#define MSR_RMP_END               0xc0010133 // Address of last byte of RMP
 
 #define MSR_AMD_DE_CFG           0xc0011029  // Decode configuration
 #define MSR_AMD_DE_CFG_BIT1      (1ULL<<1)
@@ -796,7 +821,6 @@ X86MSR_SetMSR(uint32 cx, uint64 value)
 }
 #endif
 #elif defined _MSC_VER // !__GNUC__ && _MSC_VER
-#ifdef _WIN64
 unsigned __int64  __readmsr(unsigned long);
 void              __writemsr(unsigned long, unsigned __int64);
 #pragma intrinsic(__readmsr, __writemsr)
@@ -811,37 +835,6 @@ X86MSR_SetMSR(uint32 cx, uint64 value)
 {
    __writemsr((unsigned long)(cx), (unsigned __int64)(value));
 }
-#else // !__GNUC__ && _MSC_VER && !_WIN64
-#pragma warning( disable : 4035)
-static INLINE uint64
-X86MSR_GetMSR(uint32 input)
-{
-   __asm push ecx
-   __asm mov  ecx, input
-   /* 0x0f 0x32 -> edx:eax = rdmsr[ecx] */
-   __asm _emit 0x0f __asm _emit 0x32
-   __asm pop ecx
-}
-
-static INLINE void
-X86MSR_SetMSR(uint32 input, uint64 value)
-{
-      uint32 hival = (uint32)((value) >> 32);
-      uint32 loval = (uint32)value;
-      __asm push edx
-      __asm push ecx
-      __asm push eax
-      __asm mov  eax, loval
-      __asm mov  edx, hival
-      __asm mov  ecx, input
-      /* 0x0f 0x30 -> wrmsr[ecx] = edx:eax */
-      __asm _emit 0x0f __asm _emit 0x30
-      __asm pop  eax
-      __asm pop  ecx
-      __asm pop  edx
-}
-#pragma warning (default: 4035)
-#endif
 #else // !__GNUC__ && !_MSC_VER
 #error No compiler defined for RDMSR/WRMSR.
 #endif

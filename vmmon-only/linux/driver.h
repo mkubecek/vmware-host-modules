@@ -23,7 +23,6 @@
 #define INCLUDE_ALLOW_VMCORE
 #include "includeCheck.h"
 
-#include <linux/miscdevice.h>
 #include <linux/mutex.h>
 #include <linux/sched.h>
 #include <linux/semaphore.h>
@@ -61,8 +60,6 @@ typedef struct Device {
 
 typedef struct VMXLinuxState {
    int major;
-   int minor;
-   struct miscdevice misc;
    char deviceName[VM_DEVICE_NAME_SIZE];
    char buf[LINUXLOG_BUFFER_SIZE];
    Device *head;
