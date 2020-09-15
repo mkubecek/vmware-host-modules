@@ -125,8 +125,12 @@ MSRQuery;
 #define MSR_PL3_SSP                          0x6a7
 #define MSR_ISST_ADDR                        0x6a8
 
+#ifndef MSR_TEST_CTRL
 #define MSR_TEST_CTRL                        0x33
+#endif
+#ifndef MSR_TEST_CTRL_SPLIT_LOCK_DETECT
 #define MSR_TEST_CTRL_SPLIT_LOCK_DETECT           (1ULL << 29)
+#endif
 
 #define IA32_MSR_ARCH_CAPABILITIES           0x10a
 #define MSR_ARCH_CAPABILITIES_RDCL_NO             (1ULL << 0)
