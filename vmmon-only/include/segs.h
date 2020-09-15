@@ -46,8 +46,8 @@
 
 #define PCPU_DATA_SIZE        (32 * CACHELINE_SIZE)
 
-#define GDT_SIZE              (sizeof(Descriptor) * NUM_VALID_SEGMENTS)
-#define GDT_LIMIT             (GDT_SIZE - 1)
+#define VMMON_GDT_SIZE        (sizeof(Descriptor) * NUM_VALID_SEGMENTS)
+#define VMMON_GDT_LIMIT       (VMMON_GDT_SIZE - 1)
 
 /*
  * This is one more than max GDT limit value.
