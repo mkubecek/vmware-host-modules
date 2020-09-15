@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014,2016,2018-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014,2016,2018-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -40,6 +40,7 @@
 #include "x86types.h"
 #include "vm_pagetable.h"
 #include "x86paging_common.h"
+#include "vm_assert.h"
 
 #define LM_PTE_PFN_MASK      CONST64U(0xffffffffff000)
 #define LM_PTE_2_PFN(_pte)   (((_pte) & LM_PTE_PFN_MASK) >> PT_PTE_PFN_SHIFT)
@@ -135,5 +136,96 @@ LMPTEIsSafe(VM_PAE_PTE pte, PT_Level level, uint64 physMask)
 #define VA64_CANONICAL_MASK        ~((CONST64U(1) << (VA64_IMPL_BITS - 1)) - 1)
 #define VA64_CANONICAL_HOLE_START   (CONST64U(1) << (VA64_IMPL_BITS - 1))
 #define VA64_CANONICAL_HOLE_LEN  VA64_CANONICAL_MASK - VA64_CANONICAL_HOLE_START
+
+static INLINE Bool
+x86IsCanonicalC(VA64 va)
+{
+   return (va & VA64_CANONICAL_MASK) == 0 ||
+          (va & VA64_CANONICAL_MASK) == VA64_CANONICAL_MASK;
+}
+
+#if defined(VM_X86_64) && defined(__GNUC__)
+static INLINE Bool
+x86IsCanonicalAsm(VA64 va)
+{
+   Bool out;
+   /*
+    * sarq $48, %0: Move 17 bits from position 63:47 into 15:0 and CF,
+    *  sign-extending as we do so.
+    * adcl $0, %0: Then add (0 + CF) to the shifted value.  The result is zero
+    *  iff (CF == 1 && bits 31:0 == 0xffffffff) or (CF == 0 && bits 31:0 == 0).
+    *  That is, if original bits 47 and higher were all 1s or all 0s.
+    * setz %1: Create the boolean.
+    *
+    * The chain of AdcLong macros will emit one adc instruction; gcc
+    * has no obvious way to force the size of a quad %0 to a long.
+    */
+#define AdcLong(reg64, reg32) \
+   ".ifc  %0, %%" #reg64 "\n" \
+   " adcl $0, %%" #reg32 "\n" \
+   ".endif \n"
+
+   asm ("sarq $48, %0 \n"
+        AdcLong(rax, eax)
+        AdcLong(rcx, ecx)
+        AdcLong(rdx, edx)
+        AdcLong(rbx, ebx)
+        AdcLong(rsp, esp)
+        AdcLong(rbp, ebp)
+        AdcLong(rsi, esi)
+        AdcLong(rdi, edi)
+        AdcLong(r8,  r8d)
+        AdcLong(r9,  r9d)
+        AdcLong(r10, r10d)
+        AdcLong(r11, r11d)
+        AdcLong(r12, r12d)
+        AdcLong(r13, r13d)
+        AdcLong(r14, r14d)
+        AdcLong(r15, r15d)
+        "setz %1" : "+r"(va), "=r"(out));
+   return out;
+#undef AdcLong
+}
+#endif
+
+static INLINE Bool
+x86_IsCanonical(VA64 va)
+{
+#if defined(VM_X86_64) && defined(__GNUC__)
+   if (__builtin_constant_p(va)) {
+      return x86IsCanonicalC(va);
+   } else {
+      return x86IsCanonicalAsm(va);
+   }
+#else
+   return x86IsCanonicalC(va);
+#endif
+}
+
+static INLINE Bool
+x86_IsCanonicalRange(VA64 va, unsigned size)
+{
+   /*
+    * The check is simple as long as the size is less
+    * than the number of implemented bits.
+    *
+    * The only case we don't handle is one where the VA goes from a
+    * high canonical address and wraps to a non-canonical address
+    * (e.g. 0x00008000_00000000) or higher.  Our test would falsely
+    * consider this canonical.
+    */
+   ASSERT_ON_COMPILE(sizeof(size) * 8 < VA64_IMPL_BITS);
+
+   /*
+    * VA64_CANONICAL_MASK is the lowest canonical address with the
+    * upper bits all set.
+    *
+    * VA64_CANONICAL_HOLE_START is one higher than the highest valid
+    * canonical address with the upper bits all cleared.  Note that we
+    * access up to (va + size - 1), not (va + size), so <= is correct.
+    */
+   return va >= VA64_CANONICAL_MASK ||
+          va + size <= VA64_CANONICAL_HOLE_START;
+}
 
 #endif /* _X86PAGING_64_H_ */

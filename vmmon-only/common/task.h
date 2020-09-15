@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2013,2015,2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2013,2015,2019-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -29,7 +29,7 @@ struct MonLoaderHeader;
 extern Bool Task_CreateCrossGDT(BSVMM_GDTInit *gdt);
 extern Bool Task_InitCrosspage(VMDriver *vm, LPN monStartLPN, LPN monEndLPN,
                                PerVcpuPages *perVcpuPages);
-extern void Task_Switch(VMDriver *vm, Vcpuid vcpuid);
+extern Bool Task_Switch(VMDriver *vm, Vcpuid vcpuid);
 extern Bool Task_Initialize(void);
 extern void Task_Terminate(void);
 extern MPN Task_GetHVRootPageForPCPU(uint32 pCPU);

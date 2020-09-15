@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -68,7 +68,7 @@ typedef struct VMDriver {
    SharedAreaVmmon        *sharedArea;       /* VMMon shared area info. */
    StatVarsVmmon          *statVars;         /* VMMon stat vars info. */
    /* Pointers to the crossover pages shared with the monitor. */
-   struct VMCrossPage    **crosspage;        /* numVCPUs-sized array. */
+   struct VMCrossPageData **crosspage;        /* numVCPUs-sized array. */
    struct MemTrack        *ptpTracker;       /* Tracks page table patch pages */
    struct MemTrack        *vmmTracker;       /* Tracks allocated VMM pages */
    VCPUSet                *crosscallWaitSet; /* numVCPUs-sized array. */
@@ -175,6 +175,7 @@ extern void Vmx86_UpdateMemInfo(VMDriver *curVM,
 extern void Vmx86_Add2MonPageTable(VMDriver *vm, VPN vpn, MPN mpn,
                                    Bool readOnly);
 extern Bool Vmx86_GetAllMSRs(MSRQuery *query);
+extern Bool Vmx86_CheckMSRUniformity(void);
 extern void Vmx86_FlushVMCSAllCPUs(MA vmcs);
 extern void Vmx86_MonTimerIPI(void);
 extern void Vmx86_InitIDList(void);

@@ -23,6 +23,7 @@
 
 #include <linux/file.h>
 #include <linux/highmem.h>
+#include <linux/miscdevice.h>
 #include <linux/mm.h>
 #include <linux/preempt.h>
 #include <linux/slab.h>
@@ -36,8 +37,8 @@
 
 #include "usercalldefs.h"
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 32)
-#error Linux kernels before 2.6.32 are not supported
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 10, 0)
+#error Linux kernels before 3.10 are not supported
 #endif
 
 #include <asm/io.h>
@@ -96,7 +97,22 @@ static int LinuxDriver_Close(struct inode *inode, struct file *filp);
 
 static unsigned int LinuxDriverEstimateTSCkHz(void);
 
-static struct file_operations vmuser_fops;
+static const struct file_operations vmuser_fops = {
+   .owner = THIS_MODULE,
+   .open = LinuxDriver_Open,
+   .release = LinuxDriver_Close,
+   .unlocked_ioctl = LinuxDriver_Ioctl,
+   .compat_ioctl = LinuxDriver_Ioctl,
+};
+
+#ifndef VMX86_DEVEL
+static struct miscdevice vmmon_miscdev = {
+   .name = "vmmon",
+   .minor = MISC_DYNAMIC_MINOR,
+   .fops = &vmuser_fops,
+};
+#endif
+
 static struct timer_list tscTimer;
 static Atomic_uint32 tsckHz;
 static VmTimeStart tsckHzStartTime;
@@ -251,9 +267,8 @@ LinuxDriverInitTSCkHz(void)
  *      linux module entry point. Called by /sbin/insmod command
  *
  * Results:
- *      registers a device driver for a major # that depends
- *      on the uid. Add yourself to that list.  List is now in
- *      private/driver-private.c.
+ *      Release: registers a device driver with a misc minor node.
+ *      Devel: registers for a major number with user-created node.
  *
  *----------------------------------------------------------------------
  */
@@ -280,46 +295,43 @@ init_module(void)
    if (!Vmx86_CreateHVIOBitmap()) {
       return -ENOMEM;
    }
+
+   if (!Vmx86_CheckMSRUniformity()) {
+      return -EPERM;
+   }
+
    linuxState.fastClockThread = NULL;
    linuxState.fastClockRate = 0;
 
-   /*
-    * Initialize the file_operations structure. Because this code is always
-    * compiled as a module, this is fine to do it here and not in a static
-    * initializer.
-    */
-
-   memset(&vmuser_fops, 0, sizeof vmuser_fops);
-   vmuser_fops.owner = THIS_MODULE;
-   vmuser_fops.unlocked_ioctl = LinuxDriver_Ioctl;
-   vmuser_fops.compat_ioctl = LinuxDriver_Ioctl;
-   vmuser_fops.open = LinuxDriver_Open;
-   vmuser_fops.release = LinuxDriver_Close;
-
 #ifdef VMX86_DEVEL
    devel_init_module();
-   linuxState.minor = 0;
    retval = register_chrdev(linuxState.major, linuxState.deviceName,
                             &vmuser_fops);
+   if (retval) {
+      Warning("Module %s: error registering with major=%d\n",
+              linuxState.deviceName, linuxState.major);
+   } else {
+      Log("Module %s: registered with major=%d\n",
+          linuxState.deviceName, linuxState.major);
+   }
 #else
    sprintf(linuxState.deviceName, "vmmon");
    linuxState.major = 10;
-   linuxState.minor = 165;
-   linuxState.misc.minor = linuxState.minor;
-   linuxState.misc.name = linuxState.deviceName;
-   linuxState.misc.fops = &vmuser_fops;
 
-   retval = misc_register(&linuxState.misc);
+   retval = misc_register(&vmmon_miscdev);
+   if (retval) {
+      Warning("Module %s: error registering misc device %s\n",
+              linuxState.deviceName, vmmon_miscdev.name);
+   } else {
+      Log("Module %s: registered as misc device %s\n", linuxState.deviceName,
+          vmmon_miscdev.name);
+   }
 #endif
 
    if (retval) {
-      Warning("Module %s: error registering with major=%d minor=%d\n",
-              linuxState.deviceName, linuxState.major, linuxState.minor);
       Vmx86_CleanupHVIOBitmap();
       return -ENOENT;
    }
-   Log("Module %s: registered with major=%d minor=%d\n",
-       linuxState.deviceName, linuxState.major, linuxState.minor);
 
    HostIF_InitUptime();
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0) && !defined(timer_setup)
@@ -357,7 +369,7 @@ cleanup_module(void)
 #ifdef VMX86_DEVEL
    unregister_chrdev(linuxState.major, linuxState.deviceName);
 #else
-   misc_deregister(&linuxState.misc);
+   misc_deregister(&vmmon_miscdev);
 #endif
 
    Log("Module %s: unloaded\n", linuxState.deviceName);
@@ -1077,6 +1089,23 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       ipiVectors.hvIPIVector      = HostIF_GetHVIPIVector();
 
       retval = HostIF_CopyToUser(ioarg, &ipiVectors, sizeof ipiVectors);
+      break;
+   }
+
+   case IOCTL_VMX86_GET_SWITCH_ERROR_ADDR: {
+      VMSwitchErrorArgs args;
+
+      retval = HostIF_CopyFromUser(&args, ioarg, sizeof args);
+      if (retval != 0) {
+         break;
+      }
+      if (args.vcpuid >= vm->numVCPUs || vm->crosspage == NULL ||
+          vm->crosspage[args.vcpuid] == NULL) {
+         retval = -EINVAL;
+         break;
+      }
+      args.addr = vm->crosspage[args.vcpuid]->wsUD2;
+      retval = HostIF_CopyToUser(ioarg, &args, sizeof args);
       break;
    }
 

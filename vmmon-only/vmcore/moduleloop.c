@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -75,12 +75,13 @@ Vmx86_RunVM(VMDriver *vm,   // IN:
    uint64           retval    = MODULECALL_USERRETURN;
    VMCrossPageData *crosspage;
    int              bailValue = 0;
+   Bool             switchOk = TRUE;
 
    ASSERT(vcpuid < vm->numVCPUs);
    if (vm->crosspage[vcpuid] == NULL) {
       return USERCALL_VMX86ALLOCERR;
    }
-   crosspage = &vm->crosspage[vcpuid]->crosspageData;
+   crosspage = vm->crosspage[vcpuid];
 
    /*
     * Check if we were interrupted by signal.
@@ -95,9 +96,9 @@ Vmx86_RunVM(VMDriver *vm,   // IN:
        * Task_Switch changes the world to the monitor.
        * The monitor is waiting in the BackToHost routine.
        */
-      UCTIMESTAMP(crosspage, SWITCHING_TO_MONITOR);
-      Task_Switch(vm, vcpuid);
-      UCTIMESTAMP(crosspage, SWITCHED_TO_MODULE);
+      UCTIMESTAMP(crosspage->ucTimeStamps, SWITCHING_TO_MONITOR);
+      switchOk = Task_Switch(vm, vcpuid);
+      UCTIMESTAMP(crosspage->ucTimeStamps, SWITCHED_TO_MODULE);
 
       /*
        * Wake up anything that was waiting for this vcpu to run
@@ -118,6 +119,11 @@ Vmx86_RunVM(VMDriver *vm,   // IN:
 skipTaskSwitch:;
 
       retval = MODULECALL_USERRETURN;
+
+      if (UNLIKELY(!switchOk)) {
+         bailValue = USERCALL_SWITCHERR;
+         goto bailOut;
+      }
 
       if (crosspage->userCallType != MODULECALL_USERCALL_NONE) {
          /*
@@ -165,7 +171,6 @@ skipTaskSwitch:;
 
       case MODULECALL_SEMAWAIT: {
          retval = HostIF_SemaphoreWait(vm, vcpuid, crosspage->args);
-
          if (retval == MX_WAITINTERRUPTED) {
             crosspage->moduleCallInterrupted = TRUE;
             bailValue = USERCALL_RESTART;
@@ -283,6 +288,10 @@ skipTaskSwitch:;
          retval = HostIF_GetHVIPIVector();
       } break;
 
+      case MODULECALL_GET_PERF_CTR_VECTOR: {
+         retval = HostIF_GetPerfCtrVector();
+      } break;
+
       case MODULECALL_GET_HOST_TIMER_VECTORS: {
          uint8 v0, v1;
          HostIF_GetTimerVectors(&v0, &v1);
@@ -319,6 +328,19 @@ skipTaskSwitch:;
       case MODULECALL_GET_HV_IO_BITMAP: {
          crosspage->args[0] = hvIOBitmap == NULL ? INVALID_MPN :
                                                    hvIOBitmap->mpn;
+      } break;
+
+      case MODULECALL_GET_MSR: {
+         /*
+          * Allocate a MSRQuery request on stack with only one MSRReply slot
+          * since this MSR will be queried from a MSR cache or on a single pcpu.
+          */
+         uint8 req[sizeof(MSRQuery) + sizeof(MSRReply)];
+         MSRQuery *query = (MSRQuery *)&req[0];
+         query->msrNum = (uint32)crosspage->args[0];
+         query->numLogicalCPUs = 1;
+         retval = Vmx86_GetAllMSRs(query);
+         crosspage->args[0] = query->logicalCPUs[0].msrVal;
       } break;
 
       case MODULECALL_ALLOC_CONTIG_PAGES: {

@@ -148,7 +148,7 @@ PtrToVA64(void const *ptr) // IN
  * the NT specific VMX86_DRIVER_VERSION.
  */
 
-#define VMMON_VERSION           (392 << 16 | 0)
+#define VMMON_VERSION           (398 << 16 | 0)
 #define VMMON_VERSION_MAJOR(v)  ((uint32) (v) >> 16)
 #define VMMON_VERSION_MINOR(v)  ((uint16) (v))
 
@@ -248,6 +248,7 @@ enum IOCTLCmd {
    IOCTLCMD(GET_IPI_VECTORS),
    IOCTLCMD(SEND_IPI),
    IOCTLCMD(SEND_ONE_IPI),
+   IOCTLCMD(GET_SWITCH_ERROR_ADDR),
 
    /*
     * Keep host-specific calls at the end so they can be undefined
@@ -316,6 +317,7 @@ enum IOCTLCmd {
 #define IOCTL_VMX86_SEND_IPI            VMIOCTL_NEITHER(SEND_IPI)
 #define IOCTL_VMX86_SEND_ONE_IPI        VMIOCTL_BUFFERED(SEND_ONE_IPI)
 #define IOCTL_VMX86_GET_IPI_VECTORS     VMIOCTL_BUFFERED(GET_IPI_VECTORS)
+#define IOCTL_VMX86_GET_SWITCH_ERROR_ADDR VMIOCTL_BUFFERED(GET_SWITCH_ERROR_ADDR)
 #define IOCTL_VMX86_LOOK_UP_MPN         VMIOCTL_BUFFERED(LOOK_UP_MPN)
 #define IOCTL_VMX86_GET_VMM_PAGE_ROOT   VMIOCTL_BUFFERED(GET_VMM_PAGE_ROOT)
 #define IOCTL_VMX86_LOCK_PAGE           VMIOCTL_BUFFERED(LOCK_PAGE)
@@ -563,7 +565,6 @@ typedef struct VMStatVarsRegistrationBlock {
 } VMStatVarsRegistrationBlock;
 
 typedef struct {
-   VA64   crosspage; // IN: User VA of VCPU crosspage.
    VA64   ptRoot;    // IN: User VA of VCPU L4 page table root.
 } PerVcpuPages;
 
@@ -578,6 +579,15 @@ typedef struct VMProcessBootstrapBlock {
    VMSharedRegion shRegions[ML_SHARED_REGIONS_MAX]; // IN: Shared regions.
    PerVcpuPages   perVcpuPages[0];
 } VMProcessBootstrapBlock;
+
+/*
+ * Arguments for retrieving the switch error address.
+ */
+typedef struct VMSwitchErrorArgs {
+   Vcpuid vcpuid;  // IN: The VCPU of interest.
+   uint64 addr;    // OUT: The code address that a failure was detected at, or 0
+                   //      if no failure has occurred.
+} VMSwitchErrorArgs;
 
 static INLINE size_t
 GetVMProcessBootstrapBlockSize(unsigned numVCPUs)

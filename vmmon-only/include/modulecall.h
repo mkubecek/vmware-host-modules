@@ -42,8 +42,6 @@
 #include "mon_assert.h"
 
 #define NUM_EXCEPTIONS   20     /* EXC_DE ... EXC_XF. */
-#define CP_STUB_SIZE     16     /* A relative jmp instruction (5 bytes)
-                                   padded to the next 16 byte boundary. */
 
 #define MODULECALL_TABLE                                                      \
    MC(INTR)                                                                   \
@@ -66,12 +64,14 @@
    MC(ALLOC_ANON_LOW_PAGE)                                                    \
    MC(GET_MON_IPI_VECTOR)                                                     \
    MC(GET_HV_IPI_VECTOR)                                                      \
+   MC(GET_PERF_CTR_VECTOR)                                                    \
    MC(GET_HOST_TIMER_VECTORS)                                                 \
    MC(BOOTSTRAP_CLEANUP)                                                      \
    MC(GET_SHARED_AREA)                                                        \
    MC(GET_STAT_VARS)                                                          \
    MC(GET_NUM_PTP_PAGES)                                                      \
    MC(GET_HV_IO_BITMAP)                                                       \
+   MC(GET_MSR)                                                                \
 
 /*
  *----------------------------------------------------------------------
@@ -109,8 +109,8 @@ typedef enum ModuleCallType {
  */
 
 #if defined(VMX86_UCCOST) && !defined(VMX86_SERVER)
-#define UCTIMESTAMP(cp, stamp) \
-             do { (cp)->ucTimeStamps[UCCOST_ ## stamp] = RDTSC(); } while (0)
+#define UCTIMESTAMP(ptr, stamp) \
+             do { (ptr)[UCCOST_ ## stamp] = RDTSC(); } while (0)
 #else
 #define UCTIMESTAMP(cp, stamp)
 #endif
@@ -130,7 +130,7 @@ typedef struct UCCostResults {
 } UCCostResults;
 
 typedef enum UCCostStamp {
-#define UC(x) UCCOST_ ## x,
+#define UC(x, y) UCCOST_ ## x,
 #include "uccostTable.h"
    UCCOST_MAX
 } UCCostStamp;
@@ -144,12 +144,12 @@ typedef enum UCCostStamp {
  * MAX_SWITCH_PT_PATCHES
  *
  *   This is the maximum number of patches that must be placed into
- *   the monitor page tables so that the host GDT and the crosspage
- *   can be accessed during worldswitch.
+ *   the monitor page tables so that the host GDT, crosspage data, and
+ *   crosspage code can be accessed during worldswitch.
  *
  *----------------------------------------------------------------------
  */
-#define MAX_SWITCH_PT_PATCHES 2
+#define MAX_SWITCH_PT_PATCHES 3
 
 /*----------------------------------------------------------------------
  *
@@ -236,16 +236,23 @@ VMMPageTablePatch;
  * - the largest stack use instantaneously possible by #DB handling code
  * - one high-water uint32 used to detect stack overflows when debugging
  *
- * 184 bytes is slightly more than enough as of 2015/03/17 -- fjacobs.
+ * A breakdown of the worst-case exception handler stack usage (SwitchUDHandler)
+ * is: 5 * uint64 (Hardware) + 1 * uint64 (RAX) + 1 * uint64 (RBX) +
+ *     1 * uint64 (RCX) + 1 * uint64 (call) + 2 * uint64 (sidt) = 11 * uint64
+ * This is a slight over-estimate of the possible usage at any time but there
+ * is plenty of space available in the cross page data area.
+ *
+ * 264 (11 * sizeof(uint64) * 3) bytes is slightly more than enough as of
+ * 2020/06/14.
  */
-#define TINY_STACK_SIZE      184
+#define TINY_STACK_SIZE      264
 
 /*
  *----------------------------------------------------------------------
  *
  * VMCrossPageData --
  *
- *      Data which is stored on the VMCrossPage.
+ *      Data which is stored on the cross page.
  *
  *----------------------------------------------------------------------
  */
@@ -294,11 +301,13 @@ struct VMCrossPageData {
    uint16   monES;  /* Not saved/restored in assembly switch */
    uint16   monPad;
 
-   uint64   crosspageMA;
+   uint64   crosspageDataMA;
 
    uint64   hostDR[8];
-   LA64     crossPageLA;       // where host/PTP map the cross page
+   LA64     crosspageDataLA;   // where host/PTP map the cross data page
    LA64     crossGDTLA;        // where host/PTP map the cross GDT
+   LA64     crosspageCodeLA;   // where host/PTP map the cross code page
+   LA64     vmmToHostLA;       // where host has placed the VmmToHost function
    uint16   hostInitial64CS;
    uint8    hostDRSaved;       // Host DR spilled to hostDR[x].
    uint8    hostDRInHW;        // 0 -> shadowDR in h/w, 1 -> hostDR in h/w.
@@ -337,6 +346,7 @@ struct VMCrossPageData {
 
 #if !defined(VMX86_SERVER)
    uint64 ucTimeStamps[UCCOST_MAX];
+   uint8  _ucPad[8];
 #endif
 
    SwitchedMSRState switchedMSRState;
@@ -399,64 +409,14 @@ struct VMCrossPageData {
 #include "vmware_pack_end.h"
 VMCrossPageData;
 
-
-/*
- *----------------------------------------------------------------------
- *
- * VMCrossPageCode --
- *
- *      Code which is stored on the VMCrossPage.
- *
- *----------------------------------------------------------------------
- */
-
-#define CODE_BLOCK_SIZE (PAGE_SIZE - sizeof(VMCrossPageData) - \
-                         (2 + NUM_EXCEPTIONS) * CP_STUB_SIZE)
-
-typedef
-#include "vmware_pack_begin.h"
-struct VMCrossPageCode {
-   uint8         toVmmFunc[CP_STUB_SIZE];    // Fixed-position stubs to jump
-   uint8         toHostFunc[CP_STUB_SIZE];   // to world switch functions
-   uint8         gateStubs[NUM_EXCEPTIONS *
-                           CP_STUB_SIZE];    // Stubs for crossIDT.
-   uint8         codeBlock[CODE_BLOCK_SIZE]; // Code for worldswitch and
-                                             // fault handling.
-}
-#include "vmware_pack_end.h"
-VMCrossPageCode;
-
-
-/*
- *----------------------------------------------------------------------
- *
- * VMCrossPage --
- *
- *      Data structure shared between the monitor and the module
- *      that is used for crossing between the two.
- *      Accessible as vm->crosspage (kernel module) and CROSS_PAGE
- *      (monitor)
- *
- *      Must be exactly one page long.
- *
- *----------------------------------------------------------------------
- */
-
-typedef
-#include "vmware_pack_begin.h"
-struct VMCrossPage {
-   VMCrossPageData crosspageData;
-   VMCrossPageCode crosspageCode;
-}
-#include "vmware_pack_end.h"
-VMCrossPage;
-
-#define CROSSPAGE_VERSION_BASE 0xc0e /* increment by 1 */
+#define CROSSPAGE_VERSION_BASE 0xc12 /* increment by 1 */
 #define CROSSPAGE_VERSION    ((CROSSPAGE_VERSION_BASE << 1) + WS_INTR_STRESS)
 
 #if !defined(VMX86_SERVER) && defined(VMM)
-#define CROSS_PAGE             ((VMCrossPage * const)VPN_2_VA(CROSS_PAGE_START))
-#define VMM_SWITCH_SHARED_DATA ((VMCrossPageData *)&CROSS_PAGE->crosspageData)
+#define CROSS_PAGE             ((VMCrossPageData *) \
+                                VPN_2_VA(CROSS_PAGE_DATA_START))
+#define VMM_SWITCH_SHARED_DATA ((VMCrossPageData * const) \
+                                VPN_2_VA(CROSS_PAGE_DATA_START))
 #endif
 
 #define MX_WAITINTERRUPTED     3

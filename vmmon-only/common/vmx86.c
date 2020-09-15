@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -112,8 +112,9 @@ static unsigned globalFastClockRate;
 HostIFContigMemMap *hvIOBitmap;
 
 typedef struct {
-   Atomic_uint32 index;
-   MSRQuery *query;
+   Atomic_uint32 *index; // OUT: array of cpu counters for queries.
+   MSRQuery *query;  // IN/OUT: array of query items
+   uint32 numItems;  // IN
 } Vmx86GetMSRData;
 
 static Bool hostUsesNX;
@@ -122,6 +123,20 @@ typedef struct NXData {
    Atomic_uint32 responded;
    Atomic_uint32 hasNX;
 } NXData;
+
+/*
+ * A structure for holding MSR indexes, values for MSR uniformity checks.
+ */
+typedef struct VMX86MSRCacheInfo {
+   uint32 msrIndex;
+   uint64 msrValue;
+} VMX86MSRCacheInfo;
+
+static VMX86MSRCacheInfo msrUniformityCacheInfo[] = {
+#define MSR_FEAT(member) {member, CONST64(0)},
+   MSR_FEAT(IA32_MSR_ARCH_CAPABILITIES)
+#undef MSR_FEAT
+};
 
 /*
  *----------------------------------------------------------------------
@@ -570,6 +585,66 @@ Vmx86_Calloc(size_t numElements, // IN
 /*
  *-----------------------------------------------------------------------------
  *
+ * Vmx86AllocCrossPages --
+ *
+ *      Allocate numVCPUs pages suitable to be used as the VCPU's
+ *      crosspage area.
+ *
+ * Results:
+ *      TRUE if the required crosspages are allocated successfully.
+ *      FALSE otherwise.
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+static Bool
+Vmx86AllocCrossPages(VMDriver *vm)
+{
+   Vcpuid v;
+
+   for (v = 0; v < vm->numVCPUs; v++) {
+      MPN unused;
+
+      UNUSED_VARIABLE(unused);
+      vm->crosspage[v] = HostIF_AllocKernelPages(1, &unused);
+
+      if (vm->crosspage[v] == NULL) {
+         return FALSE;
+      }
+      memset(vm->crosspage[v], 0, PAGE_SIZE);
+   }
+   return TRUE;
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * Vmx86FreeCrossPages --
+ *
+ *      Free the crosspages allocated for the given VM.
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+static void
+Vmx86FreeCrossPages(VMDriver *vm)
+{
+   Vcpuid v;
+
+   if (vm->crosspage != NULL) {
+      for (v = 0; v < vm->numVCPUs; v++) {
+         if (vm->crosspage[v] != NULL) {
+            HostIF_FreeKernelPages(1, vm->crosspage[v]);
+         }
+      }
+   }
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
  * Vmx86FreeVMDriver --
  *
  *      Release kernel memory allocated for the driver structure.
@@ -749,6 +824,7 @@ Vmx86FreeAllVMResources(VMDriver *vm)
 
       Vmx86_SetHostClockRate(vm, 0);
 
+      Vmx86FreeCrossPages(vm);
       if (vm->ptpTracker != NULL) {
          Task_SwitchPTPPageCleanup(vm);
       }
@@ -1197,6 +1273,15 @@ Vmx86_ProcessBootstrap(VMDriver *vm,
       goto error;
    }
 
+   if (!pseudoTSC.initialized) {
+      Warning("%s: PseudoTSC has not been initialized\n", __FUNCTION__);
+      goto error;
+   }
+
+   if (!Vmx86AllocCrossPages(vm)) {
+      Warning("Failed to allocate cross pages.\n");
+      goto error;
+   }
    /*
     * Initialize the driver's part of the cross-over page used to
     * talk to the monitor.
@@ -1638,12 +1723,12 @@ Vmx86_MonTimerIPI(void)
       VCPUSet_Empty(&expiredVCPUs);
 
       for (v = 0; v < vm->numVCPUs; v++) {
-         VMCrossPage *crosspage = vm->crosspage[v];
+         VMCrossPageData *crosspage = vm->crosspage[v];
 
-         if (!crosspage) {
+         if (crosspage == NULL) {
             continue;  // VCPU is not initialized yet
          }
-         expiry = crosspage->crosspageData.monTimerExpiry;
+         expiry = crosspage->monTimerExpiry;
          if (expiry != 0 && expiry <= pNow) {
             VCPUSet_Include(&expiredVCPUs, v);
             hasWork = TRUE;
@@ -2779,45 +2864,47 @@ Vmx86_CheckPseudoTSC(uint64 *lastTSC, // IN/OUT: last/current value of the TSC
 static void
 Vmx86GetMSR(void *clientData) // IN/OUT: A Vmx86GetMSRData *
 {
+   uint32 i;
    Vmx86GetMSRData *data = (Vmx86GetMSRData *)clientData;
-   MSRQuery *query;
-   uint32 index;
-   int err;
+   ASSERT(data && data->index && data->query);
 
-   ASSERT(data);
-   query = data->query;
-   ASSERT(query);
+   for (i = 0; i < data->numItems; ++i) {
+      uint32 index;
+      int err;
+      Atomic_uint32 *cpus = &data->index[i];
+      MSRQuery *query = &data->query[i];
 
-   index = Atomic_ReadInc32(&data->index);
-   if (index >= query->numLogicalCPUs) {
-      return;
-   }
-
-   query->logicalCPUs[index].tag = HostIF_GetCurrentPCPU();
-
-   /*
-    * We treat BIOS_SIGN_ID (microcode version) specially on Intel,
-    * where the preferred read sequence involves a macro.
-    */
-
-   if (CPUID_GetVendor() == CPUID_VENDOR_INTEL &&
-       query->msrNum == MSR_BIOS_SIGN_ID) {
-      /* safe to read: MSR_BIOS_SIGN_ID architectural since Pentium Pro */
-      query->logicalCPUs[index].msrVal = INTEL_MICROCODE_VERSION();
-      err = 0;
-   } else {
-      /*
-       * Try to enable HV any time these MSRs are queried.  We have seen
-       * buggy formware that forgets to re-enable HV after waking from
-       * deep sleep. [PR 1020692]
-       */
-      if (query->msrNum == MSR_FEATCTL || query->msrNum == MSR_VM_CR) {
-         Vmx86EnableHVOnCPU();
+      index = Atomic_ReadInc32(cpus);
+      if (index >= query->numLogicalCPUs) {
+         continue;
       }
-      err = HostIF_SafeRDMSR(query->msrNum, &query->logicalCPUs[index].msrVal);
-   }
 
-   query->logicalCPUs[index].implemented = (err == 0) ? 1 : 0;
+      query->logicalCPUs[index].tag = HostIF_GetCurrentPCPU();
+
+      /*
+       * We treat BIOS_SIGN_ID (microcode version) specially on Intel,
+       * where the preferred read sequence involves a macro.
+       */
+      if (CPUID_GetVendor() == CPUID_VENDOR_INTEL &&
+          query->msrNum == MSR_BIOS_SIGN_ID) {
+         /* safe to read: MSR_BIOS_SIGN_ID architectural since Pentium Pro */
+         query->logicalCPUs[index].msrVal = INTEL_MICROCODE_VERSION();
+         err = 0;
+      } else {
+         /*
+          * Try to enable HV any time these MSRs are queried.  We have seen
+          * buggy firmware that forgets to re-enable HV after waking from
+          * deep sleep. [PR 1020692]
+          */
+         if (query->msrNum == MSR_FEATCTL || query->msrNum == MSR_VM_CR) {
+            Vmx86EnableHVOnCPU();
+         }
+         err =
+            HostIF_SafeRDMSR(query->msrNum, &query->logicalCPUs[index].msrVal);
+      }
+
+      query->logicalCPUs[index].implemented = (err == 0) ? 1 : 0;
+   }
 }
 
 
@@ -2826,7 +2913,7 @@ Vmx86GetMSR(void *clientData) // IN/OUT: A Vmx86GetMSRData *
  *
  * Vmx86_GetAllMSRs --
  *
- *      Collect MSR value on all logical CPUs.
+ *      Collect MSR value on number of logical CPUs requested.
  *
  *      The caller is responsible for ensuring that the requested MSR is valid
  *      on all logical CPUs.
@@ -2848,24 +2935,40 @@ Vmx86GetMSR(void *clientData) // IN/OUT: A Vmx86GetMSRData *
 Bool
 Vmx86_GetAllMSRs(MSRQuery *query) // IN/OUT
 {
+   unsigned i, cpu;
+   Atomic_uint32 index;
    Vmx86GetMSRData data;
+   data.index = &index;
+   data.numItems = 1;
 
-   Atomic_Write32(&data.index, 0);
+   /* Check MSR uniformity cache first. */
+   for (i = 0; i < ARRAYSIZE(msrUniformityCacheInfo); ++i) {
+      if (msrUniformityCacheInfo[i].msrIndex == query->msrNum) {
+         for (cpu = 0; cpu < query->numLogicalCPUs; cpu++) {
+            query->logicalCPUs[cpu].msrVal = msrUniformityCacheInfo[i].msrValue;
+            query->logicalCPUs[cpu].implemented = 1;
+            query->logicalCPUs[cpu].tag = cpu;
+         }
+         return TRUE;
+      }
+   }
+
+   Atomic_Write32(data.index, 0);
    data.query = query;
 
    HostIF_CallOnEachCPU(Vmx86GetMSR, &data);
 
    /*
-    * At this point, Atomic_Read32(&data.index) is the number of logical CPUs
+    * At this point, Atomic_Read32(data.index) is the number of logical CPUs
     * who replied.
     */
 
-   if (Atomic_Read32(&data.index) > query->numLogicalCPUs) {
+   if (Atomic_Read32(data.index) > query->numLogicalCPUs) {
       return FALSE;
    }
 
-   ASSERT(Atomic_Read32(&data.index) <= query->numLogicalCPUs);
-   query->numLogicalCPUs = Atomic_Read32(&data.index);
+   ASSERT(Atomic_Read32(data.index) <= query->numLogicalCPUs);
+   query->numLogicalCPUs = Atomic_Read32(data.index);
 
    return TRUE;
 }
@@ -3408,16 +3511,13 @@ Vmx86_GetMonitorContext(VMDriver *vm,       // IN: The VM instance.
                         Vcpuid vcpuid,      // IN: VCPU in question.
                         Context64 *context) // OUT: context.
 {
-   VMCrossPage *crosspage;
    VMCrossPageData *cpData;
-   if (vcpuid >= vm->numVCPUs) {
+
+   if (vcpuid >= vm->numVCPUs || vm->crosspage[vcpuid] == NULL) {
       return FALSE;
    }
-   crosspage = vm->crosspage[vcpuid];
-   if (!crosspage) {
-      return FALSE;
-   }
-   cpData = &crosspage->crosspageData;
+   cpData = vm->crosspage[vcpuid];
+
    memset(context, 0, sizeof *context);
    context->es  = cpData->monES;
    context->ss  = cpData->monSS;
@@ -3494,3 +3594,137 @@ Vmx86_CreateHVIOBitmap(void)
    memset(hvIOBitmap->addr, 0xff, SVM_VMCB_IO_BITMAP_SIZE);
    return TRUE;
 }
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * Vmx86RegisterCPU --
+ *
+ *      Registers each logical CPU by incrementing a counter.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      counter value pointed by 'data' is incremented by one.
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+static void
+Vmx86RegisterCPU(void *data) // IN: *data
+{
+   Atomic_uint32 *numLogicalCPUs = data;
+   ASSERT(numLogicalCPUs);
+   Atomic_Inc32(numLogicalCPUs);
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * Vmx86_CheckMSRUniformity --
+ *
+ *      Provides basic hardware MSR feature checks for x86 hosted platform. VMM
+ *      requires and prefers uniformity of certain MSRs. This function iterates
+ *      through a list of MSR features (i.e. msrUniformityCacheInfo), checking
+ *      uniformity for MSR value on each logical CPU. A Uniformity check is
+ *      ignored for MSRs are that are not available for the target architecture
+ *      or cpu family. If MSRs are non uniform then, a common bit field is
+ *      calculated by taking the intersection of MSR values across cpu(s).
+ *
+ * Results:
+ *      Returns TRUE if MSR uniformity checks complete successfully, FALSE
+ *      otherwise.
+ *
+ * Side effects:
+ *      updates msrUniformityCacheInfo cache with MSR values.
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+Bool
+Vmx86_CheckMSRUniformity(void)
+{
+   Vmx86GetMSRData data;
+   uint32 i, j;
+   uint32 numQueries = ARRAYSIZE(msrUniformityCacheInfo);
+   Atomic_uint32 numLogicalCPUs;
+   Atomic_uint32 *cpuCounters;
+   uint32 numPCPUs = 0;
+   MSRQuery *query = NULL;
+
+   Atomic_Write32(&numLogicalCPUs, 0);
+   /*
+    * Calculates number of logical CPUs by counting and then uses this
+    * information to set up MSR queries; will be executed on each logical CPU.
+    */
+   HostIF_CallOnEachCPU(Vmx86RegisterCPU, &numLogicalCPUs);
+   numPCPUs = Atomic_Read32(&numLogicalCPUs);
+   ASSERT(numPCPUs > 0);
+   query = Vmx86_Calloc(numQueries,
+                        sizeof(MSRQuery) + sizeof(MSRReply) * numPCPUs, TRUE);
+   if (query == NULL) {
+      Warning("Fatal, not enough memory for MSR feature uniformity checks");
+      return FALSE;
+   }
+
+   cpuCounters = Vmx86_Calloc(numQueries, sizeof(Atomic_uint32), TRUE);
+   if (cpuCounters == NULL) {
+      Vmx86_Free(query);
+      Warning("Fatal, not enough memory for MSR feature uniformity checks");
+      return FALSE;
+   }
+   data.query = query;
+   data.index = cpuCounters;
+   data.numItems = numQueries;
+
+   /*
+    * Enumerates a MSR list and initializes MSR data structure before the
+    * actual (safe) MSR query takes place. The Nested loop tests a MSR for
+    * uniformity on all logical processors.
+    */
+   for (i = 0; i < ARRAYSIZE(msrUniformityCacheInfo); ++i) {
+      query = &data.query[i];
+      Atomic_Write32(&data.index[i], 0);
+      query->msrNum = msrUniformityCacheInfo[i].msrIndex;
+      query->numLogicalCPUs = numPCPUs;
+   }
+
+   /* perform once, a multi MSR query for MSRs in uniformity check list. */
+   HostIF_CallOnEachCPU(Vmx86GetMSR, &data);
+
+   for (i = 0; i < ARRAYSIZE(msrUniformityCacheInfo); ++i) {
+      uint32 msrIndex = msrUniformityCacheInfo[i].msrIndex;
+      query = &data.query[i];
+      ASSERT(Atomic_Read32(&data.index[i]) == numPCPUs);
+      msrUniformityCacheInfo[i].msrValue = query->logicalCPUs[0].msrVal;
+      if (msrIndex == IA32_MSR_ARCH_CAPABILITIES) {
+         /*
+          * MSR_ARCH_CAPABILITIES_RSBA bit 1 represents lack of feature while 0
+          * represents presence. Therefore, bit is flipped for calculating the
+          * least common set and flipped again on the final value for resetting.
+          */
+         msrUniformityCacheInfo[i].msrValue ^= MSR_ARCH_CAPABILITIES_RSBA;
+      }
+      for (j = 1; j < numPCPUs; j++) {
+         uint64 msrValuePCPU = query->logicalCPUs[j].msrVal;
+         if (msrValuePCPU != query->logicalCPUs[0].msrVal) {
+            if (msrIndex == IA32_MSR_ARCH_CAPABILITIES) {
+               msrValuePCPU ^= MSR_ARCH_CAPABILITIES_RSBA;
+            }
+            msrUniformityCacheInfo[i].msrValue &= msrValuePCPU;
+            Warning("Found a mismatch on MSR feature 0x%x; logical cpu%u "
+                    "value = 0x%llx, but logical cpu%u value = 0x%llx\n",
+                    msrIndex, j, msrValuePCPU, 0, query->logicalCPUs[0].msrVal);
+         }
+      }
+      if (msrIndex == IA32_MSR_ARCH_CAPABILITIES) {
+         msrUniformityCacheInfo[i].msrValue ^= MSR_ARCH_CAPABILITIES_RSBA;
+      }
+   }
+   Vmx86_Free(cpuCounters);
+   Vmx86_Free(query);
+   return TRUE;
+}
+

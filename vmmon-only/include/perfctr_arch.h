@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2014, 2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 2014, 2019-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -133,13 +133,19 @@
  */
 #define PERFCTR_AMD_SMI_COUNT                                  0x2b
 
-/* AMD Data Cache Events */
+/*
+ * AMD Data Cache Events
+ * Family <  17H: 0x45 - Unified TLB hit
+ *                0x46 - Unified TLB miss
+ * Family >= 17H: 0x45 - L1 DTLB miss (L2 DTLB hit or miss)
+ *                0x46 - Tablewalker
+ */
 #define PERFCTR_AMD_DATA_CACHE_ACCESSES                        0x40
 #define PERFCTR_AMD_DATA_CACHE_MISSES                          0x41
 #define PERFCTR_AMD_DATA_CACHE_REFILLS_FROM_L2_OR_SYSTEM       0x42
 #define PERFCTR_AMD_DATA_CACHE_REFILLS_FROM_SYSTEM             0x43
 #define PERFCTR_AMD_DATA_CACHE_LINES_EVICTED                   0x44
-#define PERFCTR_AMD_L1_DTLB_MISS_AND_L2_DTLB_HIT               0x45
+#define PERFCTR_AMD_L1_DTLB_MISS_AND_L2_DTLB_HIT_OR_MISS       0x45
 #define PERFCTR_AMD_L1_DTLB_AND_L2_DTLB_MISS                   0x46
 #define PERFCTR_AMD_MISALIGNED_ACCESSES                        0x47
 #define PERFCTR_AMD_PREFETCH_INSTRS_DISPATCHED                 0x4b

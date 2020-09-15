@@ -68,7 +68,9 @@ typedef struct HostIFContigMemMap {
 
 EXTERN Bool  HostIF_Init(VMDriver *vm, uint32 numVCPUs);
 EXTERN int   HostIF_LookupUserMPN(VMDriver *vm, VA64 uAddr, MPN *mpn);
-EXTERN void *HostIF_MapCrossPage(VMDriver *vm, VA64 uAddr);
+
+EXTERN MPN   HostIF_GetCrossPageDataMPN(VMCrossPageData *crosspageData);
+EXTERN MPN   HostIF_GetCrossPageCodeMPN(void);
 
 EXTERN void *HostIF_AllocPage(void);
 EXTERN void  HostIF_FreePage(void *ptr);
@@ -101,6 +103,7 @@ EXTERN Bool HostIF_VMLockIsHeld(VMDriver *vm);
 EXTERN void  HostIF_APICInit(VMDriver *vm);
 EXTERN uint8 HostIF_GetMonitorIPIVector(void);
 EXTERN uint8 HostIF_GetHVIPIVector(void);
+EXTERN uint8 HostIF_GetPerfCtrVector(void);
 EXTERN void  HostIF_GetTimerVectors(uint8 *v0, uint8 *v1);
 
 EXTERN int   HostIF_SemaphoreWait(VMDriver *vm,

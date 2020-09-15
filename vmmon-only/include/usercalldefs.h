@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2008,2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 2008,2019-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -31,5 +31,6 @@
  * failing DeviceIoControl on Windows.
  */
 #define USERCALL_VMX86ALLOCERR (-8192)
+#define USERCALL_SWITCHERR     (-8193)
 
-#endif 
+#endif
