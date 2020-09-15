@@ -46,15 +46,15 @@
 
 #define PCPU_DATA_SIZE        (32 * CACHELINE_SIZE)
 
-#define GDT_SIZE              (sizeof(Descriptor) * NUM_VALID_SEGMENTS)
-#define GDT_LIMIT             (GDT_SIZE - 1)
+#define VMMON_GDT_SIZE        (sizeof(Descriptor) * NUM_VALID_SEGMENTS)
+#define VMMON_GDT_LIMIT       (VMMON_GDT_SIZE - 1)
 
 #define IRB_SIZE              32 /* Interrupt redirection bitmap. */
 #define TSS_SIZE              (sizeof(Task64) + IRB_SIZE)
 
 #define PCPU_DATA_VA          (VPN_2_VA(GDT_AND_TASK_START))
 #define GDT_START_VA          (PCPU_DATA_VA + PCPU_DATA_SIZE)
-#define TASK_START_VA         (GDT_START_VA + GDT_SIZE)
+#define TASK_START_VA         (GDT_START_VA + VMMON_GDT_SIZE)
 
 /*
  * vmkBoot uses some of the lower-numbered segments, as do host kernels on
