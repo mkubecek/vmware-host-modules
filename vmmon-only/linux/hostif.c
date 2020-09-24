@@ -2012,6 +2012,27 @@ HostIF_VMLockIsHeld(VMDriver *vm) // IN
 
 #if defined(CONFIG_SMP) || defined(CONFIG_X86_UP_IOAPIC) || \
     defined(CONFIG_X86_UP_APIC) || defined(CONFIG_X86_LOCAL_APIC)
+
+#if COMPAT_LINUX_VERSION_CHECK_LT(5, 8, 0)
+static long compat_copy_from_kernel_nofault(void *dst, VA src, size_t size)
+{
+   mm_segment_t old_fs;
+   long ret;
+
+   old_fs = get_fs();
+   set_fs(KERNEL_DS);
+   ret = HostIF_CopyFromUser(dst, src, size);
+   set_fs(old_fs);
+
+   return ret;
+}
+#else
+static long compat_copy_from_kernel_nofault(void *dst, VA src, size_t size)
+{
+   return copy_from_kernel_nofault(dst, (const void *)src, size);
+}
+#endif
+
 /*
  *----------------------------------------------------------------------
  *
@@ -2031,15 +2052,11 @@ HostIF_VMLockIsHeld(VMDriver *vm) // IN
 static Bool
 isVAReadable(VA r)  // IN:
 {
-   mm_segment_t old_fs;
    uint32 dummy;
-   int ret;
+   long ret;
 
-   old_fs = get_fs();
-   set_fs(KERNEL_DS);
    r = APICR_TO_ADDR(r, APICR_VERSION);
-   ret = HostIF_CopyFromUser(&dummy, r, sizeof dummy);
-   set_fs(old_fs);
+   ret = compat_copy_from_kernel_nofault(&dummy, r, sizeof(dummy));
 
    return ret == 0;
 }
