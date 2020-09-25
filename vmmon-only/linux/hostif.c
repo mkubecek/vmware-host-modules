@@ -3260,12 +3260,9 @@ static int
 HostIFFastClockThread(void *unused)  // IN:
 {
    int res;
-   mm_segment_t oldFS;
    unsigned int rate = 0;
    unsigned int prevRate = 0;
 
-   oldFS = get_fs();
-   set_fs(KERNEL_DS);
    allow_signal(SIGKILL);
 
    while ((rate = linuxState.fastClockRate) > MIN_RATE) {
@@ -3288,8 +3285,6 @@ HostIFFastClockThread(void *unused)  // IN:
    }
 
  out:
-   set_fs(oldFS);
-
    /*
     * Do not exit thread until we are told to do so.
     */
