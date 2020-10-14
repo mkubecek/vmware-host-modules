@@ -111,6 +111,24 @@ static unsigned int compat_skb_frag_off(const skb_frag_t *frag)
 	#define write_access_ok(addr, size) access_ok(addr, size)
 #endif
 
+#if COMPAT_LINUX_VERSION_CHECK_LT(5, 10, 0)
+static inline
+__wsum compat_csum_and_copy_to_user(const void *src, void __user *dst, int len)
+{
+	int err;
+	__wsum ret;
+
+	ret = csum_and_copy_to_user(src, dst, len, 0, &err);
+	return err ? 0 : ret;
+}
+#else
+static inline
+__wsum compat_csum_and_copy_to_user(const void *src, void __user *dst, int len)
+{
+	return csum_and_copy_to_user(src, dst, len);
+}
+#endif
+
 /*
  *-----------------------------------------------------------------------------
  *
@@ -563,7 +581,6 @@ VNetCsumCopyDatagram(const struct sk_buff *skb,	// IN: skb to copy
 		     char *buf)			// OUT: where to copy data
 {
    unsigned int csum;
-   int err = 0;
    int len = skb_headlen(skb) - offset;
    char *curr = buf;
    const skb_frag_t *frag;
@@ -576,10 +593,9 @@ VNetCsumCopyDatagram(const struct sk_buff *skb,	// IN: skb to copy
       return -EINVAL;
    }
 
-   csum = csum_and_copy_to_user(skb->data + offset, curr, len, 0, &err);
-   if (err) {
-      return err;
-   }
+   csum = compat_csum_and_copy_to_user(skb->data + offset, curr, len);
+   if (!csum)
+	   return -EFAULT;
    curr += len;
 
    for (frag = skb_shinfo(skb)->frags;
@@ -590,14 +606,12 @@ VNetCsumCopyDatagram(const struct sk_buff *skb,	// IN: skb to copy
 	 const void *vaddr;
 
 	 vaddr = compat_kmap_frag(frag);
-	 tmpCsum = csum_and_copy_to_user(vaddr + compat_skb_frag_off(frag),
-					 curr, compat_skb_frag_size(frag), 0,
-					 &err);
+	 tmpCsum = compat_csum_and_copy_to_user(vaddr + compat_skb_frag_off(frag),
+						curr, compat_skb_frag_size(frag));
 	 compat_kunmap_frag(frag);
 
-	 if (err) {
-	    return err;
-	 }
+	 if (!tmpCsum)
+		 return -EFAULT;
 	 csum = csum_block_add(csum, tmpCsum, curr - buf);
 	 curr += compat_skb_frag_size(frag);
       }
