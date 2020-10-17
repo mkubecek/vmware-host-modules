@@ -51,7 +51,9 @@
  * linux/frame.h dates back to 4.6-rc1, we need the STACK_FRAME_NON_STANDARD
  * definition from it which is there from the start.
  */
-#   if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
+#   if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
+#      include <linux/objtool.h>
+#   elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
 #      include <linux/frame.h>
 #   endif
 #endif
