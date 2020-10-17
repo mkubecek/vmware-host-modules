@@ -2342,48 +2342,41 @@ HostIF_SemaphoreWait(VMDriver *vm,   // IN:
                      uint64 *args)   // IN:
 {
    struct file *file;
-   mm_segment_t old_fs;
    int res;
    int waitFD = args[0];
    int timeoutms = args[2];
    uint64 value;
+   struct poll_wqueues table;
+   unsigned int mask;
 
    file = vmware_fget(waitFD);
    if (file == NULL) {
       return MX_WAITERROR;
    }
 
-   old_fs = get_fs();
-   set_fs(KERNEL_DS);
-
-   {
-      struct poll_wqueues table;
-      unsigned int mask;
-      
-      poll_initwait(&table);
-      current->state = TASK_INTERRUPTIBLE;
-      mask = compat_vfs_poll(file, &table.pt);
-      if (!(mask & (POLLIN | POLLERR | POLLHUP))) {
-         vm->vmhost->vcpuSemaTask[vcpuid] = current;
-         schedule_timeout(timeoutms * HZ / 1000);  // convert to Hz
-         vm->vmhost->vcpuSemaTask[vcpuid] = NULL;
-      }
-      current->state = TASK_RUNNING;
-      poll_freewait(&table);
+   poll_initwait(&table);
+   current->state = TASK_INTERRUPTIBLE;
+   mask = compat_vfs_poll(file, &table.pt);
+   if (!(mask & (POLLIN | POLLERR | POLLHUP))) {
+      vm->vmhost->vcpuSemaTask[vcpuid] = current;
+      schedule_timeout(timeoutms * HZ / 1000);  // convert to Hz
+      vm->vmhost->vcpuSemaTask[vcpuid] = NULL;
    }
+   current->state = TASK_RUNNING;
+   poll_freewait(&table);
 
    /*
     * Userland only writes in multiples of sizeof(uint64). This will allow
     * the code to happily deal with a pipe or an eventfd. We only care about
     * reading no bytes (EAGAIN - non blocking fd) or sizeof(uint64).
+    *
+    * Upstream Linux changed the function parameter types/ordering in 4.14.0.
     */
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
-   res = kernel_read(file, (char *) &value, sizeof value, &file->f_pos);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+   res = kernel_read(file, file->f_pos, (char *)&value, sizeof value);
 #else
-   res = file->f_op->read(file, (char *) &value, sizeof value, &file->f_pos);
+   res = kernel_read(file, &value, sizeof value, &file->f_pos);
 #endif
-
    if (res == sizeof value) {
       res = MX_WAITNORMAL;
    } else {
@@ -2392,7 +2385,6 @@ HostIF_SemaphoreWait(VMDriver *vm,   // IN:
       }
    }
 
-   set_fs(old_fs);
    fput(file);
 
    /*
@@ -2476,7 +2468,6 @@ int
 HostIF_SemaphoreSignal(uint64 *args)  // IN:
 {
    struct file *file;
-   mm_segment_t old_fs;
    int res;
    int signalFD = args[1];
    uint64 value = 1;  // make an eventfd happy should it be there
@@ -2486,26 +2477,23 @@ HostIF_SemaphoreSignal(uint64 *args)  // IN:
       return MX_WAITERROR;
    }
 
-   old_fs = get_fs();
-   set_fs(KERNEL_DS);
-
    /*
     * Always write sizeof(uint64) bytes. This works fine for eventfd and
     * pipes. The data written is formatted to make an eventfd happy should
     * it be present.
+    *
+    * Upstream Linux changed the function parameter types/ordering in 4.14.0.
     */
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
-   res = kernel_write(file, (char *) &value, sizeof value, &file->f_pos);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+   res = kernel_write(file, (char *)&value, sizeof value, file->f_pos);
 #else
-   res = file->f_op->write(file, (char *) &value, sizeof value, &file->f_pos);
+   res = kernel_write(file, &value, sizeof value, &file->f_pos);
 #endif
 
    if (res == sizeof value) {
       res = MX_WAITNORMAL;
    }
 
-   set_fs(old_fs);
    fput(file);
 
    /*
