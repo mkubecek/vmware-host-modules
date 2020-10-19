@@ -3240,7 +3240,11 @@ HostIFStartTimer(Bool rateChanged,  //IN: Did rate change?
          return -1;
       }
    }
-   res = filp->f_op->read(filp, (void *) &buf, sizeof(buf), &pos);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+   res = kernel_read(filp, pos, (char *)&buf, sizeof(buf));
+#else
+   res = kernel_read(filp, &buf, sizeof(buf), &pos);
+#endif
    if (res <= 0) {
       if (res != -ERESTARTSYS) {
          Log("/dev/rtc read failed: %d\n", res);
@@ -3279,12 +3283,9 @@ HostIFFastClockThread(void *data)  // IN:
 {
    struct file *filp = (struct file *) data;
    int res;
-   mm_segment_t oldFS;
    unsigned int rate = 0;
    unsigned int prevRate = 0;
 
-   oldFS = get_fs();
-   set_fs(KERNEL_DS);
    allow_signal(SIGKILL);
    set_user_nice(current, linuxState.fastClockPriority);
 
@@ -3318,7 +3319,6 @@ HostIFFastClockThread(void *data)  // IN:
 
  out:
    LinuxDriverWakeUp(TRUE);
-   set_fs(oldFS);
 
    /*
     * Do not exit thread until we are told to do so.
