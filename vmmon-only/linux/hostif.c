@@ -81,6 +81,7 @@
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 #include <linux/taskstats_kern.h> // For linux/sched/signal.h without version check
 #endif
+#include <linux/eventfd.h>
 
 #include "vmware.h"
 #include "x86apic.h"
@@ -2484,6 +2485,7 @@ HostIF_SemaphoreForceWakeup(VMDriver *vm,       // IN:
 int
 HostIF_SemaphoreSignal(uint64 *args)  // IN:
 {
+   struct eventfd_ctx *eventfd;
    struct file *file;
    int res;
    int signalFD = args[1];
@@ -2492,6 +2494,17 @@ HostIF_SemaphoreSignal(uint64 *args)  // IN:
    file = vmware_fget(signalFD);
    if (!file) {
       return MX_WAITERROR;
+   }
+
+   /*
+    * If it's eventfd, use specific eventfd interface as kernel writes
+    * to eventfd may not be allowed in kernel 5.10 and later.
+    */
+   eventfd = eventfd_ctx_fileget(file);
+   if (!IS_ERR(eventfd)) {
+      eventfd_signal(eventfd, 1);
+      fput(file);
+      return MX_WAITNORMAL;
    }
 
    /*
