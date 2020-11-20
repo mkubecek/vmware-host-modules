@@ -2347,16 +2347,23 @@ HostIF_VMLockIsHeld(VMDriver *vm) // IN
 static Bool
 isVAReadable(VA r)  // IN:
 {
-   mm_segment_t old_fs;
    uint32 dummy;
    int ret;
 
+   r = APICR_TO_ADDR(r, APICR_VERSION);
+#ifdef HAVE_GET_KERNEL_NOFAULT
+   ret = get_kernel_nofault(dummy, (void *)r);
+#else
+   {
+   mm_segment_t old_fs;
+
    old_fs = get_fs();
    set_fs(KERNEL_DS);
-   r = APICR_TO_ADDR(r, APICR_VERSION);
+
    ret = HostIF_CopyFromUser(&dummy, r, sizeof dummy);
    set_fs(old_fs);
-
+   }
+#endif
    return ret == 0;
 }
 #endif
@@ -2522,8 +2529,10 @@ HostIF_GetPerfCtrVector(void)
  *    Perform the semaphore wait (P) operation, possibly blocking.
  *
  * Result:
- *    1 (which equals MX_WAITNORMAL) if success,
- *    negated error code otherwise.
+ *      On success: MX_WAITINTERRUPTED (3) if interrupted by a Unix signal.
+ *                  MX_WAITTIMEDOUT (2) if the timeout occurred.
+ *                  MX_WAITNORMAL (1) if the event was raised.
+ *      On error: MX_WAITERROR (0) on generic error.
  *
  * Side-effects:
  *    None
@@ -2550,6 +2559,11 @@ HostIF_SemaphoreWait(VMDriver *vm,   // IN:
    if (file == NULL) {
       return MX_WAITERROR;
    }
+   if (file->f_op->poll == NULL) {
+      fput(file);
+      Warning("%s: File poll operation is NULL\n", __func__);
+      return MX_WAITERROR;
+   }
 
    poll_initwait(&table);
    current->state = TASK_INTERRUPTIBLE;
@@ -2574,18 +2588,17 @@ HostIF_SemaphoreWait(VMDriver *vm,   // IN:
 #else
    res = kernel_read(file, &value, sizeof value, &file->f_pos);
 #endif
-   if (res == sizeof value) {
-      res = MX_WAITNORMAL;
-   } else {
-      if (res == 0) {
-         res = -EBADF;
-      }
-   }
-
    fput(file);
 
+   if (res == sizeof value) {
+      return MX_WAITNORMAL;
+   }
+   if (res == 0) {
+      res = -EBADF;
+   }
+
    /*
-    * Handle benign errors:
+    * Handle various errors:
     * EAGAIN is MX_WAITTIMEDOUT.
     * The signal-related errors are all mapped into MX_WAITINTERRUPTED.
     */
@@ -2602,6 +2615,10 @@ HostIF_SemaphoreWait(VMDriver *vm,   // IN:
       res = MX_WAITINTERRUPTED;
       break;
    case -EBADF:
+      res = MX_WAITERROR;
+      break;
+   default:
+      Warning("Unexpected error: %s err=%d\n", __FUNCTION__, res);
       res = MX_WAITERROR;
       break;
    }
@@ -2657,7 +2674,6 @@ HostIF_SemaphoreForceWakeup(VMDriver *vm,       // IN:
  *      On error: MX_WAITINTERRUPTED (3) if interrupted by a Unix signal (we
  *                   can block on a preemptive kernel).
  *                MX_WAITERROR (0) on generic error.
- *                Negated system error (< 0).
  *
  * Side-effects:
  *      None
@@ -2666,57 +2682,64 @@ HostIF_SemaphoreForceWakeup(VMDriver *vm,       // IN:
  */
 
 int
-HostIF_SemaphoreSignal(uint64 *args)  // IN:
+HostIF_SemaphoreSignal(VMDriver *vm,  // IN:
+                       uint64 *args)  // IN:
 {
-   struct file *file;
    int res;
    int signalFD = args[1];
-   uint64 value = 1;  // make an eventfd happy should it be there
+   struct file *file;
 
    file = vmware_fget(signalFD);
-   if (!file) {
-      return MX_WAITERROR;
+   if (file == NULL) {
+      return FALSE;
    }
 
    /*
     * Always write sizeof(uint64) bytes. This works fine for eventfd and
     * pipes. The data written is formatted to make an eventfd happy should
     * it be present.
-    *
-    * Upstream Linux changed the function parameter types/ordering in 4.14.0.
     */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
-   res = kernel_write(file, (char *)&value, sizeof value, file->f_pos);
-#else
-   res = kernel_write(file, &value, sizeof value, &file->f_pos);
-#endif
-
-   if (res == sizeof value) {
-      res = MX_WAITNORMAL;
+   if (file->f_op->write != NULL) {
+      /*
+       * PR2650348 - The kernel_write function signature changed in the vanilla
+       * kernel in 4.14.0 and the signature update was backported before that
+       * point in a kernel used by OpenSUSE 15.1 so call the function directly
+       * instead of via the wrapper.
+       *
+       * Kernel 5.10 removed the set_fs functionality which means a user pointer
+       * must be passed into the write function or a -EFAULT will be returned.
+       */
+      res = file->f_op->write(file, vm->vmhost->vmmonData, sizeof (uint64),
+                              &file->f_pos);
+   } else {
+      Warning("%s: File write operation is NULL\n", __func__);
+      res = -ENOTSUPP;
    }
-
    fput(file);
 
+   if (res == sizeof (uint64)) {
+      return MX_WAITNORMAL;
+   }
+
    /*
-    * Handle benign errors:
+    * Handle various errors:
     * EAGAIN is MX_WAITTIMEDOUT.
     * The signal-related errors are all mapped into MX_WAITINTERRUPTED.
     */
-
    switch (res) {
    case -EAGAIN:
-      // The pipe is full, so it is already signalled. Success.
-      res = MX_WAITNORMAL;
-      break;
+      /* The pipe is full, so it is already signalled. Success. */
+      return MX_WAITNORMAL;
    case -EINTR:
    case -ERESTART:
    case -ERESTARTSYS:
    case -ERESTARTNOINTR:
    case -ERESTARTNOHAND:
-      res = MX_WAITINTERRUPTED;
-      break;
+      return MX_WAITINTERRUPTED;
+   default:
+      Warning("Unexpected error: %s err=%d\n", __FUNCTION__, res);
+      return MX_WAITERROR;
    }
-   return res;
 }
 
 
@@ -3241,12 +3264,9 @@ static int
 HostIFFastClockThread(void *unused)  // IN:
 {
    int res;
-   mm_segment_t oldFS;
    unsigned int rate = 0;
    unsigned int prevRate = 0;
 
-   oldFS = get_fs();
-   set_fs(KERNEL_DS);
    allow_signal(SIGKILL);
 
    while ((rate = linuxState.fastClockRate) > MIN_RATE) {
@@ -3269,8 +3289,6 @@ HostIFFastClockThread(void *unused)  // IN:
    }
 
  out:
-   set_fs(oldFS);
-
    /*
     * Do not exit thread until we are told to do so.
     */

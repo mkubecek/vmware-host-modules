@@ -148,7 +148,7 @@ PtrToVA64(void const *ptr) // IN
  * the NT specific VMX86_DRIVER_VERSION.
  */
 
-#define VMMON_VERSION           (398 << 16 | 0)
+#define VMMON_VERSION           (401 << 16 | 0)
 #define VMMON_VERSION_MAJOR(v)  ((uint32) (v) >> 16)
 #define VMMON_VERSION_MINOR(v)  ((uint16) (v))
 
@@ -533,6 +533,8 @@ typedef struct IPIVectors {
  */
 typedef struct VMCreateBlock {
    VA64               bsBlob;        // IN: User VA of the VMM bootstrap blob.
+   VA64               vmmonData;     // IN: User VA of a userlevel scratch area
+                                     //     required by the Linux vmmon
    uint32             bsBlobSize;    // IN: Size of VMM bootstrap blob.
    uint32             numVCPUs;      // IN: Number of VCPUs.
    uint16             vmid;          // OUT: VM ID for the created VM.

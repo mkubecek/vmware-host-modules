@@ -47,11 +47,9 @@
 
 #ifdef __linux__
 #   include "driver-config.h"
-/*
- * linux/frame.h dates back to 4.5-rc5, we need the ANNOTATE_INTRA_FUNCTION_CALL
- * definition from it which came in with 5.7.
- */
-#   if LINUX_VERSION_CODE > KERNEL_VERSION(5, 7, 0)
+#   if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
+#      include <linux/objtool.h>
+#   elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
 #      include <linux/frame.h>
 #   endif
 #endif

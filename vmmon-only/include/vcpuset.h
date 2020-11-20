@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2002-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 2002-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -44,10 +44,11 @@
 #   include "str.h"     /* Str_Snprintf */
 #   define VCS_SNPRINTF Str_Snprintf
 #elif defined MONITOR_APP
-#   include <stdio.h>   /* libc snprintf */
 #   if defined WIN32
-#      define VCS_SNPRINTF _snprintf
+#      include "str.h"     /* Str_Snprintf */
+#      define VCS_SNPRINTF Str_Snprintf
 #   else
+#      include <stdio.h>   /* libc snprintf */
 #      define VCS_SNPRINTF snprintf
 #   endif
 #elif defined VMM || defined VMKERNEL
