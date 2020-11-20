@@ -561,7 +561,12 @@ VNetCsumCopyDatagram(const struct sk_buff *skb,	// IN: skb to copy
       return -EINVAL;
    }
 
+#if COMPAT_LINUX_VERSION_CHECK_LT(5, 10, 0)
    csum = csum_and_copy_to_user(skb->data + offset, curr, len, 0, &err);
+#else
+   csum = csum_and_copy_to_user(skb->data + offset, curr, len);
+   err = (csum == 0) ? -EFAULT : 0;
+#endif
    if (err) {
       return err;
    }
@@ -575,8 +580,14 @@ VNetCsumCopyDatagram(const struct sk_buff *skb,	// IN: skb to copy
 	 const void *vaddr;
 
 	 vaddr = kmap(skb_frag_page(frag));
+#if COMPAT_LINUX_VERSION_CHECK_LT(5, 10, 0)
 	 tmpCsum = csum_and_copy_to_user(vaddr + skb_frag_off(frag),
 					 curr, skb_frag_size(frag), 0, &err);
+#else
+	 tmpCsum = csum_and_copy_to_user(vaddr + skb_frag_off(frag),
+					 curr, skb_frag_size(frag));
+         err = (tmpCsum == 0) ? -EFAULT : 0;
+#endif
 	 kunmap(skb_frag_page(frag));
 
 	 if (err) {

@@ -421,9 +421,7 @@ VMCrossPageData;
 
 #define MX_WAITINTERRUPTED     3
 #define MX_WAITTIMEDOUT        2
-#define MX_WAITNORMAL          1  // Must equal one; see linux module code.
-#define MX_WAITERROR           0  // Use MX_ISWAITERROR() to test for error.
+#define MX_WAITNORMAL          1
+#define MX_WAITERROR           0
 
-// Any zero or negative value denotes error.
-#define MX_ISWAITERROR(e)      ((e) <= MX_WAITERROR)
 #endif

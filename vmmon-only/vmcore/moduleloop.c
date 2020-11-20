@@ -180,7 +180,7 @@ skipTaskSwitch:;
       }
 
       case MODULECALL_SEMASIGNAL: {
-         retval = HostIF_SemaphoreSignal(crosspage->args);
+         retval = HostIF_SemaphoreSignal(vm, crosspage->args);
 
          if (retval == MX_WAITINTERRUPTED) {
              crosspage->moduleCallInterrupted = TRUE;
@@ -362,7 +362,13 @@ skipTaskSwitch:;
       default:
          Warning("ModuleCall %d not supported\n", crosspage->moduleCallType);
       }
-      ASSERT(retval == (uint64)((uint32)retval));
+
+      if (retval != (uint64)((uint32)retval)) {
+         Warning("Unexpected error in modulecall %u (%llu)\n",
+                 crosspage->moduleCallType, retval);
+         bailValue = USERCALL_SWITCHERR;
+         goto bailOut;
+      }
       crosspage->retval = (uint32)retval;
 #if defined(__linux__)
       cond_resched(); // Other kernels are preemptible

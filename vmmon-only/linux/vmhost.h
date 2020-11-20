@@ -92,6 +92,11 @@ typedef struct VMHost {
     * as pages for "AWE" guest memory.
     */
    struct PhysTracker  *AWEPages;
+   /*
+    * Pointer to a userlevel 64-bit area containing the value 1.
+    * This is used for HostIF_SemaphoreSignal.
+    */
+   void *__user vmmonData;
 } VMHost;
 
 #endif

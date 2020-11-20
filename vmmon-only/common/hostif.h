@@ -110,7 +110,7 @@ EXTERN int   HostIF_SemaphoreWait(VMDriver *vm,
                                   Vcpuid vcpuid,
                                   uint64 *args);
 
-EXTERN int   HostIF_SemaphoreSignal(uint64 *args);
+EXTERN int   HostIF_SemaphoreSignal(VMDriver *vm, uint64 *args);
 
 EXTERN void  HostIF_SemaphoreForceWakeup(VMDriver *vm, const VCPUSet *vcs);
 EXTERN void  HostIF_IPI(VMDriver *vm, const VCPUSet *vcs);

@@ -799,6 +799,7 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       } else {
          device->vm = vm;
          args.vmid = vm->userID;
+         vm->vmhost->vmmonData = (void *__user)args.vmmonData;
          retval = HostIF_CopyToUser((VA64)ioarg, &args, sizeof args);
       }
       break;

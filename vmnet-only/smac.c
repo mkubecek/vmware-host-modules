@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2002,2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 2002,2018,2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -4327,7 +4327,7 @@ LookupTypeClass(unsigned short typeValue) // IN: ethernet type
  *----------------------------------------------------------------------
  */
 
-#if _WIN32
+#ifdef _WIN32
 _Use_decl_annotations_
 #endif
 void
