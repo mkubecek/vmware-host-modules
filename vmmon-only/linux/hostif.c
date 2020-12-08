@@ -606,6 +606,15 @@ HostIF_FastClockUnlock(int callerID) // IN
    MutexUnlock(&fastClockMutex, callerID);
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+static int crosspage_set_exec(pte_t *pte, unsigned long addr, void *data)
+{
+	struct page *p = data;
+
+	set_pte(pte, mk_pte(p, VM_PAGE_KERNEL_EXEC));
+	return 0;
+}
+#endif
 
 /*
  *----------------------------------------------------------------------
@@ -626,23 +635,28 @@ HostIF_FastClockUnlock(int callerID) // IN
 static void *
 MapCrossPage(struct page *p)  // IN:
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
+#if COMPAT_LINUX_VERSION_CHECK_LT(5, 8, 0)
    return vmap(&p, 1, VM_MAP, VM_PAGE_KERNEL_EXEC);
 #else
+   void *addr;
+
+   addr = vmap(&p, 1, VM_MAP, VM_PAGE_KERNEL_EXEC);
+   if (!addr)
+	   return NULL;
+
    /* Starting with 5.8, vmap() always sets the NX bit, but the cross
     * page needs to be executable. */
-   pte_t *ptes[1];
-   struct vm_struct *area = alloc_vm_area(1UL << PAGE_SHIFT, ptes);
-   if (area == NULL)
+   if (apply_to_page_range(current->mm, (unsigned long)addr, PAGE_SIZE,
+			   crosspage_set_exec, p)) {
+      vunmap(addr);
       return NULL;
-
-   set_pte(ptes[0], mk_pte(p, VM_PAGE_KERNEL_EXEC));
+   }
 
    preempt_disable();
    __flush_tlb_all();
    preempt_enable();
 
-   return area->addr;
+   return addr;
 #endif
 }
 
