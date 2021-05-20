@@ -1746,7 +1746,19 @@ HostIF_EstimateLockedPageLimit(const VMDriver* vm,                // IN
     * since at least 2.6.0.
     */
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+/*
+ * Ugly... but we cannot use RHEL_RELEASE_VERSION() in the condition if
+ * the macro is not defined.
+ */
+#undef __RHEL_TOTALRAM_PAGES_HACK
+#ifdef RHEL_RELEASE_CODE
+	#if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 0)
+		#define __RHEL_TOTALRAM_PAGES_HACK
+	#endif
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0) && \
+    !defined(__RHEL_TOTALRAM_PAGES_HACK)
    extern unsigned long totalram_pages;
    PageCnt totalPhysicalPages = totalram_pages;
 #else
