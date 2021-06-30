@@ -105,6 +105,7 @@
 #include "versioned_atomic.h"
 #include "compat_poll.h"
 #include "compat_mmap_lock.h"
+#include "compat_sched.h"
 
 /*
  * Ugly... but we cannot use RHEL_RELEASE_VERSION() in the condition if
@@ -539,7 +540,7 @@ HostIF_WakeUpYielders(VMDriver *vm,     // IN:
    while ((vcpuid = VCPUSet_FindFirst(&req)) != VCPUID_INVALID) {
       struct task_struct *t = vm->vmhost->vcpuSemaTask[vcpuid];
       VCPUSet_Remove(&req, vcpuid);
-      if (t && (t->state & TASK_INTERRUPTIBLE)) {
+      if (t && (compat_get_task_state(t) & TASK_INTERRUPTIBLE)) {
          wake_up_process(t);
       }
    }
@@ -2400,14 +2401,14 @@ HostIF_SemaphoreWait(VMDriver *vm,   // IN:
    }
 
    poll_initwait(&table);
-   current->state = TASK_INTERRUPTIBLE;
+   set_current_state(TASK_INTERRUPTIBLE);
    mask = compat_vfs_poll(file, &table.pt);
    if (!(mask & (POLLIN | POLLERR | POLLHUP))) {
       vm->vmhost->vcpuSemaTask[vcpuid] = current;
       schedule_timeout(timeoutms * HZ / 1000);  // convert to Hz
       vm->vmhost->vcpuSemaTask[vcpuid] = NULL;
    }
-   current->state = TASK_RUNNING;
+   set_current_state(TASK_RUNNING);
    poll_freewait(&table);
 
    /*
@@ -2482,7 +2483,7 @@ HostIF_SemaphoreForceWakeup(VMDriver *vm,       // IN:
    FOR_EACH_VCPU_IN_SET(vcs, vcpuid) {
       struct task_struct *t = vm->vmhost->vcpuSemaTask[vcpuid];
       vm->vmhost->vcpuSemaTask[vcpuid] = NULL;
-      if (t && (t->state & TASK_INTERRUPTIBLE)) {
+      if (t && (compat_get_task_state(t) & TASK_INTERRUPTIBLE)) {
          wake_up_process(t);
       }
    } ROF_EACH_VCPU_IN_SET();
