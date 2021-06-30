@@ -289,5 +289,20 @@ typedef struct pid * compat_pid;
 #define compat_kill_pid(pid, sig, flag) kill_pid(pid, sig, flag)
 #endif
 
+/*
+ * Since v5.14-rc1, task_struct::state hase been renamed to __state and is
+ * is longer supposed to be accessed without READ_ONCE/WRITE_ONCE.
+ */
+#ifdef get_current_state
+static inline int compat_get_task_state(const struct task_struct *t)
+{
+	return READ_ONCE(t->__state);
+}
+#else
+static inline int compat_get_task_state(const struct task_struct *t)
+{
+	return READ_ONCE(t->state);
+}
+#endif
 
 #endif /* __COMPAT_SCHED_H__ */
