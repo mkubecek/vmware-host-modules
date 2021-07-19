@@ -38,6 +38,7 @@
 #include "compat_sock.h"
 #include <linux/kdev_t.h>
 #include <linux/mutex.h>
+#include "compat_compiler.h"
 
 #define __KERNEL_SYSCALLS__
 #include <asm/io.h>
@@ -971,7 +972,7 @@ VNetFileOpUnlockedIoctl(struct file    *filp,  // IN:
          }
          /* Should we require verFromUser == VNET_API_VERSION? */
       }
-      /* fall thru */
+      fallthrough;
 
    case SIOCGETAPIVERSION:
       retval = put_user(VNET_API_VERSION, (uint32 *)ioarg) ?  -EFAULT : 0;
