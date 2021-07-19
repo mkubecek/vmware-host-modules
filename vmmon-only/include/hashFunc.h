@@ -39,6 +39,8 @@
 #include "vm_basic_defs.h"
 #include "vm_assert.h"
 
+#include "compat_compiler.h"
+
 /*
  * operations
  */
@@ -251,7 +253,7 @@ static INLINE ub8 hash2(register const ub8 *k, /* the key */
   {
     /* c is reserved for the length */
   case  2: b+=k[1];
-	   /* fall through */
+	   fallthrough;
   case  1: a+=k[0];
     /* case 0: nothing left to add */
   }
