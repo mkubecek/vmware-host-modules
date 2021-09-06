@@ -475,7 +475,7 @@ HostIF_WakeUpYielders(VMDriver *vm,     // IN:
       ASSERT(vcpuid < vm->numVCPUs);
       t = vm->vmhost->vcpuSemaTask[vcpuid];
       VCPUSet_Remove(&req, vcpuid);
-      if (t && (t->state & TASK_INTERRUPTIBLE)) {
+      if (t && (t->__state & TASK_INTERRUPTIBLE)) {
          wake_up_process(t);
       }
    }
@@ -2580,14 +2580,14 @@ HostIF_SemaphoreWait(VMDriver *vm,   // IN:
    }
 
    poll_initwait(&table);
-   current->state = TASK_INTERRUPTIBLE;
+   current->__state = TASK_INTERRUPTIBLE;
    mask = file->f_op->poll(file, &table.pt);
    if (!(mask & (POLLIN | POLLERR | POLLHUP))) {
       vm->vmhost->vcpuSemaTask[vcpuid] = current;
       schedule_timeout(timeoutms * HZ / 1000);  // convert to Hz
       vm->vmhost->vcpuSemaTask[vcpuid] = NULL;
    }
-   current->state = TASK_RUNNING;
+   current->__state = TASK_RUNNING;
    poll_freewait(&table);
 
    /*
@@ -2669,7 +2669,7 @@ HostIF_SemaphoreForceWakeup(VMDriver *vm,       // IN:
        */
       struct task_struct *t =
          (struct task_struct *)xchg(&vm->vmhost->vcpuSemaTask[vcpuid], NULL);
-      if (t && (t->state & TASK_INTERRUPTIBLE)) {
+      if (t && (t->__state & TASK_INTERRUPTIBLE)) {
          wake_up_process(t);
       }
    } ROF_EACH_VCPU_IN_SET_WITH_MAX();
