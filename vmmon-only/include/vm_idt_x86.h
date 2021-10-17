@@ -46,6 +46,7 @@ extern "C" {
 #define TSS_RSP1 1
 #define TSS_RSP2 2
 
+#define IDT_NUM_GATES              0x100
 /*
  * The monitor and the vmkernel use gate stub handlers of a single size in
  * their IDTs.  The only exception is the #PF gate (#14) which is twice as

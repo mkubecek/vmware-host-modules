@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2018-2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 2018-2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -33,23 +33,18 @@
 
 #include "vm_basic_types.h"
 #include "vm_basic_defs.h"
-#include "x86types.h"
+#include "x86/cpu_types_arch.h"
 #include "x86segdescrs.h"
 #include "x86sel.h"
 #include "addrlayout.h"
 
 
 /*
- * Segment map of the monitor.
- *
- * The GDT and Task State Segment reside consecutively on one page.  The
- * monitor segments are placed at the end of the GDT.  The vmkernel can use all
- * lower-numbered segments for user-mode as well as higher-numbered segments
- * (though the vmkernel should not use monitor-private segments).  The high
- * segment placement ensures that there is no selector-overlap with hosted
- * kernel segments (the hosted world switch code can be a bit faster then, as
- * it can use a single cross GDT).
+ * For each pcpu, a per-pcpu data area, the GDT, and the Task State
+ * Segment reside consecutively on a page.
  */
+
+#define PCPU_DATA_SIZE        (32 * CACHELINE_SIZE)
 
 #define GDT_SIZE              (sizeof(Descriptor) * NUM_VALID_SEGMENTS)
 #define GDT_LIMIT             (GDT_SIZE - 1)
@@ -57,8 +52,9 @@
 #define IRB_SIZE              32 /* Interrupt redirection bitmap. */
 #define TSS_SIZE              (sizeof(Task64) + IRB_SIZE)
 
-#define GDT_START_VA          (VPN_2_VA(GDT_AND_TASK_START))
-#define TASK_START_VA         (VPN_2_VA(GDT_AND_TASK_START) + GDT_SIZE)
+#define PCPU_DATA_VA          (VPN_2_VA(GDT_AND_TASK_START))
+#define GDT_START_VA          (PCPU_DATA_VA + PCPU_DATA_SIZE)
+#define TASK_START_VA         (GDT_START_VA + GDT_SIZE)
 
 /*
  * vmkBoot uses some of the lower-numbered segments, as do host kernels on
@@ -75,7 +71,8 @@
 #define FIRST_SYSTEM_SEGMENT  (PAGE_SIZE / sizeof(Descriptor) - \
                                NUM_SYSTEM_SEGMENTS            - \
                                NUM_TASK_SEGMENTS * 2          - \
-                               TSS_SIZE / sizeof(Descriptor))
+                               TSS_SIZE / sizeof(Descriptor)  - \
+                               PCPU_DATA_SIZE / sizeof(Descriptor))
 
 #define GDT_USER_TLS_MIN      USER_TLS_1_SEGMENT
 #define GDT_USER_TLS_MAX      USER_TLS_3_SEGMENT
@@ -93,9 +90,19 @@
 #define NULL_LDTR             0
 
 /*
+ * The vmkernel can use all lower-numbered segments for user-mode as
+ * well as higher-numbered segments, though the vmkernel should not
+ * use monitor-private segments.
+ *
  * The descriptor after SYSTEM_CODE_SEGMENT (loaded into %cs) must be
  * appropriate for %ss because of the syscall instruction for 64-bit
  * user worlds.  Thus SYSTEM_DATA_SEGMENT is directly after it.
+ *
+ * The monitor segments are placed at the end of the GDT.  The high
+ * segment placement for the monitor ensures that there is no
+ * selector-overlap with hosted kernel segments; the hosted world
+ * switch code can be a bit faster then, as it can use a single cross
+ * GDT.
  */
 typedef enum VmwSegs {
    NULL_SEGMENT             = 0,
@@ -131,14 +138,29 @@ typedef enum VmwSegs {
 
 /* Selectors used statically in code or in assembly must be unchecked. */
 #define SYSTEM_NULL_SELECTOR    GDT_SYSTEM_SEL(NULL)
+#ifdef VMKERNEL
+/* USER32_CODE_SELECTOR is also defined in mach/i386/thread_status.h */
 #define USER32_CODE_SELECTOR    GDT_USER_SEL_UNCHECKED(USER32_CODE)
 #define USER_DATA_SELECTOR      GDT_USER_SEL_UNCHECKED(USER_DATA)
 #define USER64_CODE_SELECTOR    GDT_USER_SEL_UNCHECKED(USER64_CODE)
 #define USER64_SYSRET_SELECTOR  GDT_USER_SEL(USER64_SYSRET)
+#endif
 #define SYSTEM_CODE_SELECTOR    GDT_SYSTEM_SEL_UNCHECKED(SYSTEM_CODE)
 #define SYSTEM_DATA_SELECTOR    GDT_SYSTEM_SEL_UNCHECKED(SYSTEM_DATA)
 #define MONITOR_TASK_SELECTOR   GDT_SYSTEM_SEL(MONITOR_TASK)
 #define VMKERNEL_TASK_SELECTOR  GDT_SYSTEM_SEL(VMKERNEL_TASK)
+
+/*
+ * This struct is shared between the vmkernel and the monitor. Since
+ * the vmm and vmk always run as a matched set, the layout can be
+ * changed down the line as needed.
+ */
+#pragma pack(push, 1)
+typedef struct PcpuData {
+   Bool         inVMM;       /* TRUE iff vmm world running in vmm context. */
+   uint8        _unused[PCPU_DATA_SIZE - sizeof(Bool)];
+} PcpuData;
+#pragma pack(pop)
 
 /*
  * The VMM GDT is comprised of many segment descriptors with one initial
@@ -146,14 +168,15 @@ typedef enum VmwSegs {
  * on the same page sequentially after its GDT.
  */
 #pragma pack(push, 1)
-typedef struct StaticGDTAndTSS {
+typedef struct StaticGDTPage {
+   PcpuData     pcpuData;                        /* Non-architectural. */
    Descriptor   empty[NUM_BOOT_SEGMENTS + NUM_USER_SEGMENTS];
    Descriptor   systemSegs[NUM_SYSTEM_SEGMENTS];
    Descriptor64 vmkTask;
    Descriptor64 monTask;
    Task64       monTSS;
    uint8        TSSIRBitmap[IRB_SIZE];
-} StaticGDTAndTSS;
+} StaticGDTPage;
 #pragma pack(pop)
 
 #pragma pack(push, 1)
@@ -166,11 +189,27 @@ typedef struct VmkernelGDT {
 } VmkernelGDT;
 #pragma pack(pop)
 
+#pragma pack(push, 1)
+typedef struct VmkernelGDTPage {
+   PcpuData     pcpuData;                        /* Non-architectural */
+   VmkernelGDT  vmkGDT;
+   Task64       vmkTSS;
+   uint8        TSSIRBitmap[IRB_SIZE];
+} VmkernelGDTPage;
+#pragma pack(pop)
+
 MY_ASSERTS(segs,
            ASSERT_ON_COMPILE(SYSTEM_CODE_SEGMENT + 1 == SYSTEM_DATA_SEGMENT);
            ASSERT_ON_COMPILE(AFTER_LAST_USER_SEGMENT - FIRST_USER_SEGMENT <=
                              NUM_USER_SEGMENTS);
            ASSERT_ON_COMPILE(AFTER_LAST_USER_SEGMENT <= FIRST_SYSTEM_SEGMENT);
+)
+
+MY_ASSERTS(pcpuData,
+           ASSERT_ON_COMPILE(sizeof(PcpuData) == PCPU_DATA_SIZE);
+           ASSERT_ON_COMPILE(offsetof(VmkernelGDTPage, vmkGDT) ==
+                             PCPU_DATA_SIZE);
+           ASSERT_ON_COMPILE(sizeof(VmkernelGDTPage) == PAGE_SIZE);
 )
 
 #endif /* _SEGS_H_ */

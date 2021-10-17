@@ -19,7 +19,7 @@
 /*
  * vm_basic_asm_x86_64.h
  *
- *	Basic x86_64 asm macros.
+ *      Basic x86_64 asm macros.
  */
 
 #ifndef _VM_BASIC_ASM_X86_64_H_
@@ -41,7 +41,8 @@
 
 #if defined(__GNUC__)
 /*
- * GET_CURRENT_PC
+ * _GET_CURRENT_PC --
+ * GET_CURRENT_PC --
  *
  * Returns the current program counter (i.e. instruction pointer i.e. rip
  * register on x86_64). In the example below:
@@ -51,28 +52,36 @@
  *
  * the return value from GET_CURRENT_PC will point a debugger to L123.
  */
-#define GET_CURRENT_PC() ({                                           \
-      void *__rip;                                                    \
-      asm("lea 0(%%rip), %0;\n\t"                                     \
-         : "=r" (__rip));                                             \
-      __rip;                                                          \
-})
+
+#define _GET_CURRENT_PC(rip)                                                  \
+   asm volatile("lea 0(%%rip), %0" : "=r" (rip))
+
+static INLINE_ALWAYS void *
+GET_CURRENT_PC(void)
+{
+   void *rip;
+
+   _GET_CURRENT_PC(rip);
+   return rip;
+}
 
 /*
- * GET_CURRENT_LOCATION
+ * GET_CURRENT_LOCATION --
  *
  * Updates the arguments with the values of the %rip, %rbp, and %rsp
- * registers at the current code location where the macro is invoked,
- * and the return address.
+ * registers and the return address at the current code location where
+ * the macro is invoked.
  */
-#define GET_CURRENT_LOCATION(rip, rbp, rsp, retAddr)  do {         \
-      asm("lea 0(%%rip), %0\n"                                     \
-          "mov %%rbp, %1\n"                                        \
-          "mov %%rsp, %2\n"                                        \
-          : "=r" (rip), "=r" (rbp), "=r" (rsp));                   \
-      retAddr = (uint64) GetReturnAddress();                       \
-   } while (0)
+
+#define GET_CURRENT_LOCATION(rip, rbp, rsp, retAddr) do {                     \
+   _GET_CURRENT_PC(rip);                                                      \
+   asm volatile("mov %%rbp, %0" "\n\t"                                        \
+                "mov %%rsp, %1"                                               \
+                : "=r" (rbp), "=r" (rsp));                                    \
+   retAddr = (uint64)GetReturnAddress();                                      \
+} while (0)
 #endif
+
 
 /*
  * FXSAVE/FXRSTOR
@@ -376,13 +385,13 @@ Mul64x6464(uint64 multiplicand,
     *      discarded by the shift.
     *    Return the low-order 64 bits of the above.
     */
-   uint64 tmplo, tmphi;
-   tmplo = _umul128(multiplicand, multiplier, &tmphi);
    if (shift == 0) {
-      return tmplo;
+      return multiplicand * multiplier;
    } else {
-      return __shiftright128(tmplo, tmphi, (uint8) shift) +
-         ((tmplo >> (shift - 1)) & 1);
+      uint64 lo, hi;
+
+      lo = _umul128(multiplicand, multiplier, &hi);
+      return __shiftright128(lo, hi, (uint8)shift) + (lo >> (shift - 1) & 1);
    }
 }
 
@@ -463,13 +472,13 @@ Muls64x64s64(int64 multiplicand,
     * Note: using an unsigned shift is correct because shift < 64 and
     * we return only the low 64 bits of the shifted result.
     */
-   int64 tmplo, tmphi;
-   tmplo = _mul128(multiplicand, multiplier, &tmphi);
    if (shift == 0) {
-      return tmplo;
+      return multiplicand * multiplier;
    } else {
-      return __shiftright128(tmplo, tmphi, (uint8) shift) +
-         ((tmplo >> (shift - 1)) & 1);
+      int64 lo, hi;
+
+      lo = _mul128(multiplicand, multiplier, &hi);
+      return __shiftright128(lo, hi, (uint8)shift) + (lo >> (shift - 1) & 1);
    }
 }
 

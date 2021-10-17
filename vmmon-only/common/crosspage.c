@@ -105,15 +105,11 @@
 
 #define NOT_REACHED_MINIMAL __builtin_unreachable
 
-#ifdef ANNOTATE_INTRA_FUNCTION_CALL
-#define ANNOTATE_ASM_CALL_STR2(x) #x
-#define ANNOTATE_ASM_CALL_STR(x) ANNOTATE_ASM_CALL_STR2(x) "\n"
-#define ANNOTATE_ASM_CALL ANNOTATE_ASM_CALL_STR(ANNOTATE_INTRA_FUNCTION_CALL)
-#else
-#define ANNOTATE_ASM_CALL
-#endif
-
 void VmmToHost(void);
+void SwitchDBHandler(void);
+void SwitchUDHandler(void);
+void SwitchNMIHandler(void);
+void SwitchMCEHandler(void);
 
 CPDATA const VMCrossPageData cpDataTemplate = {
    .version        = CROSSPAGE_VERSION,
@@ -128,7 +124,7 @@ CPDATA const VMCrossPageData cpDataTemplate = {
    .wsCR0          = CR0_PE | CR0_MP | CR0_EM | CR0_NE | CR0_WP | CR0_PG,
    .wsCR4          = CR4_PAE | CR4_OSFXSR,
 
-   .monTask.rsp[0] = VMM_STACK_TOP,                   /* Monitor stack. */
+   .monTask.rsp[0] = MON_STACK_TOP,                   /* Monitor stack. */
    .monTask.rsp[1] = VPN_2_VA(VMM_STACK_GUARD_START), /* CPL1 is not used. */
    .monTask.rsp[2] = VPN_2_VA(VMM_STACK_GUARD_START), /* CPL2 is not used. */
 
@@ -155,6 +151,102 @@ CPDATA const VMCrossPageData cpDataTemplate = {
    .switchMonIDTR  = { sizeof(Gate64) * NUM_EXCEPTIONS - 1,
                        VMMDATALA(offsetof(VMCrossPageData, switchMonIDT)) },
 };
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * CrossPagePopulateSwitchIDTE --
+ *
+ *      Populates an interrupt descriptor in the crosspage, setting its
+ *      handler to the associated gate stub given a code segment selector.
+ *
+ * Results:
+ *      None
+ *
+ * Side effects:
+ *      None
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+static void
+CrossPagePopulateSwitchIDTE(unsigned idx, Selector cs, Gate64 *idt,
+                            VA handlerVA)
+{
+   Gate64 *entry;
+
+   ASSERT_ON_COMPILE(sizeof *entry == 16);
+   ASSERT(idx < NUM_EXCEPTIONS);
+   entry = &idt[idx];
+
+   entry->offset_0_15  = LOWORD(handlerVA);
+   entry->offset_16_31 = HIWORD(handlerVA);
+   entry->offset_32_63 = HIDWORD(handlerVA);
+   entry->type         = INTER_GATE;
+   entry->segment      = cs;
+   entry->present      = 1;
+   entry->ist          = 0;
+   entry->DPL          = 0;
+   entry->reserved0    = 0;
+   entry->reserved1    = 0;
+}
+
+static VA
+CrossPageVmmCodeVA(void (*handler)(void))
+{
+   VA baseVA = VPN_2_VA(CROSS_PAGE_CODE_START);
+   VA offs = (VA)handler % PAGE_SIZE;
+
+   return baseVA + offs;
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ *  CrossPageInitSwitchIDT --
+ *
+ *      Initializes the contents of the switch IDTs and IDTR.
+ *      Uses the cross page's host kernel linear address and host kernel CS.
+ *
+ * Results:
+ *      None
+ *
+ * Side effects:
+ *      None
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+void
+CrossPageInitSwitchIDTs(struct VMCrossPageData *cpData)
+{
+   const Selector hostCS = cpData->hostInitial64CS;
+   Gate64 *switchHostIDT = cpData->switchHostIDT;
+   Gate64 *switchMonIDT  = cpData->switchMonIDT;
+
+   cpData->switchHostIDTR.limit = sizeof cpData->switchHostIDT - 1;
+   cpData->switchHostIDTR.offset = PtrToVA64(&cpData->switchHostIDT);
+
+   CrossPagePopulateSwitchIDTE(EXC_DB,  hostCS, switchHostIDT,
+                               (VA)SwitchDBHandler);
+   CrossPagePopulateSwitchIDTE(EXC_NMI, hostCS, switchHostIDT,
+                               (VA)SwitchNMIHandler);
+   CrossPagePopulateSwitchIDTE(EXC_UD,  hostCS, switchHostIDT,
+                               (VA)SwitchUDHandler);
+   CrossPagePopulateSwitchIDTE(EXC_MC,  hostCS, switchHostIDT,
+                               (VA)SwitchMCEHandler);
+
+   CrossPagePopulateSwitchIDTE(EXC_DB,  SYSTEM_CODE_SELECTOR, switchMonIDT,
+                          CrossPageVmmCodeVA(SwitchDBHandler));
+   CrossPagePopulateSwitchIDTE(EXC_NMI, SYSTEM_CODE_SELECTOR, switchMonIDT,
+                          CrossPageVmmCodeVA(SwitchNMIHandler));
+   CrossPagePopulateSwitchIDTE(EXC_UD,  SYSTEM_CODE_SELECTOR, switchMonIDT,
+                          CrossPageVmmCodeVA(SwitchUDHandler));
+   CrossPagePopulateSwitchIDTE(EXC_MC,  SYSTEM_CODE_SELECTOR, switchMonIDT,
+                          CrossPageVmmCodeVA(SwitchMCEHandler));
+}
 
 
 /*
@@ -218,7 +310,6 @@ CrossPage_CodePage(void)
    ".p2align 4\n"
    EXPORTED_ASM_SYMBOL(SwitchDBHandler)
    "pushq        %%rax\n"
-   ANNOTATE_ASM_CALL
    "call         SwitchExcGetCrossPageData\n"
    "addq         %[wsExceptionDB], %%rax\n"
    "movb         $1,               (%%rax)\n" /* log EXC_DB */
@@ -259,7 +350,6 @@ CrossPage_CodePage(void)
    "pushq        %%rax\n"
    "pushq        %%rbx\n"
    "pushq        %%rcx\n"
-   ANNOTATE_ASM_CALL
    "call         SwitchExcGetCrossPageData\n"
    "movl         %[wsExceptionUD],      %%ecx\n"    /* log EXC_UD */
    "movb         $1,                    (%%rax, %%rcx)\n"
@@ -326,7 +416,6 @@ CrossPage_CodePage(void)
    ".p2align 4\n"
    EXPORTED_ASM_SYMBOL(SwitchNMIHandler)
    "pushq        %%rax\n"
-   ANNOTATE_ASM_CALL
    "call         SwitchExcGetCrossPageData\n"
    "addq         %[wsExceptionNMI], %%rax\n"
    "movb         $1,                (%%rax)\n" /* log EXC_NMI */
@@ -362,7 +451,6 @@ CrossPage_CodePage(void)
    ".p2align 4\n"
    EXPORTED_ASM_SYMBOL(SwitchMCEHandler)
    "pushq        %%rax\n"
-   ANNOTATE_ASM_CALL
    "call         SwitchExcGetCrossPageData\n"
    "addq         %[wsExceptionMC], %%rax\n"
    "movb         $1,              (%%rax)\n" /* log EXC_MC */

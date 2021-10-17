@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 2018,2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -28,7 +28,6 @@
 #else
 #   include <string.h>
 #endif
-#include "vmware.h"
 #include "vm_assert.h"
 #include "hostif.h"
 #include "sharedAreaVmmon.h"

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998,2014,2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998,2014,2019-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -41,7 +41,6 @@
 #   include <string.h>
 #endif
 
-#include "vmware.h"
 #include "vmx86.h"
 #include "phystrack.h"
 #include "hostif.h"
@@ -154,9 +153,7 @@ PhysTrackAllocL3(PhysTrackerL2 *dir2,
    if (!dir3) {
       ASSERT_ON_COMPILE(sizeof *dir3 == PAGE_SIZE);
       dir3 = HostIF_AllocPage();
-      if (!dir3) {
-         PANIC();
-      }
+      VERIFY(dir3);
       memset(dir3, 0, sizeof *dir3);
       dir2->dir[p2] = dir3;
    }
@@ -263,8 +260,7 @@ PhysTrack_Free(PhysTracker *tracker)
 
                for (pos = 0; pos < BYTES_PER_ENTRY; pos++) {
                   if (dir3->bits[pos]) {
-                     Warning("%s: pfns still locked\n", __FUNCTION__);
-                     PANIC();
+                     Panic("%s: pfns still locked\n", __FUNCTION__);
                   }
                }
                PHYSTRACK_FREEL3(dir2, p2);
@@ -316,17 +312,13 @@ PhysTrack_Add(PhysTracker *tracker, // IN/OUT
       // more efficient with page alloc
       ASSERT_ON_COMPILE(sizeof *dir2 == PAGE_SIZE);
       dir2 = HostIF_AllocPage();
-      if (!dir2) {
-         PANIC();
-      }
+      VERIFY(dir2);
       memset(dir2, 0, sizeof *dir2);
       tracker->dir[p1] = dir2;
    }
    dir3 = PHYSTRACK_ALLOCL3(dir2, p2);
    PHYSTRACK_GETL3POS(p3, pos, bit);
-   if (dir3->bits[pos] & bit) {
-      PANIC();
-   }
+   VERIFY((dir3->bits[pos] & bit) == 0);
    dir3->bits[pos] |= bit;
 }
 
@@ -365,17 +357,11 @@ PhysTrack_Remove(PhysTracker *tracker, // IN/OUT
    ASSERT(p1 < PHYSTRACK_L1_ENTRIES);
 
    dir2 = tracker->dir[p1];
-   if (!dir2) {
-      PANIC();
-   }
+   VERIFY(dir2);
    dir3 = PHYSTRACK_GETL3(dir2, p2);
-   if (!dir3) {
-      PANIC();
-   }
+   VERIFY(dir3);
    PHYSTRACK_GETL3POS(p3, pos, bit);
-   if (!(dir3->bits[pos] & bit)) {
-      PANIC();
-   }
+   VERIFY((dir3->bits[pos] & bit) != 0);
    dir3->bits[pos] &= ~bit;
 }
 

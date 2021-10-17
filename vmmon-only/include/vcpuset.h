@@ -40,20 +40,12 @@
 #include "vcpuid.h"
 #include "vcpuset_types.h"
 
-#if defined VMX86_VMX
-#   include "str.h"     /* Str_Snprintf */
-#   define VCS_SNPRINTF Str_Snprintf
-#elif defined MONITOR_APP
-#   if defined WIN32
-#      include "str.h"     /* Str_Snprintf */
-#      define VCS_SNPRINTF Str_Snprintf
-#   else
-#      include <stdio.h>   /* libc snprintf */
-#      define VCS_SNPRINTF snprintf
-#   endif
+#if defined VMX86_VMX || defined MONITOR_APP
+#   include <stdio.h>   /* libc snprintf */
+#   define VCS_SNPRINTF
 #elif defined VMM || defined VMKERNEL
 #   include "vm_libc.h" /* vmcore snprintf */
-#   define VCS_SNPRINTF snprintf
+#   define VCS_SNPRINTF
 #endif
 
 #ifdef VMX86_VMX
@@ -875,7 +867,7 @@ VCPUSet_LogFormat(char *buf, size_t size, const VCPUSet *vcs)
    ASSERT(size >= VCS_BUF_SIZE);
 #define VCS_LOGF(...)                                                   \
    {                                                                    \
-      int ret = VCS_SNPRINTF(buf + offset, size - offset, __VA_ARGS__); \
+      int ret = snprintf(buf + offset, size - offset, __VA_ARGS__);     \
       ASSERT(0 <= ret && size >= offset && ret < (int)(size - offset)); \
       offset += (unsigned)ret;                                          \
    }

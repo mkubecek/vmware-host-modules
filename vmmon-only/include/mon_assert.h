@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2007-2015,2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 2007-2015,2018,2020,2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -57,8 +57,8 @@
  *
  *     Using the full pathname for __FILE__ is undesirable because
  *     different source trees frequently have different path name
- *     lengths, and this causes the 'monitor-modular-size' script to
- *     report differences in '.rodata'.
+ *     lengths, and this causes the 'monitor-size' script to report
+ *     differences in '.rodata'.
  *
  *   o Each __FILE__ is put into its own .assert_pathname_##__FILE
  *     section.  The monitor's runtime linker (not ld) then uses the name
@@ -82,12 +82,10 @@
  */
 
 #define ALL_ASSERT_TYPES \
-   ADEF(AssertType_AssertPanic,          _AssertPanicFmt),                 \
    ADEF(AssertType_AssertAssert,         _AssertAssertFmt),                \
    ADEF(AssertType_AssertVerify,         _AssertVerifyFmt),                \
    ADEF(AssertType_AssertNotImplemented, _AssertNotImplementedFmt),        \
    ADEF(AssertType_AssertNotReached,     _AssertNotReachedFmt),            \
-   ADEF(AssertType_AssertPanicBug,       _AssertPanicFmt " bugNr=%d"),     \
    ADEF(AssertType_AssertAssertBug,      _AssertAssertFmt " bugNr=%d"),    \
    ADEF(AssertType_AssertVerifyBug,      _AssertVerifyFmt " bugNr=%d"),    \
    ADEF(AssertType_AssertNotImplementedBug,                                \
@@ -106,7 +104,7 @@ typedef enum Assert_Type {
 typedef struct Assert_Info {
    VA faultAddr;
    struct {
-      Assert_Type type:4;
+      uint32 type:4;
       int bugNr:28;
    } misc;
    Assert_MonSrcLoc loc;

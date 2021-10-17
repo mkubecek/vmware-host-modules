@@ -33,11 +33,8 @@
 #include "modulecall.h"
 #include "vcpuid.h"
 #include "iocontrols.h"
-#include "numa_defs.h"
 #include "rateconv.h"
-#include "vmmem_shared.h"
 #include "apic.h"
-#include "bootstrap_vmm.h"
 #include "sharedAreaVmmon.h"
 #include "statVarsVmmon.h"
 
@@ -163,7 +160,6 @@ extern void  Vmx86_Free(void *ptr);
 
 extern int32 Vmx86_GetNumVMs(void);
 extern Bool Vmx86_SetConfiguredLockedPagesLimit(PageCnt limit);
-extern void Vmx86_SetDynamicLockedPagesLimit(PageCnt limit);
 extern Bool Vmx86_GetMemInfo(VMDriver *curVM,
                              Bool curVMOnly,
                              VMMemInfoArgs *args,

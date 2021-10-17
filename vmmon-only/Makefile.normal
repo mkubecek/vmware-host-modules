@@ -66,21 +66,18 @@ endif
 CC_OPTS := -O2 -DMODULE -DVMMON -DVMCORE $(GLOBAL_DEFS) $(CC_KFLAGS) $(CC_WARNINGS)
 
 INCLUDE := -I$(SRCROOT)/include -I$(SRCROOT)/common -I$(SRCROOT)/linux \
-	   -I$(SRCROOT)/vmcore -I$(HEADER_DIR)
+	   -I$(HEADER_DIR)
 
 INCLUDE += $(shell $(CC) $(INCLUDE) -E $(SRCROOT)/autoconf/geninclude.c \
 	   | sed -n -e 's!^APATH!-I$(HEADER_DIR)/asm!p')
 
 C_TARGETS_LINUX  := driver.o hostif.o driverLog.o
-C_TARGETS_COMMON := vmx86.o memtrack.o phystrack.o cpuid.o task.o crosspage.o
-C_TARGETS_VMCORE := moduleloop.o
+C_TARGETS_COMMON := vmx86.o memtrack.o phystrack.o cpuid.o task.o crosspage.o moduleloop.o
 C_TARGETS_BOOTSTRAP := bootstrap.o
 C_TARGETS_LINUX_D := ${C_TARGETS_LINUX:.o=.d}
 C_TARGETS_COMMON_D := ${C_TARGETS_COMMON:.o=.d}
-C_TARGETS_VMCORE_D := ${C_TARGETS_VMCORE:.o=.d}
 C_TARGETS_BOOTSTRAP_D := ${C_TARGETS_BOOTSTRAP:.o=.d}
-C_TARGETS := $(C_TARGETS_LINUX) $(C_TARGETS_COMMON) $(C_TARGETS_VMCORE) \
-             $(C_TARGETS_BOOTSTRAP)
+C_TARGETS := $(C_TARGETS_LINUX) $(C_TARGETS_COMMON) $(C_TARGETS_BOOTSTRAP)
 
 ####
 #### Make Targets are beneath here.
@@ -112,10 +109,6 @@ $(C_TARGETS_COMMON): %.o: $(SRCROOT)/common/%.c
 	$(ECHO) "Compiling  common/$(<F)"
 	$(CC) $(CC_OPTS) $(INCLUDE) -c $<
 
-$(C_TARGETS_VMCORE): %.o: $(SRCROOT)/vmcore/%.c
-	$(ECHO) "Compiling  vmcore/$(<F)"
-	$(CC) $(CC_OPTS) $(INCLUDE) -c $<
-
 $(C_TARGETS_BOOTSTRAP): %.o: $(SRCROOT)/bootstrap/%.c
 	$(ECHO) "Compiling  bootstrap/$(<F)"
 	$(CC) $(CC_OPTS) $(INCLUDE) -c $<
@@ -128,10 +121,6 @@ $(C_TARGETS_COMMON_D): %.d: $(SRCROOT)/common/%.c
 	$(CC) -MM $(CC_OPTS) $(INCLUDE) $< > $@
 
 $(C_TARGETS_LINUX_D): %.d: $(SRCROOT)/linux/%.c
-	$(ECHO) "Dependencies for $(<F)"
-	$(CC) -MM $(CC_OPTS) $(INCLUDE) $< > $@
-
-$(C_TARGETS_VMCORE_D): %.d: $(SRCROOT)/vmcore/%.c
 	$(ECHO) "Dependencies for $(<F)"
 	$(CC) -MM $(CC_OPTS) $(INCLUDE) $< > $@
 

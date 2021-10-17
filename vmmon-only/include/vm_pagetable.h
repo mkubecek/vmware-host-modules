@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2014-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 2014-2019,2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -44,25 +44,36 @@
  *   levels (with standard page sizes).
  */
 
+#define PT_LEVELS_FOREACH(f, ...) \
+   f(1, __VA_ARGS__) \
+   f(2, __VA_ARGS__) \
+   f(3, __VA_ARGS__) \
+   f(4, __VA_ARGS__) \
+   f(5, __VA_ARGS__) \
+
+#define PT_LEVEL_X(X) PT_LEVEL_##X
+#define PT_LXE(X) PT_L##X##E
+
 typedef uint64 PT_Entry;
-typedef PT_Entry PT_L5E;
-typedef PT_Entry PT_L4E;
-typedef PT_Entry PT_L3E;
-typedef PT_Entry PT_L2E;
-typedef PT_Entry PT_L1E;
+#define PT_LXE_DECL(lvl, ...) typedef PT_Entry PT_LXE(lvl);
+PT_LEVELS_FOREACH(PT_LXE_DECL);
+#undef PT_LXE_DECL
 
 typedef enum {
-   PT_LEVEL_1 = 1,
-   PT_LEVEL_2,
-   PT_LEVEL_3,
-   PT_LEVEL_4,
-   PT_LEVEL_5,
+#define PT_LEVEL_X_DECL(lvl, ...) PT_LEVEL_X(lvl) = lvl,
+PT_LEVELS_FOREACH(PT_LEVEL_X_DECL)
+#undef PT_LEVEL_X_DECL
    PT_LEVEL_STOP = PT_LEVEL_1,
    PT_MAX_LEVELS = PT_LEVEL_5
 } PT_Level;
 
 #define PT_PTE_SIZE           8
-#define PT_LEVEL_SHIFT        9
+
+#if defined __BUILD_DEFINED_PT_LEVEL_SHIFT__
+   #define PT_LEVEL_SHIFT        __BUILD_DEFINED_PT_LEVEL_SHIFT__
+#else
+   #define PT_LEVEL_SHIFT        9
+#endif
 
 #define PT_PTE_PFN_SHIFT      PAGE_SHIFT
 #define PT_ENTRIES_PER_PT     (1 << PT_LEVEL_SHIFT)
@@ -136,5 +147,12 @@ typedef enum {
 
 #define PT_LE_NXT_PG(_a, _l)  ((((_a) >> PT_LE_PG_SHIFT(_l)) + 1) \
                                << PT_LE_PG_SHIFT(_l))
+
+#else
+
+#if defined __BUILD_DEFINED_PT_LEVEL_SHIFT__ && \
+    __BUILD_DEFINED_PT_LEVEL_SHIFT__ !=  PT_LEVEL_SHIFT
+#error "vm_pagetable.h included multiple times with different page size"
+#endif
 
 #endif

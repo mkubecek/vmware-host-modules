@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -28,7 +28,6 @@
 /* Must come before any kernel header file --hpreg */
 #include "driver-config.h"
 
-/* Must come before vmware.h --hpreg */
 #include <linux/binfmts.h>
 #include <linux/delay.h>
 #include <linux/file.h>
@@ -55,9 +54,7 @@
 #include <linux/signal.h>
 #include <linux/taskstats_kern.h> // For linux/sched/signal.h without version check
 
-#include "vmware.h"
 #include "x86apic.h"
-#include "vm_asm.h"
 #include "modulecall.h"
 #include "driver.h"
 #include "memtrack.h"
@@ -73,12 +70,20 @@
 #include "vcpuid.h"
 #include "x86svm.h"
 #include "crosspage.h"
+#include "cpu_defs.h"
 
 #include "pgtbl.h"
 #include "versioned_atomic.h"
 
 #if !defined(CONFIG_HIGH_RES_TIMERS)
 #error CONFIG_HIGH_RES_TIMERS required for acceptable performance
+#endif
+
+/* task's state is read-once rather than volatile from 5.14-rc2. */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0) || defined(get_current_state)
+#define get_task_state(task) READ_ONCE((task)->__state)
+#else
+#define get_task_state(task) ((task)->state)
 #endif
 
 /*
@@ -474,7 +479,7 @@ HostIF_WakeUpYielders(VMDriver *vm,     // IN:
       ASSERT(vcpuid < vm->numVCPUs);
       t = vm->vmhost->vcpuSemaTask[vcpuid];
       VCPUSet_Remove(&req, vcpuid);
-      if (t && (t->state & TASK_INTERRUPTIBLE)) {
+      if (t && (get_task_state(t) & TASK_INTERRUPTIBLE)) {
          wake_up_process(t);
       }
    }
@@ -1855,7 +1860,7 @@ HostIFReadUptimeWork(unsigned long *j)  // OUT: current jiffies
 {
    uint64 monotime, uptime, upBase, monoBase;
    int64 diff;
-   uint32 version;
+   VersionedAtomicCookie version;
    unsigned long jifs, jifBase;
    unsigned int attempts = 0;
 
@@ -2566,14 +2571,14 @@ HostIF_SemaphoreWait(VMDriver *vm,   // IN:
    }
 
    poll_initwait(&table);
-   current->state = TASK_INTERRUPTIBLE;
+   __set_current_state(TASK_INTERRUPTIBLE);
    mask = file->f_op->poll(file, &table.pt);
    if (!(mask & (POLLIN | POLLERR | POLLHUP))) {
       vm->vmhost->vcpuSemaTask[vcpuid] = current;
       schedule_timeout(timeoutms * HZ / 1000);  // convert to Hz
       vm->vmhost->vcpuSemaTask[vcpuid] = NULL;
    }
-   current->state = TASK_RUNNING;
+   __set_current_state(TASK_RUNNING);
    poll_freewait(&table);
 
    /*
@@ -2655,7 +2660,7 @@ HostIF_SemaphoreForceWakeup(VMDriver *vm,       // IN:
        */
       struct task_struct *t =
          (struct task_struct *)xchg(&vm->vmhost->vcpuSemaTask[vcpuid], NULL);
-      if (t && (t->state & TASK_INTERRUPTIBLE)) {
+      if (t && (get_task_state(t) & TASK_INTERRUPTIBLE)) {
          wake_up_process(t);
       }
    } ROF_EACH_VCPU_IN_SET_WITH_MAX();

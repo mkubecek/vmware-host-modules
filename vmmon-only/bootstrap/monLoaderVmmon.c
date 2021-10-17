@@ -32,7 +32,7 @@
 
 #include "vm_assert.h"
 #include "vcpuid.h"
-#include "x86types.h"
+#include "cpu_types.h"
 #include "hostif.h"
 #include "x86paging_common.h"
 #include "x86paging_64.h"

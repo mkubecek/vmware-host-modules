@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2016-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 2016-2018,2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -94,8 +94,8 @@ VT_EXIT(XSAVES,               63)
 VT_EXIT(XRSTORS,              64)
 VT_EXIT(VMEXIT65,             65)
 VT_EXIT(VMEXIT66,             66)
-VT_EXIT(VMEXIT67,             67)
-VT_EXIT(VMEXIT68,             68)
+VT_EXIT(UMWAIT,               67)
+VT_EXIT(TPAUSE,               68)
 VT_EXIT(VMEXIT69,             69)
 VT_EXIT(ENCLV,                70)
 VT_EXIT(SGX_CONFLICT,         71)

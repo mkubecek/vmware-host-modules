@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -51,30 +51,24 @@ extern "C" {
 #pragma warning (disable :4200) // non-std extension: zero-sized array in struct
 #endif
 
-typedef
-#include "vmware_pack_begin.h"
-struct MSRReply {
+#pragma pack(push, 1)
+typedef struct MSRReply {
    /*
     * Unique host logical CPU identifier. It does not change across queries, so
     * we use it to correlate the replies of multiple queries.
     */
    uint64 tag;              // OUT
    uint64 msrVal;           // OUT
-   uint8  implemented;      // OUT
-   uint8  _pad[7];
-}
-#include "vmware_pack_end.h"
-MSRReply;
+} MSRReply;
+#pragma pack(pop)
 
-typedef
-#include "vmware_pack_begin.h"
-struct MSRQuery {
+#pragma pack(push, 1)
+typedef struct MSRQuery {
    uint32 msrNum;           // IN
    uint32 numLogicalCPUs;   // IN/OUT
    MSRReply logicalCPUs[0]; // OUT
-}
-#include "vmware_pack_end.h"
-MSRQuery;
+} MSRQuery;
+#pragma pack(pop)
 
 #define MSR_TSC               0x00000010
 #define MSR_PLATFORM_ID       0x00000017
@@ -106,6 +100,7 @@ MSRQuery;
 #define MSR_MISC_ENABLE       0x000001a0
 #define MSR_DEBUGCTL          0x000001d9
 #define MSR_TSC_DEADLINE      0x000006e0
+#define MSR_PKRS              0x000006e1
 #define MSR_EFER              0xc0000080
 #define MSR_FSBASE            0xc0000100
 #define MSR_GSBASE            0xc0000101
@@ -144,6 +139,7 @@ MSRQuery;
 #define MSR_SPEC_CTRL_IBRS                        (1UL << 0)
 #define MSR_SPEC_CTRL_STIBP                       (1UL << 1)
 #define MSR_SPEC_CTRL_SSBD                        (1UL << 2)
+#define MSR_SPEC_CTRL_PSFD                        (1UL << 7)
 
 #define MSR_PRED_CMD_IBPB                         (1UL << 0)
 
@@ -152,6 +148,9 @@ MSRQuery;
 #define MSR_TSX_CTRL_CPUID_CLEAR                  (1ULL << 1)
 
 #define MSR_MISC_FEATURES_ENABLES            0x140
+
+#define MSR_XFD                              0x1c4
+#define MSR_XFD_ERR                          0x1c5
 
 /* Intel Core Architecture and later: use only architected counters. */
 #define IA32_MSR_PERF_CAPABILITIES                   0x345
@@ -167,6 +166,10 @@ MSRQuery;
 #define MSR_PERF_CAPABILITIES_PERF_METRICS_AVAILABLE (1u << 15)
 
 #define IA32_MSR_PEBS_ENABLE                      0x3f1
+
+#define MSR_UMWAIT_CONTROL                        0xe1
+#define MSR_UMWAIT_CONTROL_C0_MASK                0x1
+#define MSR_UMWAIT_CONTROL_TSC_MASK               0xfffffffc
 
 #define MSR_MTRR_BASE0        0x00000200
 #define MSR_MTRR_MASK0        0x00000201
@@ -207,21 +210,52 @@ MSRQuery;
 
 #define MSR_DS_AREA          0x00000600
 
-#define MSR_LASTBRANCHFROMIP 0x000001db // Intel P6 Family
-#define MSR_LASTBRANCHTOIP   0x000001dc // Intel P6 Family
-#define MSR_LASTINTFROMIP    0x000001dd // Intel P6 Family
-#define MSR_LASTINTTOIP      0x000001de // Intel P6 Family
+#define MSR_LASTBRANCHFROMIP   0x000001db // Intel P6 Family
+#define MSR_LASTBRANCHTOIP     0x000001dc // Intel P6 Family
+#define MSR_LASTINTFROMIP      0x000001dd // Intel P6 Family
+#define MSR_LASTINTTOIP        0x000001de // Intel P6 Family
+#define MSR_LASTBRANCH_TOS_P6  0x000001c9 // Intel P6 Family
 
-#define MSR_LER_FROM_LIP     0x000001d7 // Intel Pentium4 Family
-#define MSR_LER_TO_LIP       0x000001d8 // Intel Pentium4 Family
-#define MSR_LASTBRANCH_TOS   0x000001da // Intel Pentium4 Family
-#define MSR_LASTBRANCH_0     0x000001db // Intel Pentium4 Family
-#define MSR_LASTBRANCH_1     0x000001dc // Intel Pentium4 Family
-#define MSR_LASTBRANCH_2     0x000001dd // Intel Pentium4 Family
-#define MSR_LASTBRANCH_3     0x000001de // Intel Pentium4 Family
+#define MSR_LER_FROM_LIP       0x000001d7 // Intel Pentium4 Family
+#define MSR_LER_TO_LIP         0x000001d8 // Intel Pentium4 Family
+#define MSR_LASTBRANCH_TOS_P4  0x000001da // Intel Pentium4 Family
+#define MSR_LASTBRANCH_0       0x000001db // Intel Pentium4 Family
+#define MSR_LASTBRANCH_1       0x000001dc // Intel Pentium4 Family
+#define MSR_LASTBRANCH_2       0x000001dd // Intel Pentium4 Family
+#define MSR_LASTBRANCH_3       0x000001de // Intel Pentium4 Family
+
+#define MSR_LER_INFO           0x000001e0 // with architectural LBR support
+#define MSR_LASTBRANCH_FROM_IP 0x00000680 // From 1st gen Intel Core
+#define MSR_LASTBRANCH_TO_IP   0x000006c0 // From 1st gen Intel Core
+#define MSR_LASTBRANCH_INFO    0x00000dc0 // From 6th gen Intel Core
+#define MSR_LBR_SELECT         0x000001c8 // From 1st gen Intel Core
 
 #define CORE_LBR_SIZE        8
 #define CORE2_LBR_SIZE       4
+#define CORE_GEN1_LBR_SIZE   16     // From 1st to 5th gen Intel Core
+#define CORE_GEN6_LBR_SIZE   32     // From 6th gen Intel Core
+#define LBR_STACK_SIZE_MAX   32
+
+/* Architectural LBR MSRs */
+#define MSR_ARCH_LBR_CTL     0x000014ce
+#define MSR_ARCH_LBR_DEPTH   0x000014cf
+#define MSR_ARCH_LBR_FROM_IP 0x00001500
+#define MSR_ARCH_LBR_TO_IP   0x00001600
+#define MSR_ARCH_LBR_INFO    0x00001200
+
+/* MSR_ARCH_LBR_CTL bits */
+#define MSR_ARCH_LBR_CTL_LBREN         0x000001
+#define MSR_ARCH_LBR_CTL_OS            0x000002
+#define MSR_ARCH_LBR_CTL_USR           0x000004
+#define MSR_ARCH_LBR_CTL_CALL_STACK    0x000008
+#define MSR_ARCH_LBR_CTL_JCC           0x010000
+#define MSR_ARCH_LBR_CTL_NEAR_REL_JMP  0x020000
+#define MSR_ARCH_LBR_CTL_NEAR_IND_JMP  0x040000
+#define MSR_ARCH_LBR_CTL_NEAR_REL_CALL 0x080000
+#define MSR_ARCH_LBR_CTL_NEAR_IND_CALL 0x100000
+#define MSR_ARCH_LBR_CTL_NEAR_RET      0x200000
+#define MSR_ARCH_LBR_CTL_OTHER_BRANCH  0x400000
+#define MSR_ARCH_LBR_CTL_ALL           0x7f000f
 
 /* Power Management MSRs */
 #define MSR_PERF_STATUS      0x00000198 // Current Performance State (ro)
@@ -244,6 +278,71 @@ MSRQuery;
 /* P-State Hardware Coordination Feedback Capability (Intel) */
 #define MSR_MPERF            0x000000e7 // Maximum Performance (rw)
 #define MSR_APERF            0x000000e8 // Actual Performance (rw)
+
+/* Hardware-Controlled Performance States (HWP) related MSRs */
+#define MSR_PM_ENABLE               0x00000770
+#define MSR_HWP_CAPABILITIES        0x00000771
+#define MSR_HWP_REQUEST_PKG         0x00000772
+#define MSR_HWP_INTERRUPT           0x00000773
+#define MSR_HWP_REQUEST             0x00000774
+#define MSR_HWP_PECI_REQUEST_INFO   0x00000775
+#define MSR_HWP_STATUS              0x00000777
+
+/* Power Management Enable MSR bits */
+#define MSR_PM_ENABLE_HWP  (1LL<<0)
+
+/* IA32_HWP_CAPABILITIES */
+#define MSR_HWP_CAP_PERF_MASK CONST64U(0xff)
+
+#define MSR_HWP_CAP_HIGHEST_PERF_SHIFT 0
+#define MSR_HWP_CAP_HIGHEST_PERF(_msr)  \
+       (((_msr) >> MSR_HWP_CAP_HIGHEST_PERF_SHIFT) & MSR_HWP_CAP_PERF_MASK)
+
+#define MSR_HWP_CAP_GUARANTEED_PERF_SHIFT 8
+#define MSR_HWP_CAP_GUARANTEED_PERF(_msr)  \
+       (((_msr) >> MSR_HWP_CAP_GUARANTEED_PERF_SHIFT) & MSR_HWP_CAP_PERF_MASK)
+
+#define MSR_HWP_CAP_MOSTEFFICIENT_PERF_SHIFT 16
+#define MSR_HWP_CAP_MOSTEFFICIENT_PERF(_msr)  \
+       (((_msr) >> MSR_HWP_CAP_MOSTEFFICIENT_PERF_SHIFT) & MSR_HWP_CAP_PERF_MASK)
+
+#define MSR_HWP_CAP_LOWEST_PERF_SHIFT 24
+#define MSR_HWP_CAP_LOWEST_PERF(_msr)  \
+       (((_msr) >> MSR_HWP_CAP_LOWEST_PERF_SHIFT) & MSR_HWP_CAP_PERF_MASK)
+
+/* IA32_HWP_REQUEST valid bits for request fields. */
+#define MSR_HWP_REQ_MIN_VALID          (1LL << 63)
+#define MSR_HWP_REQ_MAX_VALID          (1LL << 62)
+#define MSR_HWP_REQ_DESIRED_VALID      (1LL << 61)
+#define MSR_HWP_REQ_EPP_VALID          (1LL << 60)
+#define MSR_HWP_REQ_ACT_WINDOW_VALID   (1LL << 59)
+/* Set the _PKG_CTRL bit in IA32_HWP_REQUEST to derive its inputs from IA32_HWP_REQUEST_PKG */
+#define MSR_HWP_REQ_PKG_CTRL           (1LL << 42)
+
+/* IA32_HWP_REQUEST(_PKG) */
+#define MSR_HWP_REQ_PERF_MASK       CONST64U(0xff)
+#define MSR_HWP_REQ_EPP_MASK        CONST64U(0xff)
+#define MSR_HWP_REQ_ACT_WINDOW_MASK CONST64U(0x3ff)
+
+#define MSR_HWP_REQ_MIN_PERF_SHIFT 0
+#define MSR_HWP_REQ_MIN_PERF(_msr)  \
+       (((_msr) >> MSR_HWP_REQ_MIN_PERF_SHIFT) & MSR_HWP_REQ_PERF_MASK)
+
+#define MSR_HWP_REQ_MAX_PERF_SHIFT 8
+#define MSR_HWP_REQ_MAX_PERF(_msr)  \
+       (((_msr) >> MSR_HWP_REQ_MAX_PERF_SHIFT) & MSR_HWP_REQ_PERF_MASK)
+
+#define MSR_HWP_REQ_DESIRED_PERF_SHIFT 16
+#define MSR_HWP_REQ_DESIRED_PERF(_msr)  \
+       (((_msr) >> MSR_HWP_REQ_DESIRED_PERF_SHIFT) & MSR_HWP_REQ_PERF_MASK)
+
+#define MSR_HWP_REQ_EPP_SHIFT 24
+#define MSR_HWP_REQ_EPP(_msr)  \
+       (((_msr) >> MSR_HWP_REQ_EPP_SHIFT) & MSR_HWP_REQ_EPP_MASK)
+
+#define MSR_HWP_REQ_ACT_WINDOW_SHIFT 32
+#define MSR_HWP_REQ_ACT_WINDOW(_msr)  \
+       (((_msr) >> MSR_HWP_REQ_ACT_WINDOW_SHIFT) & MSR_HWP_REQ_ACT_WINDOW_MASK)
 
 /* Software Controlled Clock Modulation and Thermal Monitors (Intel) */
 #define MSR_CLOCK_MODULATION 0x0000019a // Thermal Monitor Control (rw)
@@ -537,18 +636,52 @@ MSRQuery;
 /* SEV related MSRs. */
 #define MSR_VMPAGE_FLUSH           0xc001011e
 #define MSR_GHCB_PA                0xc0010130
-#define MSR_GHCB_PA_FUNCTION_MASK       0xfff
-#define MSR_GHCB_PA_SEVINFO_HV              1
-#define MSR_GHCB_PA_SEVINFO_REQ             2
-#define MSR_GHCB_PA_AP_JUMP_TABLE           3
-#define MSR_GHCB_PA_CPUID_REQ               4
-#define MSR_GHCB_PA_CPUID_RESP              5
-#define MSR_GHCB_PA_TERMINATE             256
 #define MSR_SEV_STATUS             0xc0010131
 
-#define MSR_SEV_STATUS_SEV_EN      0x0000000000000001ULL // SEV is enabled
-#define MSR_SEV_STATUS_SEV_ES_EN   0x0000000000000002ULL // SEV-ES is enabled
-#define MSR_SEV_STATUS_SEV_SNP_EN  0x0000000000000004ULL // SEV-SNP is enabled
+/* Commands identifiers used in the MSR_GHCB_PA MSR protocol. */
+#define MSR_GHCB_PA_FUNCTION_MASK           0xfffULL
+#define MSR_GHCB_PA_SEVINFO_HV              0x1
+#define MSR_GHCB_PA_SEVINFO_REQ             0x2
+#define MSR_GHCB_PA_AP_JUMP_TABLE           0x3
+#define MSR_GHCB_PA_CPUID_REQ               0x4
+#define MSR_GHCB_PA_CPUID_RESP              0x5
+#define MSR_GHCB_PA_PREFERRED_GHCB_GPA_REQ  0x10
+#define MSR_GHCB_PA_PREFERRED_GHCB_GPA_RESP 0x11
+#define MSR_GHCB_PA_REGISTER_GHCB_GPA_REQ   0x12
+#define MSR_GHCB_PA_REGISTER_GHCB_GPA_RESP  0x13
+#define MSR_GHCB_PA_TERMINATE               0x100
+
+/* Field definitions for SEVInfo block returned by MSR_GHCB_PA_SEVINFO_REQ. */
+#define MSR_GHCB_PA_SEVINFO_MINVER_SHIFT    32
+#define MSR_GHCB_PA_SEVINFO_MINVER_MASK     0xffffULL
+#define MSR_GHCB_PA_SEVINFO_MAXVER_SHIFT    48
+#define MSR_GHCB_PA_SEVINFO_MAXVER_MASK     0xffffULL
+#define MSR_GHCB_PA_SEVINFO_CBIT_SHIFT      24
+#define MSR_GHCB_PA_SEVINFO_CBIT_MASK       0xffULL
+
+#define SEVINFO_GET(_si, _fd) (((_si) >> MSR_GHCB_PA_SEVINFO_##_fd##_SHIFT) & \
+                                         MSR_GHCB_PA_SEVINFO_##_fd##_MASK)
+#define SEVINFO_MINVER(_si) SEVINFO_GET(_si, MINVER)
+#define SEVINFO_MAXVER(_si) SEVINFO_GET(_si, MAXVER)
+
+/* Field definitions for MSR_GHCB_PA_TERMINATE request. */
+#define MSR_GHCB_PA_TERMINATE_ECS_MASK      0xfULL
+#define MSR_GHCB_PA_TERMINATE_ECS_SHIFT     12
+#define MSR_GHCB_PA_TERMINATE_EC_MASK       0xffULL
+#define MSR_GHCB_PA_TERMINATE_EC_SHIFT      16
+
+/* Define a couple of error code sets (ECS) for terminate requests. */
+#define SEV_TERM_ECS_AMD    0    /* AMD reserves ECS 0.         */
+#define SEV_TERM_ECS_EFI    1    /* Used for VMware EFI errors. */
+#define SEV_TERM_ECS_FROBOS 2    /* Used for FrobOS errors.     */
+
+/* SEV feature-enabled bits in MSR_SEV_STATUS. */
+#define MSR_SEV_STATUS_SEV_EN_BIT      0
+#define MSR_SEV_STATUS_SEV_EN          (1ULL << MSR_SEV_STATUS_SEV_EN_BIT)
+#define MSR_SEV_STATUS_SEV_ES_EN_BIT   1
+#define MSR_SEV_STATUS_SEV_ES_EN       (1ULL << MSR_SEV_STATUS_SEV_ES_EN_BIT)
+#define MSR_SEV_STATUS_SEV_SNP_EN_BIT  2
+#define MSR_SEV_STATUS_SEV_SNP_EN      (1ULL << MSR_SEV_STATUS_SEV_SNP_EN_BIT)
 
 /* SEV-SNP (Secure Nested Paging) MSRs. */
 #define MSR_RMP_BASE              0xc0010132 // Address of first byte of RMP
@@ -658,12 +791,80 @@ MSRQuery;
 #define MSR_HYPERV_GUESTOSID_OS_WINNT_DERIVATIVE 4ULL
 
 /* MSR for forcing RTM abort to recover PMC3 (see PR 2333817) */
+/* See SKZ87 in intel 335901-009 6th-gen-x-series-spec-update.pdf */
 #define MSR_TSX_FORCE_ABORT                      0x0000010f
 #define MSR_TSX_FORCE_ABORT_RTM_BIT_INDEX        0
 
 /*
+ * Total Memory Encryption MSRs
+ */
+#define MSR_MK_TME_KEYID_PART                           0x00000087
+#define MSR_TME_CAPABILITY                              0x00000981
+#define MSR_TME_ACTIVATE                                0x00000982
+#define MSR_TME_EXCLUDE_MASK                            0x00000983
+#define MSR_TME_EXCLUDE_BASE                            0x00000984
+
+/*
+ * MSR_MKTME_KEYID_PART bits
+ */
+#define MSR_MKTME_KEYID_PART_NUM_MK_TME_KEYIDS_SHIFT    0
+#define MSR_MKTME_KEYID_PART_NUM_MK_TME_KEYIDS_MASK     CONST64U(0xFFFFFFFF)
+#define MSR_MKTME_KEYID_PART_NUM_TDX_PRIV_KEYIDS_SHIFT  32
+#define MSR_MKTME_KEYID_PART_NUM_TDX_PRIV_KEYIDS_MASK   CONST64U(0xFFFFFFFF)
+
+/*
+ * MSR_TME_CAPABILITY bits
+ */
+#define MSR_TME_CAPABILITY_AES_XTS_128                  (1ULL << 0)
+#define MSR_TME_CAPABILITY_AES_XTS_128_WITH_INTEGRITY   (1ULL << 1)
+#define MSR_TME_CAPABILITY_AES_XTS_256                  (1ULL << 2)
+#define MSR_TME_CAPABILITY_TME_BYPASS                   (1ULL << 31)
+#define MSR_TME_CAPABILITY_MK_TME_MAX_KEYID_BITS_SHIFT  31
+#define MSR_TME_CAPABILITY_MK_TME_MAX_KEYID_BITS_MASK   CONST64U(0xF)
+#define MSR_TME_CAPABILITY_MK_TME_MAX_KEYS_SHIFT        36
+#define MSR_TME_CAPABILITY_MK_TME_MAX_KEYS_MASK         CONST64U(0xFFFF)
+
+/*
+ * MSR_TME_ACTIVATE bits
+ */
+#define TME_POLICY_AES_XTS_128                          0b0000
+#define TME_POLICY_AES_XTS_256                          0b0010
+
+#define MSR_TME_ACTIVATE_LOCK                           (1ULL << 0)
+#define MSR_TME_ACTIVATE_HW_ENC_ENABLE                  (1ULL << 1)
+#define MSR_TME_ACTIVATE_KEY_SELECT                     (1ULL << 2)
+#define MSR_TME_ACTIVATE_SAVE_TME_KEY_FOR_STANDBY       (1ULL << 3)
+#define MSR_TME_ACTIVATE_TME_POLICY_SHIFT               4
+#define MSR_TME_ACTIVATE_TME_POLICY_MASK                CONST64U(0xF)
+#define MSR_TME_ACTIVATE_TME_BYPASS_ENABLE              (1ULL << 31)
+#define MSR_TME_ACTIVATE_MK_TME_KEYID_BITS_SHIFT        32
+#define MSR_TME_ACTIVATE_MK_TME_KEYID_BITS_MASK         CONST64U(0xF)
+#define MSR_TME_ACTIVATE_TDX_RESERVED_KEYID_BITS_SHIFT  36
+#define MSR_TME_ACTIVATE_TDX_RESERVED_KEYID_BITS_MASK   CONST64U(0xF)
+#define MSR_TME_ACTIVATE_MK_TME_AES_XTS_128             (1ULL << 48)
+#define MSR_TME_ACTIVATE_MK_TME_AES_XTS_256             (1ULL << 50)
+
+/*
+ * TDX SEAM range register MSRs
+ */
+#define MSR_SEAMRR_PHYS_BASE                   0x00001400
+#define MSR_SEAMRR_PHYS_MASK                   0x00001401
+
+/*
+ * MSR_SEAMRR_PHYS_BASE bits
+ */
+#define MSR_SEAMRR_PHYS_BASE_RANGE_CONFIGURED  (1ULL << 3)
+
+/*
+ * MSR_SEAMRR_PHYS_MASK bits
+ */
+#define MSR_SEAMRR_PHYS_MASK_SEAMRR_LOCK       (1ULL << 10)
+#define MSR_SEAMRR_PHYS_MASK_SEAMRR_ENABLE     (1ULL << 11)
+
+/*
  * MTRR bit description
  */
+#define MTRR_CAP_SEAMRR       0x8000
 #define MTRR_CAP_WC           0x400
 #define MTRR_CAP_FIX          0x100
 #define MTRR_CAP_VCNT_MASK    0xff
@@ -752,6 +953,8 @@ X86MSR_SysRetCS(uint64 star)
 }
 
 
+#ifdef VM_X86_ANY
+
 /*
  *----------------------------------------------------------------------
  *
@@ -839,6 +1042,7 @@ X86MSR_SetMSR(uint32 cx, uint64 value)
 #error No compiler defined for RDMSR/WRMSR.
 #endif
 
+#endif  // ifdef VM_X86_ANY
 
 #if defined __cplusplus
 }

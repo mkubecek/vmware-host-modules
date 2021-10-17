@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -30,7 +30,7 @@
 #define INCLUDE_ALLOW_VMMON
 #include "includeCheck.h"
 
-#include "x86types.h"
+#include "cpu_types.h"
 #include "x86desc.h"
 #include "ptsc.h"
 #include "vcpuid.h"
@@ -38,8 +38,8 @@
 #include "vmm_constants.h"
 #include "contextinfo.h"
 #include "rateconv.h"
-#include "modulecallstructs.h"
 #include "mon_assert.h"
+#include "uccost.h"
 
 #define NUM_EXCEPTIONS   20     /* EXC_DE ... EXC_XF. */
 
@@ -92,49 +92,6 @@ typedef enum ModuleCallType {
 } ModuleCallType;
 
 #define MODULECALL_USERCALL_NONE     300
-
-/*
- * Define VMX86_UCCOST in the makefiles (Local.mk,
- * typically) if you want a special build whose only purpose
- * is to measure the overhead of a user call and its
- * breakdown.
- *
- * WINDOWS NOTE: I don't know how to pass VMX86_UCCOST to
- * the driver build on Windows.  It must be defined by hand.
- *
- * ESX Note: we don't have a crosspage in which to store these
- * timestamps.  Such a feature would perhaps be nice (if we
- * ever tire of the argument that esx does so few usercalls
- * that speed doesn't matter).
- */
-
-#if defined(VMX86_UCCOST) && !defined(VMX86_SERVER)
-#define UCTIMESTAMP(ptr, stamp) \
-             do { (ptr)[UCCOST_ ## stamp] = RDTSC(); } while (0)
-#else
-#define UCTIMESTAMP(cp, stamp)
-#endif
-
-#ifdef VMX86_SERVER
-typedef struct UCCostResults {
-   uint32 vmksti;
-   uint32 vmkcli;
-   uint32 ucnop;
-} UCCostResults;
-#else
-
-typedef struct UCCostResults {
-   uint32 htom;
-   uint32 mtoh;
-   uint32 ucnop;
-} UCCostResults;
-
-typedef enum UCCostStamp {
-#define UC(x, y) UCCOST_ ## x,
-#include "uccostTable.h"
-   UCCOST_MAX
-} UCCostStamp;
-#endif // VMX86_SERVER
 
 #define SHADOW_DR(cpData, n)    (cpData)->shadowDR[n].ureg64
 
@@ -204,9 +161,8 @@ typedef enum UCCostStamp {
  *
  *----------------------------------------------------------------------
  */
-typedef
-#include "vmware_pack_begin.h"
-struct VMMPageTablePatch {
+#pragma pack(push, 1)
+typedef struct VMMPageTablePatch {
 #define PTP_EMPTY    (0U) /* Unused array entry. (must be 0) */
 #define PTP_LEVEL_L1 (1U)
 #define PTP_LEVEL_L2 (2U)
@@ -217,9 +173,8 @@ struct VMMPageTablePatch {
    uint64   pteGlobalIdx;       /* Global index of the PTE in 'level'. */
    LPN      lpn;                /* Logical page number mapped by patch. */
    VM_PDPTE pte;                /* PTE.                                */
-}
-#include "vmware_pack_end.h"
-VMMPageTablePatch;
+} VMMPageTablePatch;
+#pragma pack(pop)
 
 #define MODULECALL_NUM_ARGS  4
 
@@ -256,9 +211,8 @@ VMMPageTablePatch;
  *
  *----------------------------------------------------------------------
  */
-typedef
-#include "vmware_pack_begin.h"
-struct VMCrossPageData {
+#pragma pack(push, 1)
+typedef struct VMCrossPageData {
    uint32   version;           // CROSSPAGE_VERSION
    uint32   vmmonVersion;      // VMMON_VERSION
 
@@ -349,8 +303,6 @@ struct VMCrossPageData {
    uint8  _ucPad[8];
 #endif
 
-   SwitchedMSRState switchedMSRState;
-
    /*
     * The values in the shadow debug registers must match those in the
     * hardware debug register immediately after a task switch in
@@ -405,11 +357,10 @@ struct VMCrossPageData {
    uint8         _pad7[4];
    uint64        wsUD2;                       // IP of ud2 instr or 0 if unset.
    uint64        specCtrl; /* host MSR_SPEC_CTRL value before world switch. */
-}
-#include "vmware_pack_end.h"
-VMCrossPageData;
+} VMCrossPageData;
+#pragma pack(pop)
 
-#define CROSSPAGE_VERSION_BASE 0xc12 /* increment by 1 */
+#define CROSSPAGE_VERSION_BASE 0xc14 /* increment by 1 */
 #define CROSSPAGE_VERSION    ((CROSSPAGE_VERSION_BASE << 1) + WS_INTR_STRESS)
 
 #if !defined(VMX86_SERVER) && defined(VMM)

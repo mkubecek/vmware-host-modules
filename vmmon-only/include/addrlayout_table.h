@@ -56,7 +56,7 @@ REGION(MONITOR_READONLY,        1024)
  */
 REGION(MONITOR_DATA,            512)
   ITEM(MON_STACK_PAGES,           8) // Monitor stack.
-  ITEM(IDT_NORMAL,                1) // Normal IDT (used for all but SVM).
+  ITEM(MON_IDT,                   1) // BS/normal IDT (used for all but SVM).
   ITEM(MONITOR_DATA,            503) // Used by linker and TC.
 
 /*
@@ -92,7 +92,7 @@ REGION(MONITOR_MISC,           5632)
   ITEM(GUEST_APIC,                1) // Guest APIC.
 
   ITEM(DF_GUARD_PAGE,             1) // Double Fault stack guard page.
-  ITEM(DF_STACK_PAGES,            1) // Double Fault stack; need ~768 bytes.
+  ITEM(DF_STACK_PAGES,            1) // Double Fault stack; need ~1600 bytes.
 
   ITEM(MC_GUARD_PAGE,             1) // Machine Check stack guard page.
   ITEM(MC_STACK_PAGES,            1) // Machine Check stack.
@@ -136,7 +136,7 @@ REGION(BOOTSTRAP,              8192)
   ITEM(BS_VCPU_L1PT_PT,           1) // L1PT that maps a VCPU's L1 page tables
   ITEM(BS_INIT_POOL,              1) // pool for initializing VMM pages
   ITEM(BS_DYNAMIC_ALLOC,       1880) // bs_alloc's dynamic allocator pages
-  ITEM(IDT_BOOTSTRAP,             1) // bootstrap IDT
+  ITEM(MON_IDT_TMP,               1) // temporary addr for normal IDT on bsp
   ITEM(IDT_BOOTSTRAP_STUBS,       2) // bootstrap IDT gate stubs
   ITEM(BS_PER_VM_VMX,           300) // vmm64's shared_per_vm_vmx
   ITEM(BS_PER_VCPU,               8) // vmm64's shared_per_vcpu for VCPU 0

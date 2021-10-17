@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2003-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 2003-2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -130,9 +130,22 @@ Max(int a, int b)
 #define ROUNDUPBITS(x, bits)	(((uintptr_t) (x) + MASK(bits)) & ~MASK(bits))
 #define ROUNDDOWNBITS(x, bits)	((uintptr_t) (x) & ~MASK(bits))
 #define CEILING(x, y)		(((x) + (y) - 1) / (y))
+
+#if defined VMKERNEL || defined VMKBOOT
+# define CEIL(_a, _b)        CEILING(_a, _b)
+# define FLOOR(_a, _b)       ((_a)/(_b))
+# define ALIGN_DOWN(_a, _b)  ROUNDDOWN(_a, _b)
+# define ALIGN_UP(_a, _b)    ROUNDUP(_a, _b)
+# define IS_ALIGNED(_a, _b)  (ALIGN_DOWN(_a, _b) == _a)
+#endif
+
 #if defined __APPLE__
 #include <machine/param.h>
 #undef MASK
+#include <mach/machine/vm_param.h>
+#undef PAGE_SHIFT
+#undef PAGE_SIZE
+#undef PAGE_MASK
 #endif
 
 /*
@@ -188,33 +201,53 @@ Max(int a, int b)
  * Page operations
  *
  * It has been suggested that these definitions belong elsewhere
- * (like x86types.h).  However, I deem them common enough
+ * (like cpu_types.h).  However, I deem them common enough
  * (since even regular user-level programs may want to do
  * page-based memory manipulation) to be here.
  * -- edward
  */
 
+#define PAGE_SHIFT_4KB   12
+#define PAGE_SHIFT_16KB  14
+#define PAGE_SHIFT_64KB  16
+
 #ifndef PAGE_SHIFT // {
 #if defined __x86_64__ || defined __i386__
-   #define PAGE_SHIFT    12
+   #define PAGE_SHIFT    PAGE_SHIFT_4KB
 #elif defined __APPLE__
-   #define PAGE_SHIFT    12
+   #if defined VM_ARM_ANY
+      #define PAGE_SHIFT    PAGE_SHIFT_16KB
+   #else
+      #define PAGE_SHIFT    PAGE_SHIFT_4KB
+   #endif
 #elif defined VM_ARM_64
-   #define PAGE_SHIFT    12
+   #define PAGE_SHIFT    PAGE_SHIFT_4KB
 #elif defined __arm__
-   #define PAGE_SHIFT    12
+   #define PAGE_SHIFT    PAGE_SHIFT_4KB
 #else
    #error
 #endif
 #endif // }
 
+#define PAGE_SIZE_4KB    (1 << PAGE_SHIFT_4KB)
+#define PAGE_SIZE_16KB   (1 << PAGE_SHIFT_16KB)
+#define PAGE_SIZE_64KB   (1 << PAGE_SHIFT_64KB)
+
 #ifndef PAGE_SIZE
 #define PAGE_SIZE     (1 << PAGE_SHIFT)
 #endif
 
+#define PAGE_MASK_4KB    (PAGE_SIZE_4KB - 1)
+#define PAGE_MASK_16KB   (PAGE_SIZE_16KB - 1)
+#define PAGE_MASK_64KB   (PAGE_SIZE_64KB - 1)
+
 #ifndef PAGE_MASK
 #define PAGE_MASK     (PAGE_SIZE - 1)
 #endif
+
+#define PAGE_OFFSET_4KB(_addr)   ((uintptr_t)(_addr) & (PAGE_SIZE_4KB - 1))
+#define PAGE_OFFSET_16KB(_addr)  ((uintptr_t)(_addr) & (PAGE_SIZE_16KB - 1))
+#define PAGE_OFFSET_64KB(_addr)  ((uintptr_t)(_addr) & (PAGE_SIZE_64KB - 1))
 
 #ifndef PAGE_OFFSET
 #define PAGE_OFFSET(_addr)  ((uintptr_t)(_addr) & (PAGE_SIZE - 1))
@@ -252,6 +285,10 @@ Max(int a, int b)
 #ifndef MBYTES_2_PAGES
 #define MBYTES_2_PAGES(_nbytes) \
    ((uint64)(_nbytes) << (MBYTES_SHIFT - PAGE_SHIFT))
+#endif
+
+#ifndef PAGES_2_KBYTES
+#define PAGES_2_KBYTES(_npages) ((_npages) << (PAGE_SHIFT - KBYTES_SHIFT))
 #endif
 
 #ifndef PAGES_2_MBYTES
@@ -392,34 +429,14 @@ void *_ReturnAddress(void);
 
 
 #ifdef __GNUC__
-#ifndef sun
-
-/*
- * A bug in __builtin_frame_address was discovered in gcc 4.1.1, and
- * fixed in 4.2.0; assume it originated in 4.0. PR 147638 and 554369.
- */
-#if  !(__GNUC__ == 4 && (__GNUC_MINOR__ == 0 || __GNUC_MINOR__ == 1))
 #define GetFrameAddr() __builtin_frame_address(0)
-#endif
-
-#endif // sun
 #endif // __GNUC__
 
-/*
- * Data prefetch was added in gcc 3.1.1
- * http://www.gnu.org/software/gcc/gcc-3.1/changes.html
- */
 #ifdef __GNUC__
-#  if ((__GNUC__ > 3) || (__GNUC__ == 3 && __GNUC_MINOR__ > 1) || \
-       (__GNUC__ == 3 && __GNUC_MINOR__ == 1 && __GNUC_PATCHLEVEL__ >= 1))
-#     define PREFETCH_R(var) __builtin_prefetch((var), 0 /* read */, \
-                                                3 /* high temporal locality */)
-#     define PREFETCH_W(var) __builtin_prefetch((var), 1 /* write */, \
-                                                3 /* high temporal locality */)
-#  else
-#     define PREFETCH_R(var) ((void)(var))
-#     define PREFETCH_W(var) ((void)(var))
-#  endif
+#  define PREFETCH_R(var) __builtin_prefetch((var), 0 /* read */, \
+                                             3 /* high temporal locality */)
+#  define PREFETCH_W(var) __builtin_prefetch((var), 1 /* write */, \
+                                             3 /* high temporal locality */)
 #endif /* __GNUC__ */
 
 
@@ -481,14 +498,6 @@ typedef int pid_t;
 
 // The macOS kernel SDK defines va_copy in stdarg.h.
 #include <stdarg.h>
-
-#elif defined(__GNUC__) && (__GNUC__ < 3)
-
-/*
- * Old versions of gcc recognize __va_copy, but not va_copy.
- */
-
-#define va_copy(dest, src) __va_copy(dest, src)
 
 #endif // _WIN32
 
@@ -595,6 +604,12 @@ typedef int pid_t;
 #define HOSTED_ONLY(x) x
 #endif
 
+#ifdef VMX86_ESXIO
+#define vmx86_esxio      1
+#else
+#define vmx86_esxio      0
+#endif
+
 #ifdef VMKERNEL
 #define vmkernel 1
 #define VMKERNEL_ONLY(x) x
@@ -652,8 +667,26 @@ typedef int pid_t;
 #ifdef ULM
 #define vmx86_ulm 1
 #define ULM_ONLY(x) x
+#ifdef ULM_MAC
+#define ulm_mac 1
+#else
+#define ulm_mac 0
+#endif
+#ifdef ULM_WIN
+#define ulm_win 1
+#else
+#define ulm_win 0
+#endif
+#ifdef ULM_ESX
+#define ulm_esx 1
+#else
+#define ulm_esx 0
+#endif
 #else
 #define vmx86_ulm 0
+#define ulm_mac 0
+#define ulm_win 0
+#define ulm_esx 0
 #define ULM_ONLY(x)
 #endif
 
@@ -720,7 +753,7 @@ typedef int pid_t;
  * Bug 827422 and 838523.
  */
 
-#if defined __GNUC__ && __GNUC__ >= 4
+#if defined __GNUC__
 #define VISIBILITY_HIDDEN __attribute__((visibility("hidden")))
 #else
 #define VISIBILITY_HIDDEN /* nothing */
@@ -810,6 +843,19 @@ typedef int pid_t;
 #define VMW_CLANG_ANALYZER_NORETURN() Panic("Disable Clang static analyzer")
 #else
 #define VMW_CLANG_ANALYZER_NORETURN() ((void)0)
+#endif
+
+/* VMW_FALLTHROUGH
+ *
+ *   Instructs GCC 9 and above to not warn when a case label of a
+ *   'switch' statement falls through to the next label.
+ *
+ *   If not GCC 9 or above, expands to nothing.
+ */
+#if __GNUC__ >= 9
+#define VMW_FALLTHROUGH() __attribute__((fallthrough))
+#else
+#define VMW_FALLTHROUGH()
 #endif
 
 #endif // ifndef _VM_BASIC_DEFS_H_

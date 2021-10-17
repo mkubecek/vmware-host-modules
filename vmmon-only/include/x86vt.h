@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2004-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 2004-2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -31,14 +31,17 @@
 #include "includeCheck.h"
 
 #include "community_source.h"
-#include "x86msr.h"
 #include "vm_basic_defs.h"
+#include "vm_assert.h"
+#include "x86msr.h"
 #if defined(USERLEVEL) || defined(MONITOR_APP)
 #include "vm_basic_asm.h"
 #else
 #include "vm_asm.h"
 #endif
-#include "x86cpuid_asm.h"
+#ifdef VM_X86_ANY
+#include "x86cpuid_asm.h"  // for CPUID_ISSET in VT_CapableCPU
+#endif
 
 /* VMX related MSRs */
 #define MSR_VMX_BASIC                  0x00000480
@@ -59,12 +62,14 @@
 #define MSR_VMX_TRUE_EXIT_CTLS         0x0000048f
 #define MSR_VMX_TRUE_ENTRY_CTLS        0x00000490
 #define MSR_VMX_VMFUNC                 0x00000491
-#define NUM_VMX_MSRS                   (MSR_VMX_VMFUNC - MSR_VMX_BASIC + 1)
+#define MSR_VMX_3RD_CTLS               0x00000492
+#define NUM_VMX_MSRS                   (MSR_VMX_3RD_CTLS - MSR_VMX_BASIC + 1)
 
 /*
  * An alias to accommodate Intel's naming convention in feature masks.
  */
 #define MSR_VMX_PROCBASED_CTLS2        MSR_VMX_2ND_CTLS
+#define MSR_VMX_PROCBASED_CTLS3        MSR_VMX_3RD_CTLS
 
 
 /*
@@ -81,7 +86,9 @@
    (CONST64U(1) << MSR_VMX_BASIC_ADVANCED_IOINFO_SHIFT)
 #define MSR_VMX_BASIC_TRUE_CTLS                 \
    (CONST64U(1) << MSR_VMX_BASIC_TRUE_CTLS_SHIFT)
-                                               
+#define MSR_VMX_BASIC_VMENTRY_NO_ERR_CODE       \
+   (CONST64U(1) << MSR_VMX_BASIC_VMENTRY_NO_ERR_CODE_SHIFT)
+
 #define MSR_VMX_MISC_VMEXIT_SAVES_LMA           \
    (CONST64U(1) << MSR_VMX_MISC_VMEXIT_SAVES_LMA_SHIFT)
 #define MSR_VMX_MISC_ACTSTATE_HLT               \
@@ -94,9 +101,11 @@
    (CONST64U(1) << MSR_VMX_MISC_PROCESSOR_TRACE_IN_VMX_SHIFT)
 #define MSR_VMX_MISC_RDMSR_SMBASE_IN_SMM        \
    (CONST64U(1) << MSR_VMX_MISC_RDMSR_SMBASE_IN_SMM_SHIFT)
+#define MSR_VMX_MISC_SMM_MONITOR_CTL            \
+   (CONST64U(1) << MSR_VMX_MISC_SMM_MONITOR_CTL_SHIFT)
 #define MSR_VMX_MISC_ALLOW_ALL_VMWRITES         \
    (CONST64U(1) << MSR_VMX_MISC_ALLOW_ALL_VMWRITES_SHIFT)
-#define MSR_VMX_MISC_ZERO_VMENTRY_INSTLEN         \
+#define MSR_VMX_MISC_ZERO_VMENTRY_INSTLEN       \
    (CONST64U(1) << MSR_VMX_MISC_ZERO_VMENTRY_INSTLEN_SHIFT)
 
 
@@ -209,7 +218,8 @@ enum {
    VMX_BASIC(DUALVMM,              49,  1)               \
    VMX_BASIC(MEMTYPE,              50,  4)               \
    VMX_BASIC(ADVANCED_IOINFO,      54,  1)               \
-   VMX_BASIC(TRUE_CTLS,            55,  1)
+   VMX_BASIC(TRUE_CTLS,            55,  1)               \
+   VMX_BASIC(VMENTRY_NO_ERR_CODE,  56,  1)
 
 #define VMX_BASIC_CAP                                    \
         VMX_BASIC_CAP_NDA                                \
@@ -250,6 +260,7 @@ enum {
    VMX_CPU(RDTSC,               12)                      \
    VMX_CPU(LDCR3,               15)                      \
    VMX_CPU(STCR3,               16)                      \
+   VMX_CPU(USE_3RD,             17)                      \
    VMX_CPU(LDCR8,               19)                      \
    VMX_CPU(STCR8,               20)                      \
    VMX_CPU(TPR_SHADOW,          21)                      \
@@ -295,14 +306,37 @@ enum {
    VMX_CPU2(EPT_VIOL_VE,        18)                      \
    VMX_CPU2(PT_SUPPRESS_NR_BIT, 19)                      \
    VMX_CPU2(XSAVES,             20)                      \
+   VMX_CPU2(PASID,              21)                      \
    VMX_CPU2(EPT_MBX,            22)                      \
+   VMX_CPU2(EPT_SUB_PAGE,       23)                      \
+   VMX_CPU2(PT_GUEST_PA,        24)                      \
    VMX_CPU2(TSC_SCALING,        25)                      \
+   VMX_CPU2(UMWAIT,             26)                      \
    VMX_CPU2(ENCLV,              28)                      \
-   VMX_CPU2(EPC_VIRT_EXT,       29)
+   VMX_CPU2(EPC_VIRT_EXT,       29)                      \
+   VMX_CPU2(BUS_LOCK,           30)                      \
+   VMX_CPU2(VM_NOTIFY,          31)
 
 #define VMX_PROCBASED_CTLS2_CAP                          \
         VMX_PROCBASED_CTLS2_CAP_NDA                      \
         VMX_PROCBASED_CTLS2_CAP_PUB
+/*
+ * Tertiary Processor-Based VM-Execution Controls
+ */
+#define VMX_CPU3(_field, _pos)                           \
+   VMXCTL(_PROCBASED_CTLS3, _field, _pos)
+#define VMX_PROCBASED_CTLS3_CAP_NDA
+#define VMX_PROCBASED_CTLS3_CAP_PUB                      \
+   VMX_CPU3(LOADIWKEY,           0)                      \
+   VMX_CPU3(HLAT,                1)                      \
+   VMX_CPU3(PAGING_WRITE,        2)                      \
+   VMX_CPU3(GUEST_PAGING_VERIF,  3)                      \
+   VMX_CPU3(IPI_VIRTUALIZATION,  4)                      \
+
+#define VMX_PROCBASED_CTLS3_CAP                          \
+        VMX_PROCBASED_CTLS3_CAP_NDA                      \
+        VMX_PROCBASED_CTLS3_CAP_PUB
+
 
 /*
  * VM-Exit Controls
@@ -321,7 +355,12 @@ enum {
    VMX_EXIT(LOAD_EFER,           21)                     \
    VMX_EXIT(SAVE_TIMER,          22)                     \
    VMX_EXIT(CLEAR_BNDCFGS,       23)                     \
-   VMX_EXIT(PT_SUPPRESS_VMX_PKT, 24)
+   VMX_EXIT(PT_SUPPRESS_VMX_PKT, 24)                     \
+   VMX_EXIT(CLEAR_RTIT,          25)                     \
+   VMX_EXIT(CLEAR_LBR,           26)                     \
+   VMX_EXIT(CLEAR_UINV,          27)                     \
+   VMX_EXIT(LOAD_CET,            28)                     \
+   VMX_EXIT(LOAD_PKRS,           29)
 
 #define VMX_EXIT_CTLS_CAP                                \
         VMX_EXIT_CTLS_CAP_NDA                            \
@@ -342,7 +381,12 @@ enum {
    VMX_ENTRY(LOAD_PAT,            14)                    \
    VMX_ENTRY(LOAD_EFER,           15)                    \
    VMX_ENTRY(LOAD_BNDCFGS,        16)                    \
-   VMX_ENTRY(PT_SUPPRESS_VMX_PKT, 17)
+   VMX_ENTRY(PT_SUPPRESS_VMX_PKT, 17)                    \
+   VMX_ENTRY(LOAD_RTIT,           18)                    \
+   VMX_ENTRY(LOAD_UINV,           19)                    \
+   VMX_ENTRY(LOAD_CET,            20)                    \
+   VMX_ENTRY(LOAD_LBR,            21)                    \
+   VMX_ENTRY(LOAD_PKRS,           22)
 
 #define VMX_ENTRY_CTLS_CAP                               \
         VMX_ENTRY_CTLS_CAP_NDA                           \
@@ -364,6 +408,7 @@ enum {
    VMX_MISC(RDMSR_SMBASE_IN_SMM,    15,  1)              \
    VMX_MISC(CR3_TARGETS,            16,  9)              \
    VMX_MISC(MAX_MSRS,               25,  3)              \
+   VMX_MISC(SMM_MONITOR_CTL,        28,  1)              \
    VMX_MISC(ALLOW_ALL_VMWRITES,     29,  1)              \
    VMX_MISC(ZERO_VMENTRY_INSTLEN,   30,  1)              \
    VMX_MISC(MSEG_ID,                32, 32)              \
@@ -371,59 +416,6 @@ enum {
 #define VMX_MISC_CAP                                     \
         VMX_MISC_CAP_NDA                                 \
         VMX_MISC_CAP_PUB
-
-/*
- * VMX-Fixed Bits in CR0
- */
-#define VMX_FIXED_CR0(_field, _pos)                      \
-   VMXFIXED(_CR0_FIXED, _field, _pos)
-#define VMX_FIXED_CR0_CAP_NDA
-#define VMX_FIXED_CR0_CAP_PUB                            \
-   VMX_FIXED_CR0(PE,          0)                         \
-   VMX_FIXED_CR0(MP,          1)                         \
-   VMX_FIXED_CR0(EM,          2)                         \
-   VMX_FIXED_CR0(TS,          3)                         \
-   VMX_FIXED_CR0(ET,          4)                         \
-   VMX_FIXED_CR0(NE,          5)                         \
-   VMX_FIXED_CR0(WP,         16)                         \
-   VMX_FIXED_CR0(AM,         18)                         \
-   VMX_FIXED_CR0(NW,         29)                         \
-   VMX_FIXED_CR0(CD,         30)                         \
-   VMX_FIXED_CR0(PG,         31)
-
-#define VMX_FIXED_CR0_CAP                                \
-        VMX_FIXED_CR0_CAP_NDA                            \
-        VMX_FIXED_CR0_CAP_PUB
-
-/*
- * VMX-Fixed Bits in CR4
- */
-#define VMX_FIXED_CR4(_field, _pos)                      \
-   VMXFIXED(_CR4_FIXED, _field, _pos)
-#define VMX_FIXED_CR4_CAP_NDA
-#define VMX_FIXED_CR4_CAP_PUB                            \
-   VMX_FIXED_CR4(VME,         0)                         \
-   VMX_FIXED_CR4(PVI,         1)                         \
-   VMX_FIXED_CR4(TSD,         2)                         \
-   VMX_FIXED_CR4(DE,          3)                         \
-   VMX_FIXED_CR4(PSE,         4)                         \
-   VMX_FIXED_CR4(PAE,         5)                         \
-   VMX_FIXED_CR4(MCE,         6)                         \
-   VMX_FIXED_CR4(PGE,         7)                         \
-   VMX_FIXED_CR4(PCE,         8)                         \
-   VMX_FIXED_CR4(OSFXSR,      9)                         \
-   VMX_FIXED_CR4(OSXMMEXCPT, 10)                         \
-   VMX_FIXED_CR4(VMXE,       13)                         \
-   VMX_FIXED_CR4(SMXE,       14)                         \
-   VMX_FIXED_CR4(FSGSBASE,   16)                         \
-   VMX_FIXED_CR4(PCIDE,      17)                         \
-   VMX_FIXED_CR4(OSXSAVE,    18)                         \
-   VMX_FIXED_CR4(SMEP,       20)                         \
-   VMX_FIXED_CR4(SMAP,       21)
-
-#define VMX_FIXED_CR4_CAP                                \
-        VMX_FIXED_CR4_CAP_NDA                            \
-        VMX_FIXED_CR4_CAP_PUB
 
 /*
  * VMCS Enumeration
@@ -452,6 +444,7 @@ enum {
    VMX_EPT(INVEPT,                 20,  1)              \
    VMX_EPT(ACCESS_DIRTY,           21,  1)              \
    VMX_EPT(ADV_EXIT_INFO,          22,  1)              \
+   VMX_EPT(SUP_SHADOW_STK,         23,  1)              \
    VMX_EPT(INVEPT_EPT_CTX,         25,  1)              \
    VMX_EPT(INVEPT_GLOBAL,          26,  1)              \
    VMX_EPT(INVVPID,                32,  1)              \
@@ -474,9 +467,6 @@ enum {
 #define VMX_VMFUNC_CAP     \
         VMX_VMFUNC_CAP_NDA \
         VMX_VMFUNC_CAP_PUB
-
-
-
 
 /*
  * Match the historical names for these fields:
@@ -504,6 +494,7 @@ enum {
 #define _PINBASED_CTLS        VT_VMCS_PIN_VMEXEC_CTL_
 #define _PROCBASED_CTLS       VT_VMCS_CPU_VMEXEC_CTL_
 #define _PROCBASED_CTLS2      VT_VMCS_2ND_VMEXEC_CTL_
+#define _PROCBASED_CTLS3      VT_VMCS_3RD_VMEXEC_CTL_
 #define _EXIT_CTLS            VT_VMCS_VMEXIT_CTL_
 #define _ENTRY_CTLS           VT_VMCS_VMENTRY_CTL_
 
@@ -518,6 +509,7 @@ enum {
    VMX_EXIT_CTLS_CAP
    VMX_ENTRY_CTLS_CAP
    VMX_PROCBASED_CTLS2_CAP
+   VMX_PROCBASED_CTLS3_CAP
 
 #undef VMXCAP
 #undef VMXALLOW
@@ -716,7 +708,7 @@ enum {
 #define VT_ENTRY_CTLS_DEFAULT1         0x000011ff
 
 
-/* Required feature bits. */
+/* Required and default feature bits. */
 
 #define VT_REQUIRED_PINBASED_CTLS                      \
    (VT_PINBASED_CTLS_DEFAULT1                        | \
@@ -741,14 +733,43 @@ enum {
     VT_VMCS_CPU_VMEXEC_CTL_VNMI_WINDOW               | \
     VT_VMCS_CPU_VMEXEC_CTL_MONITOR)
 
+#define VT_DEFAULT_PROCBASED_CTLS                      \
+   ((VT_REQUIRED_PROCBASED_CTLS                      & \
+     ~VT_VMCS_CPU_VMEXEC_CTL_RDTSC                   & \
+     ~VT_VMCS_CPU_VMEXEC_CTL_INVLPG                  & \
+     ~VT_VMCS_CPU_VMEXEC_CTL_LDCR8                   & \
+     ~VT_VMCS_CPU_VMEXEC_CTL_STCR8                   & \
+     ~VT_VMCS_CPU_VMEXEC_CTL_LDCR3                   & \
+     ~VT_VMCS_CPU_VMEXEC_CTL_STCR3)                  | \
+    VT_VMCS_CPU_VMEXEC_CTL_MSRBITMAP                 | \
+    VT_VMCS_CPU_VMEXEC_CTL_USE_2ND)
+
+#define VT_DEFAULT_PROCBASED_CTLS2                     \
+   (VT_VMCS_2ND_VMEXEC_CTL_EPT                       | \
+    VT_VMCS_2ND_VMEXEC_CTL_RDTSCP                    | \
+    VT_VMCS_2ND_VMEXEC_CTL_VPID                      | \
+    VT_VMCS_2ND_VMEXEC_CTL_WBINVD                    | \
+    VT_VMCS_2ND_VMEXEC_CTL_PAUSE_LOOP                | \
+    VT_VMCS_2ND_VMEXEC_CTL_INVPCID                   | \
+    VT_VMCS_2ND_VMEXEC_CTL_XSAVES                    | \
+    VT_VMCS_2ND_VMEXEC_CTL_UNRESTRICTED)
+
 #define VT_REQUIRED_EXIT_CTLS                          \
    (VT_EXIT_CTLS_DEFAULT1                            | \
     VT_VMCS_VMEXIT_CTL_LONGMODE                      | \
     VT_VMCS_VMEXIT_CTL_INTRACK)
 
+#define VT_DEFAULT_EXIT_CTLS                           \
+   (VT_REQUIRED_EXIT_CTLS                            & \
+    ~VT_VMCS_VMEXIT_CTL_SAVE_DEBUGCTL)
+
 #define VT_REQUIRED_ENTRY_CTLS                         \
    (VT_ENTRY_CTLS_DEFAULT1                           | \
     VT_VMCS_VMENTRY_CTL_LONGMODE)
+
+#define VT_DEFAULT_ENTRY_CTLS                          \
+   (VT_REQUIRED_ENTRY_CTLS                           & \
+    ~VT_VMCS_VMENTRY_CTL_LOAD_DEBUGCTL)
 
 #define VT_REQUIRED_VPID_SUPPORT                       \
    (MSR_VMX_EPT_VPID_INVVPID                         | \
@@ -1074,6 +1095,25 @@ VT_MBXSupportedFromFeatures(uint64 secondary)
 }
 
 
+/*
+ *----------------------------------------------------------------------
+ *
+ * VT_ConvEPTViolSupportedFromFeatures --
+ *
+ *   Returns TRUE if the given VMX features provide support for
+ *   Convertible EPT Violations (#VE).
+ *
+ *   Assumes that VT is supported.
+ *
+ *----------------------------------------------------------------------
+ */
+static INLINE Bool
+VT_ConvEPTViolSupportedFromFeatures(uint64 secondary)
+{
+   return (HIDWORD(secondary) & VT_VMCS_2ND_VMEXEC_CTL_EPT_VIOL_VE) != 0;
+}
+
+
 #if !defined(USERLEVEL) && !defined(MONITOR_APP) /* { */
 /*
  *----------------------------------------------------------------------
@@ -1122,6 +1162,7 @@ VT_SupportedCPU(void)
 #endif /* } !defined(USERLEVEL) */
 
 #if !defined(VMM) /* { */
+#ifdef VM_X86_ANY
 /*
  *----------------------------------------------------------------------
  * VT_CapableCPU --
@@ -1134,6 +1175,7 @@ VT_CapableCPU(void)
 {
    return CPUID_ISSET(1, ECX, VMX, __GET_ECX_FROM_CPUID(1));
 }
+#endif
 #endif /* } !defined(VMM) */
 
 

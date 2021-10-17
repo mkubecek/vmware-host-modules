@@ -30,7 +30,6 @@
 #   include <linux/kernel.h>
 #   include <linux/sched.h>
 #endif
-#include "vmware.h"
 #include "modulecall.h"
 #include "vmx86.h"
 #include "task.h"
@@ -38,7 +37,6 @@
 #include "iocontrols.h"
 #include "hostif.h"
 #include "memtrack.h"
-#include "driver_vmcore.h"
 #include "usercalldefs.h"
 #include "cpuid.h"
 #include "vmmblob.h"

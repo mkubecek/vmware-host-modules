@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -41,8 +41,6 @@
 #include "rateconv.h"
 #include "overheadmem_types.h"
 #include "pageLock_defs.h"
-#include "numa_defs.h"
-#include "bootstrap_vmm.h"
 #include "contextinfo.h"
 #include "vcpuid.h"
 #include "sharedAreaType.h"
@@ -148,7 +146,7 @@ PtrToVA64(void const *ptr) // IN
  * the NT specific VMX86_DRIVER_VERSION.
  */
 
-#define VMMON_VERSION           (401 << 16 | 0)
+#define VMMON_VERSION           (410 << 16 | 0)
 #define VMMON_VERSION_MAJOR(v)  ((uint32) (v) >> 16)
 #define VMMON_VERSION_MINOR(v)  ((uint16) (v))
 
@@ -261,8 +259,6 @@ enum IOCTLCmd {
 #endif
 
 #if defined _WIN32
-   IOCTLCMD(HARD_LIMIT_MONITOR_STATUS), // used by vmauthd on Windows
-   IOCTLCMD(CHANGE_HARD_LIMIT),         // used by vmauthd on Windows
    IOCTLCMD(READ_DISASM_PROC_BINARY),
    IOCTLCMD(CHECK_CANDIDATE_VA64),
    IOCTLCMD(SET_MEMORY_PARAMS),
@@ -328,8 +324,6 @@ enum IOCTLCmd {
 #define IOCTL_VMX86_ADMIT               VMIOCTL_BUFFERED(ADMIT)
 #define IOCTL_VMX86_READMIT             VMIOCTL_BUFFERED(READMIT)
 #define IOCTL_VMX86_UPDATE_MEM_INFO     VMIOCTL_BUFFERED(UPDATE_MEM_INFO)
-#define IOCTL_VMX86_HARD_LIMIT_MONITOR_STATUS   VMIOCTL_BUFFERED(HARD_LIMIT_MONITOR_STATUS)
-#define IOCTL_VMX86_CHANGE_HARD_LIMIT   VMIOCTL_BUFFERED(CHANGE_HARD_LIMIT)
 
 #define IOCTL_VMX86_GET_TOTAL_MEM_USAGE	VMIOCTL_BUFFERED(GET_TOTAL_MEM_USAGE)
 #define IOCTL_VMX86_GET_KHZ_ESTIMATE    VMIOCTL_BUFFERED(GET_KHZ_ESTIMATE)
@@ -368,32 +362,26 @@ enum IOCTLCmd {
 #define INIT_BLOCK_MAGIC     (0x1789 + 14)
 
 
-typedef
-#include "vmware_pack_begin.h"
-struct VMLockPageRet {
+#pragma pack(push, 1)
+typedef struct VMLockPageRet {
    MPN   mpn;      // OUT: MPN
    int32 status;   // OUT: PAGE_* status code
-}
-#include "vmware_pack_end.h"
-VMLockPageRet;
+} VMLockPageRet;
+#pragma pack(pop)
 
-typedef
-#include "vmware_pack_begin.h"
-union {
+#pragma pack(push, 1)
+typedef union {
    VA64 uAddr;        // IN: user address
    VMLockPageRet ret; // OUT: status code and MPN
-}
-#include "vmware_pack_end.h"
-VMLockPage;
+} VMLockPage;
+#pragma pack(pop)
 
-typedef
-#include "vmware_pack_begin.h"
-union {
+#pragma pack(push, 1)
+typedef union {
    Vcpuid vcpuid; // IN: VCPU
    MPN pageRoot;  // OUT: MPN of the VCPU's page root
-}
-#include "vmware_pack_end.h"
-VcpuPageRoot;
+} VcpuPageRoot;
+#pragma pack(pop)
 
 #define VMX86_DRIVER_VCPUID_OFFSET 1000
 
@@ -410,7 +398,6 @@ VcpuPageRoot;
 typedef struct LockedPageLimit {
    PageCnt host;        // driver calculated maximum for this host
    PageCnt configured;  // user defined maximum pages to lock
-   PageCnt dynamic;     // authd hardLimitMonitor pages to lock
 } LockedPageLimit;
 
 /*
