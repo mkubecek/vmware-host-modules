@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2005-2014,2017-2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 2005-2014,2017-2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -39,13 +39,20 @@
 #define INCLUDE_ALLOW_VMMON
 #include "includeCheck.h"
 
+#include "community_source.h"
+#include "vm_basic_defs.h"
+#include "vm_assert.h"
+#include "x86cpuid.h"
 #include "x86msr.h"
+#include "x86vendor.h"
 #if defined(USERLEVEL) || defined(MONITOR_APP)
 #include "vm_basic_asm.h"
 #else
 #include "vm_asm.h"
 #endif
+#ifdef VM_X86_ANY
 #include "x86cpuid_asm.h"
+#endif
 
 #define SVM_VMCB_IO_BITMAP_PAGES   (3)
 #define SVM_VMCB_IO_BITMAP_SIZE    PAGES_2_BYTES(SVM_VMCB_IO_BITMAP_PAGES)
@@ -116,6 +123,14 @@
 #define SVM_VMCB_EXEC_CTL_CR_WR_TRAP(n) (0x0001000000000000ULL << (n))
 #define SVM_VMCB_EXEC_CTL_CR_WR_TRAP_ALL 0xffff000000000000ULL
 
+/* VMCB.execCtl2 */
+#define SVM_VMCB_EXEC_CTL2_ALL_INVLPGB     0x00000001
+#define SVM_VMCB_EXEC_CTL2_ILLEGAL_INVLPGB 0x00000002
+#define SVM_VMCB_EXEC_CTL2_PCID            0x00000004
+#define SVM_VMCB_EXEC_CTL2_MCOMMIT         0x00000008
+#define SVM_VMCB_EXEC_CTL2_TLBSYNC         0x00000010
+#define SVM_VMCB_EXEC_CTL2_RSVD            0xffffffe0
+
 /* VMCB.tlbCtl */
 #define SVM_VMCB_TLB_CTL_FLUSH              0x01
 #define SVM_VMCB_TLB_CTL_FLUSH_ONLY_CURRENT 0x02
@@ -160,7 +175,8 @@
    CLEANBIT(SEG,  8)   \
    CLEANBIT(CR2,  9)   \
    CLEANBIT(LBR,  10)  \
-   CLEANBIT(AVIC, 11)
+   CLEANBIT(AVIC, 11)  \
+   CLEANBIT(CET,  12)
 
 #define SVM_VMCB_CLEAN_MASK           ((1 << SVM_VMCB_NUM_CLEANBITS) - 1)
 
@@ -190,6 +206,17 @@
 #define SVM_VMCB_AR_LONGMODE_SHIFT  (AR_LONGMODE_SHIFT - 4)
 #define SVM_VMCB_AR_DB_SHIFT        (AR_DB_SHIFT       - 4)
 #define SVM_VMCB_AR_GRAN_SHIFT      (AR_GRAN_SHIFT     - 4)
+
+/* VMSA.sevFeatures */
+#define SVM_VMSA_SEV_FEAT_SNP_ACTIVE   0x0000000000000001ULL
+#define SVM_VMSA_SEV_FEAT_VTOM         0x0000000000000002ULL
+#define SVM_VMSA_SEV_FEAT_REFLECT_VC   0x0000000000000004ULL
+#define SVM_VMSA_SEV_FEAT_RESTR_INJ    0x0000000000000008ULL
+#define SVM_VMSA_SEV_FEAT_ALT_INJ      0x0000000000000010ULL
+#define SVM_VMSA_SEV_FEAT_DBG_SWAP     0x0000000000000020ULL
+#define SVM_VMSA_SEV_FEAT_NO_HOST_IBS  0x0000000000000040ULL
+#define SVM_VMSA_SEV_FEAT_BTB_ISOLATE  0x0000000000000080ULL
+#define SVM_VMSA_SEV_FEAT_RSVD         0xffffffffffffff00ULL
 
 /* Unique Exit Codes */
 #define SVM_EXITCODE_CR_READ(n)             (0 + (n))
@@ -249,9 +276,11 @@
 #define SVM_EXITCODE_AVIC_INCOMPLETE_IPI 1025
 #define SVM_EXITCODE_AVIC_NOACCEL        1026
 #define SVM_EXITCODE_VMGEXIT             1027
+#define SVM_EXITCODE_PVALIDATE           1028
 #define SVM_EXITCODE_MMIO_READ           0x80000001   // SW only
 #define SVM_EXITCODE_MMIO_WRITE          0x80000002   // SW only
 #define SVM_EXITCODE_NMI_COMPLETE        0x80000003   // SW only
+#define SVM_EXITCODE_AP_RESET_HOLD       0x80000004   // SW only
 #define SVM_EXITCODE_AP_JUMP_TABLE       0x80000005   // SW only
 #define SVM_EXITCODE_UNSUPPORTED         0x8000FFFF   // SW only
 #define SVM_EXITCODE_INVALID             (-1ULL)
@@ -460,6 +489,7 @@ SVM_EnabledCPU(void)
 
 
 #ifndef VMM
+#ifdef VM_X86_ANY
 /*
  *----------------------------------------------------------------------
  * SVM_CapableCPU --
@@ -476,6 +506,7 @@ SVM_CapableCPU(void)
            CPUID_GET(0x8000000a, EAX, SVM_REVISION,
                      __GET_EAX_FROM_CPUID(CPUID_SVM_FEATURES)) != 0);
 }
+#endif  // ifdef VM_X86_ANY
 
 
 /*

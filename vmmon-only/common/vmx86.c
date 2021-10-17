@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -34,22 +34,19 @@
 #endif
 
 #ifdef __APPLE__
-#include <IOKit/IOLib.h>  // must come before "vmware.h"
+#include <IOKit/IOLib.h>
 #endif
 
-#include "vmware.h"
 #include "vm_assert.h"
 #include "vm_basic_math.h"
 #include "vmx86.h"
 #include "task.h"
-#include "vm_asm.h"
 #include "iocontrols.h"
 #include "hostif.h"
 #include "cpuid.h"
 #include "vcpuset.h"
 #include "memtrack.h"
 #if defined(_WIN64)
-#include "x86.h"
 #include "vmmon-asm-x86-64.h"
 #endif
 #include "x86vt.h"
@@ -65,6 +62,8 @@
 #include "vmmblob.h"
 #include "sharedAreaVmmon.h"
 #include "statVarsVmmon.h"
+#include "intelVT.h"
+#include "cpu_defs.h"
 
 PseudoTSC pseudoTSC;
 
@@ -78,7 +77,6 @@ static VMDriver *vmDriverList = NULL;
 static LockedPageLimit lockedPageLimit = {
    0,                        // host: does not need to be initialized.
    0,                        // configured: must be set by some VM as it is powered on.
-   MAX_LOCKED_PAGES,         // dynamic
 };
 
 /* Percentage of guest "paged" memory that must fit within the hard limit. */
@@ -132,11 +130,55 @@ typedef struct VMX86MSRCacheInfo {
    uint64 msrValue;
 } VMX86MSRCacheInfo;
 
-static VMX86MSRCacheInfo msrUniformityCacheInfo[] = {
-#define MSR_FEAT(member) {member, CONST64(0)},
-   MSR_FEAT(IA32_MSR_ARCH_CAPABILITIES)
-#undef MSR_FEAT
+struct MSRCache {
+   Vmx86GetMSRData *queryCache;
+   uint32 nPCPUs;
 };
+
+static Vmx86GetMSRData msrCacheQueryData;
+
+/*
+ * A MSR cache list for checking uniformity across physical cpus and for
+ * generating least common denominated values across pcpus.
+ * {MSR_Index, Member_Name}
+ */
+#define UNIFORMITY_CACHE_MSRS                                                  \
+   MSRNUM(IA32_MSR_ARCH_CAPABILITIES,     ArchCap)                             \
+   MSRNUM(MSR_BIOS_SIGN_ID,               BIOSSignID)                          \
+   MSRNUM(MSR_PLATFORM_INFO,              Join)                                \
+   MSRNUM(MSR_TSX_CTRL,                   Join)                                \
+   MSRNUM(MSR_VM_CR,                      VMCR)                                \
+   MSRNUMVT(MSR_FEATCTL,                  FeatureCtl)                          \
+   MSRNUMVT(MSR_VMX_BASIC,                Basic)                               \
+   MSRNUMVT(MSR_VMX_MISC,                 Misc)                                \
+   MSRNUMVT(MSR_VMX_VMCS_ENUM,            Enum)                                \
+   MSRNUMVT(MSR_VMX_EPT_VPID,             EPT)                                 \
+   MSRNUMVT(MSR_VMX_VMFUNC,               VMFunc)                              \
+   MSRNUMVT(MSR_VMX_3RD_CTLS,             3rd)                                 \
+   MSRNUMVT2(MSR_VMX_PINBASED_CTLS,       Ctls)                                \
+   MSRNUMVT2(MSR_VMX_PROCBASED_CTLS,      Ctls)                                \
+   MSRNUMVT2(MSR_VMX_EXIT_CTLS,           Ctls)                                \
+   MSRNUMVT2(MSR_VMX_ENTRY_CTLS,          Ctls)                                \
+   MSRNUMVT2(MSR_VMX_2ND_CTLS,            Ctls)                                \
+   MSRNUMVT2(MSR_VMX_TRUE_PINBASED_CTLS,  Ctls)                                \
+   MSRNUMVT2(MSR_VMX_TRUE_PROCBASED_CTLS, Ctls)                                \
+   MSRNUMVT2(MSR_VMX_TRUE_EXIT_CTLS,      Ctls)                                \
+   MSRNUMVT2(MSR_VMX_TRUE_ENTRY_CTLS,     Ctls)                                \
+   MSRNUMVT2(MSR_VMX_CR0_FIXED0,          Fixed0)                              \
+   MSRNUMVT2(MSR_VMX_CR4_FIXED0,          Fixed0)                              \
+   MSRNUMVT2(MSR_VMX_CR0_FIXED1,          Fixed1)                              \
+   MSRNUMVT2(MSR_VMX_CR4_FIXED1,          Fixed1)                              \
+
+static VMX86MSRCacheInfo msrUniformityCacheInfo[] = {
+#define MSRNUM(msr, member) {msr, CONST64(0)},
+#define MSRNUMVT    MSRNUM
+#define MSRNUMVT2   MSRNUM
+   UNIFORMITY_CACHE_MSRS
+};
+#undef MSRNUM
+#undef MSRNUMVT
+#undef MSRNUMVT2
+
 
 /*
  *----------------------------------------------------------------------
@@ -179,7 +221,6 @@ Vmx86AdjustLimitForOverheads(const VMDriver* vm,
  *       a host:
  *
  *       lockedPageLimit.configured is controlled by UI,
- *       lockedPageLimit.dynamic is controlled by authd's hardLimitMonitor,
  *       lockedPageLimit.host is calculated dynamically based on kernel stats
  *       by vmmon using kernel stats.
  *
@@ -200,8 +241,8 @@ Vmx86LockedPageLimit(const VMDriver* vm)  // IN:
    PageCnt overallLimit;
    ASSERT(HostIF_GlobalLockIsHeld());
    lockedPageLimit.host = HostIF_EstimateLockedPageLimit(vm, numLockedPages);
-   overallLimit = MIN(MIN(lockedPageLimit.configured, lockedPageLimit.dynamic),
-                      lockedPageLimit.host);
+   overallLimit = MIN(MIN(lockedPageLimit.configured, lockedPageLimit.host),
+                      MAX_LOCKED_PAGES);
 
    return Vmx86AdjustLimitForOverheads(vm, overallLimit);
 }
@@ -1916,33 +1957,6 @@ Vmx86_SetConfiguredLockedPagesLimit(PageCnt limit)  // IN:
 /*
  *----------------------------------------------------------------------
  *
- * Vmx86_SetDynamicLockedPageLimit --
- *
- *      Set the dynamic locked page limit.  This limit is determined by
- *      authd in response to host pressure.  It can be both raised and
- *      lowered at any time.
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      Hard limit may be changed.
- *
- *----------------------------------------------------------------------
- */
-
-void
-Vmx86_SetDynamicLockedPagesLimit(PageCnt limit)  // IN:
-{
-   HostIF_GlobalLock(11);
-   lockedPageLimit.dynamic = limit;
-   HostIF_GlobalUnlock(11);
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
  * Vmx86_LockPage --
  *
  *      Lock a page.
@@ -2866,16 +2880,18 @@ Vmx86GetMSR(void *clientData) // IN/OUT: A Vmx86GetMSRData *
 {
    uint32 i;
    Vmx86GetMSRData *data = (Vmx86GetMSRData *)clientData;
+   uint32 numPCPUs = data->query->numLogicalCPUs;
+   size_t offset = sizeof(MSRQuery) + sizeof(MSRReply) * numPCPUs;
    ASSERT(data && data->index && data->query);
 
    for (i = 0; i < data->numItems; ++i) {
       uint32 index;
       int err;
       Atomic_uint32 *cpus = &data->index[i];
-      MSRQuery *query = &data->query[i];
+      MSRQuery *query = (MSRQuery *) ((uint8 *)&data->query[0] + i * offset);
 
       index = Atomic_ReadInc32(cpus);
-      if (index >= query->numLogicalCPUs) {
+      if (index >= numPCPUs) {
          continue;
       }
 
@@ -2902,8 +2918,6 @@ Vmx86GetMSR(void *clientData) // IN/OUT: A Vmx86GetMSRData *
          err =
             HostIF_SafeRDMSR(query->msrNum, &query->logicalCPUs[index].msrVal);
       }
-
-      query->logicalCPUs[index].implemented = (err == 0) ? 1 : 0;
    }
 }
 
@@ -2946,7 +2960,6 @@ Vmx86_GetAllMSRs(MSRQuery *query) // IN/OUT
       if (msrUniformityCacheInfo[i].msrIndex == query->msrNum) {
          for (cpu = 0; cpu < query->numLogicalCPUs; cpu++) {
             query->logicalCPUs[cpu].msrVal = msrUniformityCacheInfo[i].msrValue;
-            query->logicalCPUs[cpu].implemented = 1;
             query->logicalCPUs[cpu].tag = cpu;
          }
          return TRUE;
@@ -3621,6 +3634,350 @@ Vmx86RegisterCPU(void *data) // IN: *data
 
 
 /*
+ *----------------------------------------------------------------------
+ *
+ * Vmx86VTMSRCacheGet --
+ *
+ *      Retrieve the requested VT MSR value from the cache.  Returns zero
+ *      for uncached values.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static uint64
+Vmx86VTMSRCacheGet(const MSRCache *cache, uint32 msrNum, unsigned cpu)
+{
+   ASSERT((msrNum >= MSR_VMX_BASIC && msrNum < MSR_VMX_BASIC + NUM_VMX_MSRS) ||
+          msrNum == MSR_FEATCTL);
+   if (cache != NULL && cache->queryCache != NULL) {
+      size_t offset = sizeof(MSRQuery) + sizeof(MSRReply) * cache->nPCPUs;
+      MSRQuery *query;
+      unsigned ix;
+      ASSERT(cpu < cache->nPCPUs);
+      for (ix = 0; ix < cache->queryCache->numItems; ix++) {
+         query = (MSRQuery *) ((uint8 *)&cache->queryCache->query[0] +
+                               ix * offset);
+         if (query->msrNum == msrNum) {
+            return query->logicalCPUs[cpu].msrVal;
+         }
+      }
+   }
+   return 0;
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * Vmx86AllocMSRUniformityCache --
+ * Vmx86FreeMSRUniformityCache --
+ *
+ *      Allocate/populate and cleanup MSR uniformity cache.
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+static Bool
+Vmx86AllocMSRUniformityCache(uint32 numPCPUs)
+{
+   MSRQuery *query = NULL;
+   uint32 i;
+   uint32 numQueries = ARRAYSIZE(msrUniformityCacheInfo);
+   Atomic_uint32 *cpuCounters;
+   MSRQuery *multMSRQueryAllPcpus = Vmx86_Calloc(numQueries,
+         sizeof(MSRQuery) + sizeof(MSRReply) * numPCPUs, FALSE);
+   if (multMSRQueryAllPcpus == NULL) {
+      return FALSE;
+   }
+
+   cpuCounters = Vmx86_Calloc(numQueries, sizeof(Atomic_uint32), FALSE);
+   if (cpuCounters == NULL) {
+      Vmx86_Free(multMSRQueryAllPcpus);
+      return FALSE;
+   }
+   msrCacheQueryData.query = multMSRQueryAllPcpus;
+   msrCacheQueryData.index = cpuCounters;
+   msrCacheQueryData.numItems = numQueries;
+
+   /*
+    * Enumerates a MSR list and initializes MSR msrCacheQueryData structure
+    * before the actual (safe) MSR query takes place.
+    */
+   for (i = 0; i < ARRAYSIZE(msrUniformityCacheInfo); ++i) {
+      query = (MSRQuery *) ((uint8 *)&msrCacheQueryData.query[0] +
+                 i * (sizeof(MSRQuery) + sizeof(MSRReply) * numPCPUs));
+      Atomic_Write32(&msrCacheQueryData.index[i], 0);
+      query->msrNum = msrUniformityCacheInfo[i].msrIndex;
+      query->numLogicalCPUs = numPCPUs;
+   }
+
+   /* Perform a single query for all of the MSRs in the uniformity check list.*/
+   HostIF_CallOnEachCPU(Vmx86GetMSR, &msrCacheQueryData);
+   return TRUE;
+}
+
+
+static void
+Vmx86FreeMSRUniformityCache(void)
+{
+   Vmx86_Free(msrCacheQueryData.index);
+   Vmx86_Free(msrCacheQueryData.query);
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * Vmx86CheckMSRUniformity --
+ *
+ *      Iterate MSR uniformity cache and test uniformity of each MSR across all
+ *      physical cpu(s).
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+static void
+Vmx86CheckMSRUniformity(uint32 numPCPUs)
+{
+   uint32 i, j;
+   MSRQuery *query = NULL;
+
+   for (i = 0; i < ARRAYSIZE(msrUniformityCacheInfo); ++i) {
+      uint32 msrIndex = msrUniformityCacheInfo[i].msrIndex;
+      query = (MSRQuery *)((uint8 *)&msrCacheQueryData.query[0] +
+                 i * (sizeof(MSRQuery) + sizeof(MSRReply) * numPCPUs));
+      ASSERT(Atomic_Read32(&msrCacheQueryData.index[i]) == numPCPUs);
+      for (j = 1; j < numPCPUs; j++) {
+         uint64 msrValuePCPU = query->logicalCPUs[j].msrVal;
+         if (msrValuePCPU != query->logicalCPUs[0].msrVal) {
+            Warning("Found a mismatch on MSR feature 0x%x; logical cpu%u "
+                    "value = 0x%llx, but logical cpu%u value = 0x%llx\n",
+                    msrIndex, j, msrValuePCPU, 0, query->logicalCPUs[0].msrVal);
+         }
+      }
+   }
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * Vmx86FindMSRQueryFromCache --
+ *
+ *      Iterate MSR uniformity cache and find query position for the given msr.
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+static MSRQuery*
+Vmx86FindMSRQueryFromCache(uint32 msrIndex, uint32 numPCPUs)
+{
+   uint32 i;
+   MSRQuery *query = NULL;
+   size_t offset = sizeof(MSRQuery) + sizeof(MSRReply) * numPCPUs;
+   MSRQuery *first = &msrCacheQueryData.query[0];
+
+   for (i = 0; i < ARRAYSIZE(msrUniformityCacheInfo); ++i) {
+      if (msrIndex == msrUniformityCacheInfo[i].msrIndex) {
+         query = (MSRQuery *)((uint8 *)first + i * offset);
+         break;
+      }
+   }
+   return query;
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * Vmx86FindCommonMSRArchCap --
+ * Vmx86FindCommonMSRBIOSSignID --
+ * Vmx86FindCommonMSRVMCR --
+ * Vmx86FindCommonMSRJoin --
+ *
+ *      Calculate least common denominator for IA32_MSR_ARCH_CAPABILITIES,
+ *      MSR_BIOS_SIGN_ID, MSR_VM_CR, and general case respectively.
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+static uint64
+Vmx86FindCommonMSRArchCap(uint32 msrIndex, uint32 numPCPUs)
+{
+   uint32 j;
+   uint64 msrCommonVal;
+
+   MSRQuery *query = Vmx86FindMSRQueryFromCache(msrIndex, numPCPUs);
+   ASSERT(query != NULL);
+   ASSERT(msrIndex == IA32_MSR_ARCH_CAPABILITIES);
+
+   msrCommonVal = query->logicalCPUs[0].msrVal;
+   /*
+    * MSR_ARCH_CAPABILITIES_RSBA bit 1 represents lack of feature while 0
+    * represents presence. Therefore, bit is flipped for calculating the
+    * least common set and flipped again on the final value for resetting.
+    */
+   msrCommonVal ^= MSR_ARCH_CAPABILITIES_RSBA;
+   for (j = 1; j < numPCPUs; j++) {
+      uint64 msrValuePCPU = query->logicalCPUs[j].msrVal;
+      if (msrValuePCPU != query->logicalCPUs[0].msrVal) {
+         msrValuePCPU ^= MSR_ARCH_CAPABILITIES_RSBA;
+         msrCommonVal &= msrValuePCPU;
+      }
+   }
+   msrCommonVal ^= MSR_ARCH_CAPABILITIES_RSBA;
+   return msrCommonVal;
+}
+
+
+static uint64
+Vmx86FindCommonMSRBIOSSignID(uint32 msrIndex, uint32 numPCPUs)
+{
+   unsigned cpu;
+   uint64 commonVal;
+
+   MSRQuery *query = Vmx86FindMSRQueryFromCache(msrIndex, numPCPUs);
+   ASSERT(query != NULL);
+   commonVal = ~0ULL;
+
+   for (cpu = 0; cpu < numPCPUs; cpu++) {
+      if (query->logicalCPUs[cpu].msrVal < commonVal) {
+         commonVal = query->logicalCPUs[cpu].msrVal;
+      }
+   }
+
+   return commonVal;
+}
+
+
+static uint64
+Vmx86FindCommonMSRVMCR(uint32 msrIndex, uint32 numPCPUs)
+{
+   unsigned cpu;
+   uint64 commonVal;
+
+   MSRQuery *query = Vmx86FindMSRQueryFromCache(msrIndex, numPCPUs);
+   ASSERT(query != NULL);
+   commonVal = query->logicalCPUs[0].msrVal;
+
+   for (cpu = 1; cpu < numPCPUs; cpu++) {
+      uint64 msrValuePCPU = query->logicalCPUs[cpu].msrVal;
+      commonVal &= msrValuePCPU & MSR_VM_CR_R_INIT;
+      commonVal |= msrValuePCPU & ~MSR_VM_CR_R_INIT;
+   }
+
+   return commonVal;
+}
+
+
+static uint64
+Vmx86FindCommonMSRJoin(uint32 msrIndex, uint32 numPCPUs)
+{
+   uint32 j;
+   uint64 msrCommonVal;
+
+   MSRQuery *query = Vmx86FindMSRQueryFromCache(msrIndex, numPCPUs);
+   ASSERT(query != NULL);
+
+   msrCommonVal = query->logicalCPUs[0].msrVal;
+   for (j = 1; j < numPCPUs; j++) {
+      msrCommonVal &= query->logicalCPUs[j].msrVal;
+   }
+   return msrCommonVal;
+}
+
+
+/*
+ *-----------------------------------------------------------------------------
+ *
+ * Vmx86GenFindCommonCap --
+ * Vmx86GenFindCommonIntelVTCap --
+ * Vmx86FindCommonMSR --
+ *
+ *      Generate common MSR calculation routines by deriving appropriate
+ *      function with 'member' name.
+ *
+ *-----------------------------------------------------------------------------
+ */
+
+static uint64
+Vmx86GenFindCommonCap(uint32 msrIndex, uint32 numPCPUs)
+{
+#define MSRNUMVT(msr, member)
+#define MSRNUMVT2 MSRNUMVT
+
+#define MSRNUM(msr, member)                                                    \
+   if (msrIndex == msr) {                                                      \
+      return Vmx86FindCommonMSR##member(msrIndex, numPCPUs);                   \
+   } else {                                                                    \
+      return Vmx86FindCommonMSRJoin(msrIndex, numPCPUs);                       \
+   }
+
+   UNIFORMITY_CACHE_MSRS
+#undef MSRNUM
+#undef MSRNUMVT
+#undef MSRNUMVT2
+
+   return CONST64(0);
+}
+
+
+static uint64
+Vmx86GenFindCommonIntelVTCap(uint32 msrIndex, uint32 numPCPUs)
+{
+   MSRCache vt;
+   IntelVTMSRGet_Fn fn = Vmx86VTMSRCacheGet;
+
+   /* Prepare a special cache for VT MSR uniformity checks. */
+   vt.queryCache = &msrCacheQueryData;
+   vt.nPCPUs = numPCPUs;
+
+#define MSRNUM(msr, member)
+
+#define MSRNUMVT(msr, member)                                                  \
+   if (msrIndex == msr) {                                                      \
+      return IntelVT_FindCommon##member(&vt, fn, numPCPUs);                    \
+   }
+
+#define MSRNUMVT2(msr, member)                                                 \
+   if (msrIndex == msr) {                                                      \
+      return IntelVT_FindCommon##member(&vt, fn, numPCPUs, msr);               \
+   }
+
+   UNIFORMITY_CACHE_MSRS
+#undef MSRNUM
+#undef MSRNUMVT
+#undef MSRNUMVT2
+
+   return CONST64(0);
+}
+
+
+static uint64
+Vmx86FindCommonMSR(uint32 msrIndex, uint32 numPCPUs)
+{
+#define MSRNUM(msr, member)                                                    \
+   if (msrIndex == msr) {                                                      \
+      return Vmx86GenFindCommonCap(msrIndex, numPCPUs);                        \
+   }
+
+#define MSRNUMVT(msr, member)                                                  \
+   if (msrIndex == msr) {                                                      \
+      return Vmx86GenFindCommonIntelVTCap(msrIndex, numPCPUs);                 \
+   }
+
+#define MSRNUMVT2 MSRNUMVT
+
+   UNIFORMITY_CACHE_MSRS
+#undef MSRNUM
+#undef MSRNUMVT
+#undef MSRNUMVT2
+
+   return CONST64(0);
+}
+
+
+/*
  *-----------------------------------------------------------------------------
  *
  * Vmx86_CheckMSRUniformity --
@@ -3646,13 +4003,9 @@ Vmx86RegisterCPU(void *data) // IN: *data
 Bool
 Vmx86_CheckMSRUniformity(void)
 {
-   Vmx86GetMSRData data;
-   uint32 i, j;
-   uint32 numQueries = ARRAYSIZE(msrUniformityCacheInfo);
+   uint32 i;
    Atomic_uint32 numLogicalCPUs;
-   Atomic_uint32 *cpuCounters;
    uint32 numPCPUs = 0;
-   MSRQuery *query = NULL;
 
    Atomic_Write32(&numLogicalCPUs, 0);
    /*
@@ -3662,69 +4015,22 @@ Vmx86_CheckMSRUniformity(void)
    HostIF_CallOnEachCPU(Vmx86RegisterCPU, &numLogicalCPUs);
    numPCPUs = Atomic_Read32(&numLogicalCPUs);
    ASSERT(numPCPUs > 0);
-   query = Vmx86_Calloc(numQueries,
-                        sizeof(MSRQuery) + sizeof(MSRReply) * numPCPUs, TRUE);
-   if (query == NULL) {
+
+   if (!Vmx86AllocMSRUniformityCache(numPCPUs)) {
       Warning("Fatal, not enough memory for MSR feature uniformity checks");
       return FALSE;
    }
 
-   cpuCounters = Vmx86_Calloc(numQueries, sizeof(Atomic_uint32), TRUE);
-   if (cpuCounters == NULL) {
-      Vmx86_Free(query);
-      Warning("Fatal, not enough memory for MSR feature uniformity checks");
-      return FALSE;
-   }
-   data.query = query;
-   data.index = cpuCounters;
-   data.numItems = numQueries;
-
-   /*
-    * Enumerates a MSR list and initializes MSR data structure before the
-    * actual (safe) MSR query takes place. The Nested loop tests a MSR for
-    * uniformity on all logical processors.
-    */
-   for (i = 0; i < ARRAYSIZE(msrUniformityCacheInfo); ++i) {
-      query = &data.query[i];
-      Atomic_Write32(&data.index[i], 0);
-      query->msrNum = msrUniformityCacheInfo[i].msrIndex;
-      query->numLogicalCPUs = numPCPUs;
-   }
-
-   /* perform once, a multi MSR query for MSRs in uniformity check list. */
-   HostIF_CallOnEachCPU(Vmx86GetMSR, &data);
+   Vmx86CheckMSRUniformity(numPCPUs);
 
    for (i = 0; i < ARRAYSIZE(msrUniformityCacheInfo); ++i) {
       uint32 msrIndex = msrUniformityCacheInfo[i].msrIndex;
-      query = &data.query[i];
-      ASSERT(Atomic_Read32(&data.index[i]) == numPCPUs);
-      msrUniformityCacheInfo[i].msrValue = query->logicalCPUs[0].msrVal;
-      if (msrIndex == IA32_MSR_ARCH_CAPABILITIES) {
-         /*
-          * MSR_ARCH_CAPABILITIES_RSBA bit 1 represents lack of feature while 0
-          * represents presence. Therefore, bit is flipped for calculating the
-          * least common set and flipped again on the final value for resetting.
-          */
-         msrUniformityCacheInfo[i].msrValue ^= MSR_ARCH_CAPABILITIES_RSBA;
-      }
-      for (j = 1; j < numPCPUs; j++) {
-         uint64 msrValuePCPU = query->logicalCPUs[j].msrVal;
-         if (msrValuePCPU != query->logicalCPUs[0].msrVal) {
-            if (msrIndex == IA32_MSR_ARCH_CAPABILITIES) {
-               msrValuePCPU ^= MSR_ARCH_CAPABILITIES_RSBA;
-            }
-            msrUniformityCacheInfo[i].msrValue &= msrValuePCPU;
-            Warning("Found a mismatch on MSR feature 0x%x; logical cpu%u "
-                    "value = 0x%llx, but logical cpu%u value = 0x%llx\n",
-                    msrIndex, j, msrValuePCPU, 0, query->logicalCPUs[0].msrVal);
-         }
-      }
-      if (msrIndex == IA32_MSR_ARCH_CAPABILITIES) {
-         msrUniformityCacheInfo[i].msrValue ^= MSR_ARCH_CAPABILITIES_RSBA;
-      }
+      msrUniformityCacheInfo[i].msrValue = Vmx86FindCommonMSR(msrIndex,
+                                                              numPCPUs);
    }
-   Vmx86_Free(cpuCounters);
-   Vmx86_Free(query);
+
+   Vmx86FreeMSRUniformityCache();
+
    return TRUE;
 }
 

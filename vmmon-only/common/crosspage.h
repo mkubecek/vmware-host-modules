@@ -27,14 +27,11 @@ struct VMCrossPageData;
 
 extern void HostToVmm(struct VMCrossPageData *crosspageWIN, void *unused1,
                       void *unused2, struct VMCrossPageData *crosspageSYSV);
-extern const VMCrossPageData cpDataTemplate;
+extern void CrossPageInitSwitchIDTs(struct VMCrossPageData *cpData);
 
-extern void SwitchDBHandler(void);
-extern void SwitchUDHandler(void);
-extern void SwitchNMIHandler(void);
-extern void SwitchMCEHandler(void);
 extern void CrossPage_CodePage(void);
 extern void CrossPage_CodeEnd(void);
+extern const VMCrossPageData cpDataTemplate;
 
 #ifdef __cplusplus
 }

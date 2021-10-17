@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2006-2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 2006-2017, 2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -49,7 +49,7 @@
 #include "includeCheck.h"
 
 #include "vm_basic_defs.h"  // PAGE_SIZE
-#include "x86types.h"       // Descriptor
+#include "x86/cpu_types_arch.h"       // Descriptor
 
 
 typedef struct CrossGDT {

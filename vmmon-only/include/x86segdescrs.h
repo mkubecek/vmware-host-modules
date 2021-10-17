@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2006-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 2006-2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -62,9 +62,8 @@ typedef struct Descriptor {
  * 16-byte system descriptors for 64-bit mode.
  */
 
-typedef 
-#include "vmware_pack_begin.h"
-struct Descriptor64 {
+#pragma pack(push, 1)
+typedef struct Descriptor64 {
    uint64   limit_lo  : 16;   // Limit bits 15-0.
    uint64   base_lo   : 24;   // Base bits  23-0.
    uint64   type      : 4;
@@ -80,9 +79,8 @@ struct Descriptor64 {
    uint64   reserved1 : 8;
    uint64   ext_attrs : 5;
    uint64   reserved2 : 19;
-}
-#include "vmware_pack_end.h"
-Descriptor64;
+} Descriptor64;
+#pragma pack(pop)
 
 typedef union {
    Descriptor desc;

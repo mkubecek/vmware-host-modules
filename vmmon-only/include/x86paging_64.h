@@ -37,7 +37,7 @@
 #include "includeCheck.h"
 
 #include "vm_basic_types.h"
-#include "x86types.h"
+#include "x86/cpu_types_arch.h"
 #include "vm_pagetable.h"
 #include "x86paging_common.h"
 #include "vm_assert.h"

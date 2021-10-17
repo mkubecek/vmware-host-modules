@@ -300,6 +300,7 @@ typedef enum MonLoaderError {
 #define MONLOADER_HT_MAP_IDX          7
 #define MONLOADER_CROSS_PAGE_CODE_IDX 8
 #define MONLOADER_CROSS_PAGE_DATA_IDX 9
+#define MONLOADER_GDT_TASK_IDX        10
 
 MonLoaderError MonLoader_Process(MonLoaderHeader *header, unsigned numVCPUs,
                                  void *args, unsigned *line, Vcpuid *vcpu);

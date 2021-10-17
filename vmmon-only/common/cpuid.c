@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998, 2016-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998, 2016-2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -26,7 +26,6 @@
 #   include <string.h> // For strcmp().
 #endif
 
-#include "vmware.h"
 #include "vm_assert.h"
 #include "hostif.h"
 #include "cpuid.h"
@@ -78,7 +77,7 @@ CPUIDExtendedSupported(void)
 void
 CPUID_Init(void)
 {
-   CPUIDRegs regs;
+   CPUIDRegs regs, regs88;
    uint32 *ptr;
    char name[16];
 
@@ -108,9 +107,13 @@ CPUID_Init(void)
    }
 
    __GET_CPUID2(7, 0, &regs);
-   hostHasSpecCtrl = cpuidVendor == CPUID_VENDOR_INTEL &&
-                     (CPUID_ISSET(7, EDX, IBRSIBPB, regs.edx) ||
-                      CPUID_ISSET(7, EDX, STIBP, regs.edx));
+   __GET_CPUID2(0x80000008, 0, &regs88);
+   hostHasSpecCtrl =  CPUID_ISSET(7, EDX, IBRSIBPB, regs.edx) ||
+                      CPUID_ISSET(7, EDX, STIBP, regs.edx)    ||
+                      CPUID_ISSET(7, EDX, SSBD,  regs.edx)    ||
+                      CPUID_ISSET(0x80000008, EBX, LEAF88_SSBD_SPEC_CTRL,
+                                  regs88.ebx)                 ||
+                      CPUID_ISSET(0x80000008, EBX, LEAF88_PSFD, regs88.ebx);
 
    hostSupportsVT = VT_CapableCPU();
    hostSupportsSVM = SVM_CapableCPU();

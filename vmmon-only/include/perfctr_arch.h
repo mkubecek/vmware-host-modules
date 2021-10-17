@@ -22,8 +22,8 @@
  *      Performance counters (x64 specific).
  */
 
-#ifndef _PERFCTR_ARCH_H
-#define _PERFCTR_ARCH_H
+#ifndef _X86_PERFCTR_ARCH_H_
+#define _X86_PERFCTR_ARCH_H_
 
 #ifndef _PERFCTR_H_
 #error "This file can only be included by perfctr.h"
@@ -754,4 +754,4 @@ PerfCtr_PTAvailable(void)
    return FALSE;
 }
 
-#endif // _PERFCTR_ARCH_H
+#endif // _X86_PERFCTR_ARCH_H_

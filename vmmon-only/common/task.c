@@ -46,7 +46,6 @@
 #   include <string.h>
 #endif
 
-#include "vmware.h"
 #include "modulecall.h"
 #include "vmx86.h"
 #include "task.h"
@@ -66,8 +65,8 @@
 #include "x86paging_64.h"
 #include "memtrack.h"
 #include "monLoader.h"
-#include "segs.h"
 #include "crosspage.h"
+#include "cpu_defs.h"
 
 #ifdef LINUX_GDT_IS_RO
 #   include <asm/desc.h>
@@ -77,7 +76,6 @@
 #endif
 
 #if defined(_WIN64)
-#   include "x86.h"
 #   include "vmmon-asm-x86-64.h"
 #   define USE_TEMPORARY_GDT 1
 #else
@@ -1212,96 +1210,6 @@ Task_CreateCrossGDT(BSVMM_GDTInit *gdt)
 /*
  *-----------------------------------------------------------------------------
  *
- * TaskPopulateSwitchIDTE --
- *
- *      Populates an interrupt descriptor in the crosspage, setting its
- *      handler to the associated gate stub given a code segment selector.
- *
- * Results:
- *      None
- *
- * Side effects:
- *      None
- *
- *-----------------------------------------------------------------------------
- */
-
-static void
-TaskPopulateSwitchIDTE(unsigned idx, Selector cs, Gate64 *idt, VA handlerVA)
-{
-   Gate64 *entry;
-
-   ASSERT_ON_COMPILE(sizeof *entry == 16);
-   ASSERT(idx < NUM_EXCEPTIONS);
-   entry = &idt[idx];
-
-   entry->offset_0_15  = LOWORD(handlerVA);
-   entry->offset_16_31 = HIWORD(handlerVA);
-   entry->offset_32_63 = HIDWORD(handlerVA);
-   entry->type         = INTER_GATE;
-   entry->segment      = cs;
-   entry->present      = 1;
-   entry->ist          = 0;
-   entry->DPL          = 0;
-   entry->reserved0    = 0;
-   entry->reserved1    = 0;
-}
-
-static VA
-TaskVmmCodeVA(void (*handler)(void))
-{
-   VA baseVA = VPN_2_VA(CROSS_PAGE_CODE_START);
-   VA offs = (VA)handler % PAGE_SIZE;
-
-   return baseVA + offs;
-}
-
-/*
- *-----------------------------------------------------------------------------
- *
- *  TaskInitSwitchIDT --
- *
- *      Initializes the contents of the switch IDTs and IDTR.
- *      Uses the cross page's host kernel linear address and host kernel CS.
- *
- * Results:
- *      None
- *
- * Side effects:
- *      None
- *
- *-----------------------------------------------------------------------------
- */
-
-static void
-TaskInitSwitchIDTs(VMCrossPageData *cpData)
-{
-   const Selector hostCS = cpData->hostInitial64CS;
-   Gate64 *switchHostIDT = cpData->switchHostIDT;
-   Gate64 *switchMonIDT  = cpData->switchMonIDT;
-
-   cpData->switchHostIDTR.limit = sizeof cpData->switchHostIDT - 1;
-   cpData->switchHostIDTR.offset = PtrToVA64(&cpData->switchHostIDT);
-
-   TaskPopulateSwitchIDTE(EXC_DB,  hostCS, switchHostIDT, (VA)SwitchDBHandler);
-   TaskPopulateSwitchIDTE(EXC_NMI, hostCS, switchHostIDT, (VA)SwitchNMIHandler);
-   TaskPopulateSwitchIDTE(EXC_UD,  hostCS, switchHostIDT, (VA)SwitchUDHandler);
-   TaskPopulateSwitchIDTE(EXC_MC,  hostCS, switchHostIDT, (VA)SwitchMCEHandler);
-
-   TaskPopulateSwitchIDTE(EXC_DB,  SYSTEM_CODE_SELECTOR, switchMonIDT,
-                          TaskVmmCodeVA(SwitchDBHandler));
-   TaskPopulateSwitchIDTE(EXC_NMI, SYSTEM_CODE_SELECTOR, switchMonIDT,
-                          TaskVmmCodeVA(SwitchNMIHandler));
-   TaskPopulateSwitchIDTE(EXC_UD,  SYSTEM_CODE_SELECTOR, switchMonIDT,
-                          TaskVmmCodeVA(SwitchUDHandler));
-   TaskPopulateSwitchIDTE(EXC_MC,  SYSTEM_CODE_SELECTOR, switchMonIDT,
-                          TaskVmmCodeVA(SwitchMCEHandler));
-}
-
-
-/*
- *-----------------------------------------------------------------------------
- *
  * TaskFixupPatchPT --
  * TaskFixupPatchPTE --
  *
@@ -1693,7 +1601,7 @@ Task_InitCrosspage(VMDriver     *vm,           // IN
 
       /*
        * The version of the crosspage must be the first four bytes of the
-       * crosspage.  See the declaration of VMCrossPage in modulecall.h.
+       * crosspage.  See the declaration of VMCrossPageData in modulecall.h.
        */
 
       ASSERT_ON_COMPILE(offsetof(VMCrossPageData, version) == 0);
@@ -1758,7 +1666,7 @@ Task_InitCrosspage(VMDriver     *vm,           // IN
       cpData->hstTimerExpiry        = MAX_ABSOLUTE_TS;
       cpData->monTimerExpiry        = MAX_ABSOLUTE_TS;
 
-      TaskInitSwitchIDTs(cpData);
+      CrossPageInitSwitchIDTs(cpData);
    }
    /*
     * Store the number of pages allocated for this VM's page table patches so

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2011, 2016, 2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 2011, 2016, 2018,2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -16,11 +16,10 @@
  *
  *********************************************************/
 
-#include "vmware.h"
+#include "vm_basic_defs.h"
 #include "x86apic.h"
 #include "x86msr.h"
 #include "x86cpuid_asm.h"
-#include "vm_asm.h"
 #include "cpuid.h"
 #include "apic.h"
 

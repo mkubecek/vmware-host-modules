@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2003-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -17,13 +17,13 @@
  *********************************************************/
 
 /*
- * x86types.h --
+ * cpu_types_arch.h --
  *
- *      Type definitions for the x86 architecture.
+ *     Low-level CPU type definitions for the x86.
  */
 
-#ifndef _X86TYPES_H_
-#define _X86TYPES_H_
+#if !defined(_X86_CPU_TYPES_ARCH_H_)
+#define _X86_CPU_TYPES_ARCH_H_
 
 #define INCLUDE_ALLOW_USERLEVEL
 
@@ -58,19 +58,6 @@ typedef uint64 VM_PDPTE;
 
 typedef uint64 VM_EPTE;
 
-/*
- * Registers
- */
-
-typedef union SharedUReg64 {
-   UReg8  ureg8[2];
-   UReg16 ureg16;
-   UReg32 ureg32;
-   UReg32 ureg32Pair[2];
-   UReg64 ureg64;
-} SharedUReg64;
-
-typedef uint8 Instruction;
 
 typedef uint16 Selector;
 
@@ -122,6 +109,7 @@ typedef struct Task32 {
    uint32     ldt;
    uint16     trap;
    uint16     IOMapBase;
+   uint32     ssp;  // shadow stack pointer
 } Task32;
 #pragma pack(pop)
 
@@ -133,7 +121,7 @@ typedef struct {
    uint16     sp1;  // static
    uint16     ss1;  // static
    uint16     sp2;  // static
-   uint16     ss2;  // static 
+   uint16     ss2;  // static
    uint16     ip;
    uint16     flags;
    uint16     ax;
@@ -398,14 +386,14 @@ typedef struct DebugControlRegister {
    int g2:1;
    int l3:1;
    int g3:1;
-   
+
    int le:1;
    int ge:1;
    int oo1:3;
-   
+
    int gd:1;
    int oo:2;
-   
+
    int rw0:2;
    int len0:2;
    int rw1:2;
@@ -414,7 +402,7 @@ typedef struct DebugControlRegister {
    int len2:2;
    int rw3:2;
    int len3:2;
-   
+
 } DebugControlRegister;
 
 /*
@@ -445,9 +433,9 @@ typedef struct ExcFrame64ForCopy {
    UReg64      r13;                  // Pushed by SW. Used as temp reg.
    UReg64      r14;                  // Pushed by SW. Used as temp reg.
    UReg64      r15;                  // Pushed by SW. Pushed by gate.
-   
+
    UReg64      errorCode;            // Pushed by SW or HW.
-   
+
    UReg64      rip;                  // Pushed by HW.
    uint16      cs, __csu[3];         // Pushed by HW.
    uint64      rflags;               // Pushed by HW.
@@ -465,4 +453,13 @@ typedef struct LretFrame64 {
    uint64 cs;
 } LretFrame64;
 
-#endif // ifndef _X86TYPES_H_
+typedef union SharedUReg64 {
+   UReg8  ureg8[2];
+   UReg16 ureg16;
+   UReg32 ureg32;
+   UReg32 ureg32Pair[2];
+   UReg64 ureg64;
+} SharedUReg64;
+
+#endif /* _X86_CPU_TYPES_ARCH_H_ */
+

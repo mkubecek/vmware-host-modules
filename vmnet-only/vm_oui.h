@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998, 2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -172,7 +172,7 @@ extern "C" {
  * Generate a random static MAC usable by devices that are not
  * virtual host adapters.
  *
- * XXX - 0 if non-x86
+ * XXX - 0 if non-x86 and not ARM
  */
 
 static INLINE void
@@ -189,7 +189,7 @@ VMX86_GENERATE_RANDOM_MAC(uint8 mac[6])
     */
    offset = 0x200000;
    /* Randomize bits 20-0 and make them unique on this machine. */
-#if defined(__i386__) || defined(__x86_64__)
+#if defined(__i386__) || defined(__x86_64__) || defined(VM_ARM_64)
    r = (uint32)RDTSC();
 #endif
    VMX86_BUILD_MAC(mac, r | offset);

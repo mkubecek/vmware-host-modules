@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2014 VMware, Inc. All rights reserved.
+ * Copyright (C) 2014-2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -57,16 +57,20 @@ extern "C" {
  * high bits of your ppn.
  */
 
-#define PA_2_PPN(_pa)     ((_pa) >> PAGE_SHIFT)
-#define PPN_2_PA(_ppn)    ((PA)(_ppn) << PAGE_SHIFT)
+#define PA_2_PPN(_pa)      ((_pa) >> PAGE_SHIFT)
+#define PPN_2_PA(_ppn)     ((PA)(_ppn) << PAGE_SHIFT)
+
+#define PA_2_PPN_4KB(_pa)  ((_pa) >> PAGE_SHIFT_4KB)
+#define PPN_2_PA_4KB(_ppn) ((PA)(_ppn) << PAGE_SHIFT_4KB)
+
+#define PA_2_PPN_16KB(_pa)  ((_pa) >> PAGE_SHIFT_16KB)
+#define PPN_2_PA_16KB(_ppn) ((PA)(_ppn) << PAGE_SHIFT_16KB)
 
 static INLINE MA    MPN_2_MA(MPN mpn)     { return  (MA)mpn << PAGE_SHIFT;  }
 static INLINE MPN   MA_2_MPN(MA ma)       { return (MPN)(ma >> PAGE_SHIFT); }
 
 static INLINE IOA   IOPN_2_IOA(IOPN iopn) { return (IOA)(iopn << PAGE_SHIFT); }
 static INLINE IOPN  IOA_2_IOPN(IOA ioa)   { return (IOPN)(ioa >> PAGE_SHIFT); }
-
-typedef char PageArray[PAGE_SIZE];
 
 /*
  *----------------------------------------------------------------------

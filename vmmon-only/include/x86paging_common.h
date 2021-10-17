@@ -86,14 +86,15 @@
 #define PK_RIGHTS(_pkru, _key) (((_pkru) >> ((_key) * PKR_WIDTH)) & PKR_MASK);
 
 /* Error code flags */
-#define PF_P            0x0001
-#define PF_RW           0x0002
-#define PF_US           0x0004
-#define PF_RSVD         0x0008
-#define PF_ID           0x0010
-#define PF_PK           0x0020
-#define PF_SS           0x0040
-#define PF_SGX          0x8000
+#define PF_P            (1 << 0)
+#define PF_RW           (1 << 1)
+#define PF_US           (1 << 2)
+#define PF_RSVD         (1 << 3)
+#define PF_ID           (1 << 4)
+#define PF_PK           (1 << 5)
+#define PF_SS           (1 << 6)
+#define PF_SGX          (1 << 15)
+#define PF_RMP          (1 << 31)
 
 /*
  * Operand definitions for the INVPCID instruction. See SDM Vol. 2A.

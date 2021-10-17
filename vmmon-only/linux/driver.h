@@ -30,7 +30,6 @@
 #include <linux/wait.h>
 
 #include "vmx86.h"
-#include "driver_vmcore.h"
 
 
 /* Per-instance driver state */
@@ -55,12 +54,9 @@ typedef struct Device {
  * Static driver state.
  */
 
-#define VM_DEVICE_NAME_SIZE 32
 #define LINUXLOG_BUFFER_SIZE  1024
 
 typedef struct VMXLinuxState {
-   int major;
-   char deviceName[VM_DEVICE_NAME_SIZE];
    char buf[LINUXLOG_BUFFER_SIZE];
    Device *head;
 

@@ -43,17 +43,13 @@
 
 #include <asm/io.h>
 
-#include "vmware.h"
 #include "driverLog.h"
 #include "driver.h"
 #include "modulecall.h"
-#include "vm_asm.h"
+#include "vm_asm_x86.h"
 #include "vmx86.h"
 #include "task.h"
-#include "memtrack.h"
-#include "task.h"
 #include "cpuid.h"
-#include "circList.h"
 #include "x86msr.h"
 
 #ifdef VMX86_DEVEL
@@ -105,13 +101,11 @@ static const struct file_operations vmuser_fops = {
    .compat_ioctl = LinuxDriver_Ioctl,
 };
 
-#ifndef VMX86_DEVEL
 static struct miscdevice vmmon_miscdev = {
    .name = "vmmon",
    .minor = MISC_DYNAMIC_MINOR,
    .fops = &vmuser_fops,
 };
-#endif
 
 static struct timer_list tscTimer;
 static Atomic_uint32 tsckHz;
@@ -278,6 +272,10 @@ init_module(void)
 {
    int retval;
 
+#ifdef VMX86_DEVEL
+   devel_miscdevice(&vmmon_miscdev);
+#endif
+
    DriverLog_Init("/dev/vmmon");
    HostIF_InitGlobalLock();
 
@@ -303,35 +301,13 @@ init_module(void)
    linuxState.fastClockThread = NULL;
    linuxState.fastClockRate = 0;
 
-#ifdef VMX86_DEVEL
-   devel_init_module();
-   retval = register_chrdev(linuxState.major, linuxState.deviceName,
-                            &vmuser_fops);
-   if (retval) {
-      Warning("Module %s: error registering with major=%d\n",
-              linuxState.deviceName, linuxState.major);
-   } else {
-      Log("Module %s: registered with major=%d\n",
-          linuxState.deviceName, linuxState.major);
-   }
-#else
-   sprintf(linuxState.deviceName, "vmmon");
-   linuxState.major = 10;
-
    retval = misc_register(&vmmon_miscdev);
    if (retval) {
-      Warning("Module %s: error registering misc device %s\n",
-              linuxState.deviceName, vmmon_miscdev.name);
-   } else {
-      Log("Module %s: registered as misc device %s\n", linuxState.deviceName,
-          vmmon_miscdev.name);
-   }
-#endif
-
-   if (retval) {
+      Warning("Module %s: error registering misc device\n", vmmon_miscdev.name);
       Vmx86_CleanupHVIOBitmap();
       return -ENOENT;
    }
+   Log("Module %s: registered as misc device\n", vmmon_miscdev.name);
 
    HostIF_InitUptime();
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 15, 0) && !defined(timer_setup)
@@ -344,7 +320,7 @@ init_module(void)
    LinuxDriverInitTSCkHz();
    Vmx86_InitIDList();
 
-   Log("Module %s: initialized\n", linuxState.deviceName);
+   Log("Module %s: initialized\n", vmmon_miscdev.name);
 
    return 0;
 }
@@ -366,13 +342,9 @@ cleanup_module(void)
    /*
     * XXX smp race?
     */
-#ifdef VMX86_DEVEL
-   unregister_chrdev(linuxState.major, linuxState.deviceName);
-#else
    misc_deregister(&vmmon_miscdev);
-#endif
 
-   Log("Module %s: unloaded\n", linuxState.deviceName);
+   Log("Module %s: unloaded\n", vmmon_miscdev.name);
 
    del_timer_sync(&tscTimer);
 
@@ -676,7 +648,7 @@ LinuxDriverReadTSC(void *data,   // OUT: TSC values
  *-----------------------------------------------------------------------------
  */
 
-__attribute__((always_inline)) static Bool
+static Bool
 LinuxDriverSyncReadTSCs(uint64 *delta) // OUT: TSC max - TSC min
 {
    TSCDelta tscDelta;
@@ -1257,7 +1229,7 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       }
 
    case IOCTL_VMX86_WRITE_PAGE: {
-#if VMX86_DEVEL
+#if defined(VMX86_DEVEL)
          VMMReadWritePage req;
 
          retval = HostIF_CopyFromUser(&req, ioarg, sizeof req);

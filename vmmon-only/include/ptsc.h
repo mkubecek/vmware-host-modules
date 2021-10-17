@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014,2017,2019-2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014,2017,2019-2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -101,6 +101,7 @@ VmAbsoluteTS PTSC_InitialCount(const char *module,
                                VmIntervalTS freq,
                                VmAbsoluteTS defaultCnt);
 Bool PTSC_HasPerfectlySynchronizedTSCs(void);
+VmRelativeTS PTSC_RefClockOffset(void);
 
 static INLINE int64
 PTSC_Hz(void)
@@ -166,7 +167,7 @@ int64 PTSC_CyclesToUS(VmRelativeTS ts);
 
 #endif
 
-#if defined(VMX86_SERVER) && defined(VMX86_VMX)
+#if defined(VMX86_SERVER) && (defined(VMX86_VMX) || defined (ULM_ESX))
 
 /*
  * ESX with userworld VMX

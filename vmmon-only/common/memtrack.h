@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998,2017-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998,2017-2018,2020 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -27,9 +27,7 @@
 #ifndef _MEMTRACK_H_
 #define _MEMTRACK_H_
 
-#define INCLUDE_ALLOW_VMMON
-#define INCLUDE_ALLOW_VMCORE
-#include "includeCheck.h"
+#include "vmx86.h"
 
 struct MemTrack;
 

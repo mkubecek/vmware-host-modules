@@ -27,14 +27,13 @@
 
 #include "vm_basic_types.h"
 #include "vm_basic_defs.h"
+#include "vm_assert.h"
 #include "address_defs.h"
-#include "x86desc.h"
-#include "x86types.h"
 #include "vmm_constants.h"
 
 #define DIRECT_EXEC_USER_RPL    3
 #define BINARY_TRANSLATION_RPL  1
-typedef char x86_PAGE[PAGE_SIZE];
+typedef char x86_PAGE[4096];
 
 #define MAX_VADDR                    CONST64U(0xffffffffffffffff)
 #define MONITOR_SIZE                 (64 * 1024 * 1024)
@@ -175,22 +174,12 @@ enum {
 #define SWITCH_PAGE_TABLE_LEN          12
 #endif
 
-#define VMM_STACK_TOP_HW          VPN_2_VA(MON_STACK_PAGES_START + \
-                                           MON_STACK_PAGES_LEN)
-/*
- * VMM_STKTOP_HW_LEN needs to contain an ExcFrame64ForCopy (72 bytes) and
- * some more bytes for a "no man's land" region.  We make sure the "no
- * man's land" region is 0 on BT_Resume and HV_Resume.  Because we
- * check "no man's land" in 8-byte chunks, VMM_STKTOP_HW_LEN must be
- * divisible by 8.
- */
-#define VMM_STKTOP_HW_LEN          168
-#define VMM_STKTOP_HW_LRET_LEN     (VMM_STKTOP_HW_LEN + sizeof(LretFrame64))
-#define VMM_STKTOP_LRET_OFFSET     (PAGE_SIZE - VMM_STKTOP_HW_LRET_LEN)
+#define VMM_STKTOP_LRET_LEN        sizeof(LretFrame64)
+#define VMM_STKTOP_LRET_OFFSET     (PAGE_SIZE - VMM_STKTOP_LRET_LEN)
 
-#define MON_STACK_BASE            VPN_2_VA(MON_STACK_PAGES_START)
-#define MON_STACK_TOP             VPN_2_VA(MON_STACK_PAGES_START + \
-                                           MON_STACK_PAGES_LEN)
+#define MON_STACK_BASE             VPN_2_VA(MON_STACK_PAGES_START)
+#define MON_STACK_TOP              VPN_2_VA(MON_STACK_PAGES_START + \
+                                            MON_STACK_PAGES_LEN)
 #define DF_STACK_BASE              VPN_2_VA(DF_STACK_PAGES_START)
 #define DF_STACK_TOP               VPN_2_VA(DF_STACK_PAGES_START + \
                                             DF_STACK_PAGES_LEN)
@@ -239,7 +228,7 @@ enum {
                                     MC_STACK_PAGES_LEN   + \
                                     NMI_STACK_PAGES_LEN  + \
                                     HV_CURRENT_VMCB_LEN  + \
-                                    IDT_NORMAL_LEN       + \
+                                    MON_IDT_LEN          + \
                                     GDT_AND_TASK_LEN)
 
 #else
@@ -261,15 +250,14 @@ enum {
                                     MC_STACK_PAGES_LEN  + \
                                     NMI_STACK_PAGES_LEN + \
                                     GDT_AND_TASK_LEN    + \
-                                    IDT_NORMAL_LEN      + \
+                                    MON_IDT_LEN         + \
                                     HV_CURRENT_VMCB_LEN + \
                                     SWITCH_PAGE_TABLE_LEN)
 #endif
 
 #define MON_PAGE_TABLE_L5        VPN_2_VA(MON_PAGE_TABLE_L5_START)
 #define MON_PAGE_TABLE_L4        VPN_2_VA(MON_PAGE_TABLE_L4_START)
-#define VMM_STACK_TOP            (VMM_STACK_TOP_HW - VMM_STKTOP_HW_LEN)
-#define VMM_LRET_STACK_TOP       (VMM_STACK_TOP_HW - VMM_STKTOP_HW_LRET_LEN)
+#define VMM_LRET_STACK_TOP       (MON_STACK_TOP - VMM_STKTOP_LRET_LEN)
 /*
  * Mark out a guard page for the VMM stack, this is not in the addrlayout_table
  * explicitly because it overlaps the last page of the MONITOR_READONLY region.
@@ -285,8 +273,7 @@ enum {
 static INLINE Bool
 AddrLayout_InMonStack(VA64 va, size_t len)
 {
-   return VPN_2_VA(MON_STACK_PAGES_START) <= va &&
-          va <= VMM_STACK_TOP_HW - len;
+   return MON_STACK_BASE <= va && va <= MON_STACK_TOP - len;
 }
 
 static INLINE Bool
