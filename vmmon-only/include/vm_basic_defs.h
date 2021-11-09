@@ -51,7 +51,7 @@
  *   C90 7.17, C99 7.19, C11 7.19
  */
 #if !defined(VMKERNEL)
-#  include <stddef.h>
+#  include <linux/stddef.h>
 #else
    /*
     * Vmkernel's bogus __FreeBSD__ value causes gcc <stddef.h> to break.
