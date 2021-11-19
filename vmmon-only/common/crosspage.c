@@ -46,8 +46,16 @@
  */
 
 #ifdef __linux__
+#   include <linux/version.h>
+#   undef __RHEL_OBJTOOL_H_HACK
+#   ifdef RHEL_RELEASE_CODE
+#      if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 5)
+#         define __RHEL_OBJTOOL_H_HACK
+#      endif
+#   endif
 #   include "driver-config.h"
-#   if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
+#   if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || \
+       defined(__RHEL_OBJTOOL_H_HACK)
 #      include <linux/objtool.h>
 #   elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
 #      include <linux/frame.h>
