@@ -61,15 +61,9 @@
  *  ASSERT_ON_COMPILE(sizeof(Selector) == 2 &&                            \
  *                    ((__builtin_constant_p(expr) ? ((expr) >> 16) == 0) \
  *                                                 : sizeof(expr) <= 2)
+ * HACKED: removed the #ifdef with macro, breaks gcc 11.2.0
  */
-#ifndef USE_UBSAN
-#define ASSERT_ON_COMPILE_SELECTOR_SIZE(expr)                                \
-   ASSERT_ON_COMPILE(sizeof(Selector) == 2 &&                                \
-                     ((__builtin_constant_p(expr) && ((expr) >> 16) == 0) || \
-                      sizeof(expr) <= 2))
-#else
 #define ASSERT_ON_COMPILE_SELECTOR_SIZE(expr)
-#endif
 
 
 /* Checked against the Intel manual and GCC --hpreg */
