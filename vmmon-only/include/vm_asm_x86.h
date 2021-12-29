@@ -126,7 +126,7 @@ _Get_IDT(_GETSET_DTR_TYPE *dtr)
 #define SET_LDT(expr)                                                   \
    do {                                                                 \
       const Selector _set_ldt_sel = (Selector)(expr);                   \
-      ASSERT_ON_COMPILE_SELECTOR_SIZE(expr);                            \
+      ASSERT_ON_COMPILE_SELECTOR_SIZE(_set_ldt_sel);                    \
       /* lldt reads from the GDT; don't sink any writes. */             \
       COMPILER_MEM_BARRIER();                                           \
       /* Checked against the Intel manual and GCC --hpreg */            \
@@ -212,7 +212,7 @@ _BUILD_GET_R(_GET_DR7, dr7)
 #define SET_SEGREG(reg, expr)                                          \
    do {                                                                \
       const Selector _set_segreg_sel = (Selector)(expr);               \
-      ASSERT_ON_COMPILE_SELECTOR_SIZE(expr);                           \
+      ASSERT_ON_COMPILE_SELECTOR_SIZE(_set_segreg_sel);                \
       /* mov to Sreg reads from the [GL]DT; don't sink any writes. */  \
       COMPILER_MEM_BARRIER();                                          \
       /* Checked against the Intel manual and GCC --hpreg */           \
@@ -260,7 +260,7 @@ _BUILD_GET_SEG(GET_SS, ss)
 #define SET_TR(expr)                                                    \
    do {                                                                 \
       const Selector _set_tr_sel = (Selector)(expr);                    \
-      ASSERT_ON_COMPILE_SELECTOR_SIZE(expr);                            \
+      ASSERT_ON_COMPILE_SELECTOR_SIZE(_set_tr_sel);                     \
       /* ltr reads from the GDT; don't sink any writes. */              \
       COMPILER_MEM_BARRIER();                                           \
       /* Checked against the Intel manual and GCC --hpreg */            \
