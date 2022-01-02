@@ -69,8 +69,9 @@
 #if (__GNUC__ >= 4) && (__GNUC_MINOR__ >= 1)
 #define ASSERT_ON_COMPILE_SELECTOR_SIZE(expr)                                \
    ASSERT_ON_COMPILE(sizeof(Selector) == 2 &&                                \
-                     ((__builtin_constant_p(expr) && ((expr) >> 16) == 0) || \
-                      sizeof(expr) <= 2))
+		     __builtin_choose_expr(__builtin_constant_p(expr),       \
+					   ((expr) >> 16) == 0,              \
+					   sizeof(expr) <= 2))
 #else
 /* gcc 3.3.3 is not able to produce a constant expression (PR 356383) */
 #define ASSERT_ON_COMPILE_SELECTOR_SIZE(expr)
