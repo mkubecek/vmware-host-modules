@@ -1,7 +1,7 @@
 *.o
-*.o.cmd
+*.mod
 *.ko
-*.ko.cmd
+.*.cmd
 *.mod.c
 *.tar
 .tmp_versions
