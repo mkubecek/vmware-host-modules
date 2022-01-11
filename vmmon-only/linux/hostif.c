@@ -116,11 +116,22 @@
 	#if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 4)
 		#define __RHEL_PAGE_ACCT_HACK
 	#endif
+	#if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 5)
+		#define __RHEL85_PAGE_ACCT_HACK
+	#endif
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
-#   define global_zone_page_state global_page_state
+static unsigned long get_nr_pagetable(void)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0) || \
+    defined(__RHEL85_PAGE_ACCT_HACK)
+   return global_node_page_state(NR_PAGETABLE);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+   return global_zone_page_state(NR_PAGETABLE);
+#else
+   return global_page_state(NR_PAGETABLE);
 #endif
+}
 
 static unsigned long get_nr_slab_unreclaimable(void)
 {
@@ -1681,7 +1692,7 @@ HostIF_EstimateLockedPageLimit(const VMDriver* vm,                // IN
    unsigned int reservedPages = MEMDEFAULTS_MIN_HOST_PAGES;
    unsigned int hugePages = (vm == NULL) ? 0 :
       BYTES_2_PAGES(vm->memInfo.hugePageBytes);
-   unsigned int lockedPages = global_zone_page_state(NR_PAGETABLE) +
+   unsigned int lockedPages = get_nr_pagetable() +
                               get_nr_slab_unreclaimable() +
                               get_nr_unevictable() +
                               hugePages + reservedPages;
