@@ -189,6 +189,9 @@ uint8 hvIPIVector;
 	#if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 4)
 		#define __RHEL_PAGE_ACCT_HACK
 	#endif
+	#if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 5)
+		#define __RHEL85_PAGE_ACCT_HACK
+	#endif
 #endif
 
 static unsigned long compat_totalram_pages(void)
@@ -1571,8 +1574,12 @@ HostIF_EstimateLockedPageLimit(const VMDriver* vm,                // IN
    unsigned int anonPages;
    unsigned int swapPages = BYTES_2_PAGES(linuxState.swapSize);
 
+   /* NR_PAGETABLE moved from zone to node in 5.11 */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0) || \
+    defined(__RHEL85_PAGE_ACCT_HACK)
+   lockedPages += global_node_page_state(NR_PAGETABLE);
    /* global_page_state is global_zone_page_state in 4.14. */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
    lockedPages += global_zone_page_state(NR_PAGETABLE);
 #else
    lockedPages += global_page_state(NR_PAGETABLE);
