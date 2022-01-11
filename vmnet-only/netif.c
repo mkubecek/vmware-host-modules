@@ -44,7 +44,6 @@
 #include "compat_netdevice.h"
 #include "vmnetInt.h"
 
-
 /*
  * Default min MTU value as defined by kernel versions >= 4.10.0.
  * Use the same value for earlier versions of the kernel which do not
@@ -84,6 +83,19 @@ static int  VNetNetIfProcRead(char *page, char **start, off_t off,
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)) && \
     (defined(HAVE_NET_DEVICE_OPS) || defined(HAVE_CHANGE_MTU))
 static int VNetNetifChangeMtu(struct net_device *dev, int new_mtu);
+#endif
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
+static void
+__dev_addr_set(struct net_device *dev, const void *addr, size_t len)
+{
+	memcpy(dev->dev_addr, addr, len);
+}
+
+static void dev_addr_set(struct net_device *dev, const u8 *addr)
+{
+	__dev_addr_set(dev, addr, dev->addr_len);
+}
 #endif
 
 
@@ -253,7 +265,7 @@ VNetNetIf_Create(char *devName,  // IN:
 
    memset(&netIf->stats, 0, sizeof netIf->stats);
 
-   memcpy(dev->dev_addr, netIf->port.paddr, sizeof netIf->port.paddr);
+   __dev_addr_set(dev, netIf->port.paddr, sizeof(netIf->port.paddr));
 
    if (register_netdev(dev) != 0) {
       LOG(0, (KERN_NOTICE "%s: could not register network device\n",
@@ -532,7 +544,7 @@ VNetNetifSetMAC(struct net_device *dev, // IN:
       return -EINVAL;
    }
    memcpy(netIf->port.paddr, addr->sa_data, dev->addr_len);
-   memcpy(dev->dev_addr, addr->sa_data, dev->addr_len);
+   dev_addr_set(dev, addr->sa_data);
    return 0;
 }
 
