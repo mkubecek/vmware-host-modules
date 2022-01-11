@@ -72,7 +72,7 @@ Bool BridgeIPv4MatchAddrMAC(const ULONG ipAddr, const uint8 *mac);
 void SMACINT
 SMAC_InitState(struct SMACState **ptr);           // IN: state to alloc/init
 void SMACINT
-SMAC_SetMac(struct SMACState *state, uint8 *mac); // IN: state, and host MAC
+SMAC_SetMac(struct SMACState *state, const uint8 *mac); // IN: state, and host MAC
 void SMACINT
 SMAC_CleanupState(struct SMACState **ptr);        // IN: state to cleanup/dealloc
 
