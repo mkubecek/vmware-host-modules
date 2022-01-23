@@ -137,6 +137,7 @@ VNetProcShow(struct seq_file *p, // IN:
 }
 
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 18, 0)
 /*
  *----------------------------------------------------------------------
  *
@@ -177,6 +178,7 @@ static struct file_operations fops = {
 };
 #endif
 #endif
+#endif
 
 
 /*
@@ -212,7 +214,12 @@ VNetProcMakeEntryInt(VNetProcEntry   *parent,   // IN:
       } else {
          ent->data   = data;
          ent->fn     = fn;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 18, 0)
+         ent->pde    = proc_create_single_data(name, mode, parent->pde,
+                                               VNetProcShow, ent);
+#else
          ent->pde    = proc_create_data(name, mode, parent->pde, &fops, ent);
+#endif
       }
       if (ent->pde != NULL) {
          *ret = ent;
