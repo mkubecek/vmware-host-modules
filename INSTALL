@@ -8,17 +8,17 @@ vmware-modconfig tool.
 0. Quick guide for impatient
 ----------------------------
 
+Based on your VMware product, replace "14.1.1" below with the version
+of VMware you are installing and/or "workstation" with "player".
+
 First method (build and install):
 
   wget https://github.com/mkubecek/vmware-host-modules/archive/workstation-14.1.1.tar.gz
   tar -xzf workstation-14.1.1.tar.gz
   cd vmware-host-modules-workstation-14.1.1
   make
-  make install
-
-Last command must be executed with root privileges (first four shouldn't).
-Based on your VMware product, replace "14.1.1" with your installed version
-and/or "workstation" with "player".
+  sudo make install
+  (reboot your machine)
 
 Second method (replace original tarballs):
 
@@ -27,11 +27,9 @@ Second method (replace original tarballs):
   cd vmware-host-modules-workstation-14.1.1
   tar -cf vmmon.tar vmmon-only
   tar -cf vmnet.tar vmnet-only
-  cp -v vmmon.tar vmnet.tar /usr/lib/vmware/modules/source/
-  vmware-modconfig --console --install-all
-
-In this case, last two commands require root privileges.
-
+  sudo cp -v vmmon.tar vmnet.tar /usr/lib/vmware/modules/source/
+  sudo vmware-modconfig --console --install-all
+  (reboot your machine)
 
 1a. Retrieve the source - with git
 ----------------------------------
