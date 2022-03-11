@@ -119,8 +119,10 @@ typedef struct MSRQuery {
 #define MSR_PL3_SSP                          0x6a7
 #define MSR_ISST_ADDR                        0x6a8
 
+#ifndef MSR_TEST_CTRL
 #define MSR_TEST_CTRL                        0x33
 #define MSR_TEST_CTRL_SPLIT_LOCK_DETECT           (1ULL << 29)
+#endif
 
 #define IA32_MSR_ARCH_CAPABILITIES           0x10a
 #define MSR_ARCH_CAPABILITIES_RDCL_NO             (1ULL << 0)
@@ -147,7 +149,9 @@ typedef struct MSRQuery {
 #define MSR_TSX_CTRL_RTM_DISABLE                  (1ULL << 0)
 #define MSR_TSX_CTRL_CPUID_CLEAR                  (1ULL << 1)
 
+#ifndef MSR_MISC_FEATURES_ENABLES
 #define MSR_MISC_FEATURES_ENABLES            0x140
+#endif
 
 #define MSR_XFD                              0x1c4
 #define MSR_XFD_ERR                          0x1c5
@@ -581,11 +585,11 @@ typedef struct MSRQuery {
 /* This ifndef is necessary because this is defined by some kernel headers. */
 #ifndef MSR_K7_HWCR
 #define MSR_K7_HWCR                0xc0010015    // Available on AMD processors
-#endif
 #define MSR_K7_HWCR_SSEDIS         0x00008000ULL // Disable SSE bit
 #define MSR_K7_HWCR_MONMWAITUSEREN 0x00000400ULL // Enable MONITOR/MWAIT CPL>0
 #define MSR_K7_HWCR_TLBFFDIS       0x00000040ULL // Disable TLB Flush Filter
 #define MSR_K7_HWCR_SMMLOCK        0x00000001ULL // Lock SMM environment
+#endif
 
 #ifndef MSR_K8_SYSCFG
 #define MSR_K8_SYSCFG        0xc0010010
@@ -790,10 +794,12 @@ typedef struct MSRQuery {
 #define MSR_HYPERV_GUESTOSID_OS_MASK             0xfULL
 #define MSR_HYPERV_GUESTOSID_OS_WINNT_DERIVATIVE 4ULL
 
+#ifndef MSR_TSX_FORCE_ABORT
 /* MSR for forcing RTM abort to recover PMC3 (see PR 2333817) */
 /* See SKZ87 in intel 335901-009 6th-gen-x-series-spec-update.pdf */
 #define MSR_TSX_FORCE_ABORT                      0x0000010f
 #define MSR_TSX_FORCE_ABORT_RTM_BIT_INDEX        0
+#endif
 
 /*
  * Total Memory Encryption MSRs

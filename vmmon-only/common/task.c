@@ -46,14 +46,23 @@
 #   include <string.h>
 #endif
 
+/* On Linux, must come before any inclusion of asm/page.h --hpreg */
+#include "hostKernel.h"
+
+/* On Linux this must be before any inclusion of vmx86.h */
+#ifdef LINUX_GDT_IS_RO
+#   include <asm/desc.h>
+#   define default_rw_gdt get_current_gdt_rw()
+#else
+#   define default_rw_gdt NULL
+#endif
+
 #include "modulecall.h"
 #include "vmx86.h"
 #include "task.h"
 #include "vm_asm.h"
 #include "cpuid.h"
 #include "hostif.h"
-/* On Linux, must come before any inclusion of asm/page.h --hpreg */
-#include "hostKernel.h"
 #include "comport.h"
 #include "crossgdt.h"
 #include "x86svm.h"
@@ -67,13 +76,6 @@
 #include "monLoader.h"
 #include "crosspage.h"
 #include "cpu_defs.h"
-
-#ifdef LINUX_GDT_IS_RO
-#   include <asm/desc.h>
-#   define default_rw_gdt get_current_gdt_rw()
-#else
-#   define default_rw_gdt NULL
-#endif
 
 #if defined(_WIN64)
 #   include "vmmon-asm-x86-64.h"
