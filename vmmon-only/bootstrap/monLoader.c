@@ -838,7 +838,7 @@ MonLoader_Process(MonLoaderHeader  *header,   // IN/OUT
    }
    *line = LINE_INVALID;
 
-   if (header->entries == 0 || header->count == 0) {
+   if (header->count == 0) {
       return ML_ERROR_TABLE_MISSING;
    }
 
