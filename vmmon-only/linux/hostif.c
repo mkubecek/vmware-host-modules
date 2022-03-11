@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2021 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -1684,11 +1684,11 @@ HostIF_EstimateLockedPageLimit(const VMDriver* vm,                // IN
     * since at least 2.6.0.
     */
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0) || defined(RHEL84_BACKPORTS)
+   PageCnt totalPhysicalPages = totalram_pages();
+#else
    extern unsigned long totalram_pages;
    PageCnt totalPhysicalPages = totalram_pages;
-#else
-   PageCnt totalPhysicalPages = totalram_pages();
 #endif
    /*
     * Use the memory information linux exports as of late for a more
@@ -1705,28 +1705,28 @@ HostIF_EstimateLockedPageLimit(const VMDriver* vm,                // IN
    PageCnt lockedPages = hugePages + reservedPages;
    PageCnt anonPages;
 
-   /* global_page_state is global_zone_page_state in 4.14. */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0) || defined(RHEL85_BACKPORTS)
+   lockedPages += global_node_page_state(NR_PAGETABLE);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
    lockedPages += global_zone_page_state(NR_PAGETABLE);
 #else
    lockedPages += global_page_state(NR_PAGETABLE);
 #endif
-   /* NR_SLAB_* moved from zone to node in 4.13. */
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0) || defined(RHEL84_BACKPORTS)
    lockedPages += global_node_page_state_pages(NR_SLAB_UNRECLAIMABLE_B);
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
    lockedPages += global_node_page_state(NR_SLAB_UNRECLAIMABLE);
 #else
    lockedPages += global_page_state(NR_SLAB_UNRECLAIMABLE);
 #endif
-   /* NR_UNEVICTABLE moved from global to node in 4.8. */
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0)
    lockedPages += global_node_page_state(NR_UNEVICTABLE);
 #else
    lockedPages += global_page_state(NR_UNEVICTABLE);
 #endif
-   /* NR_ANON_MAPPED moved & changed name in 4.8. */
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 8, 0)
    anonPages = global_node_page_state(NR_ANON_MAPPED);
 #else
