@@ -2357,7 +2357,8 @@ isVAReadable(VA r)  // IN:
    int ret;
 
    r = APICR_TO_ADDR(r, APICR_VERSION);
-#ifdef HAVE_GET_KERNEL_NOFAULT
+#if defined(HAVE_GET_KERNEL_NOFAULT) || defined(__get_kernel_nofault) || \
+    (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0))
    ret = get_kernel_nofault(dummy, (void *)r);
 #else
    {
