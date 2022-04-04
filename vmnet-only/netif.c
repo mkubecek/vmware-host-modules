@@ -357,7 +357,7 @@ VNetNetIfReceive(VNetJack        *this, // IN: jack
    /* send to the host interface */
    skb->dev = netIf->dev;
    skb->protocol = eth_type_trans(skb, netIf->dev);
-   netif_rx_ni(skb);
+   compat_netif_rx_ni(skb);
    netIf->stats.rx_packets++;
 
    return;
