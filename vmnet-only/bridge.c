@@ -694,7 +694,7 @@ VNetBridgeReceiveFromVNet(VNetJack        *this, // IN: jack
           * not do it, or netif_rx_ni() will deadlock on the cli() lock --hpreg
           */
 
-	 netif_rx_ni(clone);
+	 compat_netif_rx_ni(clone);
 #	 if LOGLEVEL >= 4
 	 vnetTime = ktime_get_ns();
 #	 endif
