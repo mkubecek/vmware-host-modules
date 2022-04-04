@@ -344,4 +344,13 @@ typedef u32 compat_netdev_features_t;
 #define compat_netif_trans_update(d) do { (d)->trans_start = jiffies; } while (0)
 #endif
 
+static inline int compat_netif_rx_ni(struct sk_buff *skb)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0)
+	return netif_rx(skb);
+#else
+	return netif_rx_ni(skb);
+#endif
+}
+
 #endif /* __COMPAT_NETDEVICE_H__ */
