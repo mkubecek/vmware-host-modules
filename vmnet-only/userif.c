@@ -88,22 +88,31 @@ extern unsigned int  vnet_max_qlen;
 #endif
 
 #if COMPAT_LINUX_VERSION_CHECK_LT(5, 10, 0)
-static inline
-__wsum compat_csum_and_copy_to_user(const void *src, void __user *dst, int len)
+static inline unsigned int
+compat_csum_and_copy_to_user(const void *src, void __user *dst, int len,
+			     int *err)
 {
-	int err;
-	__wsum ret;
-
-	ret = csum_and_copy_to_user(src, dst, len, 0, &err);
-	return err ? 0 : ret;
+	return csum_and_copy_to_user(src, dst, len, 0, err);
 }
 #else
-static inline
-__wsum compat_csum_and_copy_to_user(const void *src, void __user *dst, int len)
+static inline unsigned int
+compat_csum_and_copy_to_user(const void *src, void __user *dst, int len,
+			     int *err)
 {
-	return csum_and_copy_to_user(src, dst, len);
+	unsigned int csum;
+
+#if COMPAT_LINUX_VERSION_CHECK_LT(5, 19, 0)
+	csum = csum_and_copy_to_user(src, dst, len);
+#else
+	csum = csum_partial(src, len, ~0U);
+	if (copy_to_user(dst, src, len))
+		csum = 0;
+#endif /* 5.19 */
+
+	*err = (csum == 0 ? -EFAULT : 0);
+	return csum;
 }
-#endif
+#endif /* 5.10 */
 
 /*
  *-----------------------------------------------------------------------------
@@ -566,6 +575,7 @@ VNetCsumCopyDatagram(const struct sk_buff *skb,	// IN: skb to copy
 		     char *buf)			// OUT: where to copy data
 {
    unsigned int csum;
+   int err = 0;
    int len = skb_headlen(skb) - offset;
    char *curr = buf;
    const skb_frag_t *frag;
@@ -578,9 +588,10 @@ VNetCsumCopyDatagram(const struct sk_buff *skb,	// IN: skb to copy
       return -EINVAL;
    }
 
-   csum = compat_csum_and_copy_to_user(skb->data + offset, curr, len);
-   if (!csum)
-	   return -EFAULT;
+   csum = compat_csum_and_copy_to_user(skb->data + offset, curr, len, &err);
+   if (err) {
+      return err;
+   }
    curr += len;
 
    for (frag = skb_shinfo(skb)->frags;
@@ -592,11 +603,13 @@ VNetCsumCopyDatagram(const struct sk_buff *skb,	// IN: skb to copy
 
 	 vaddr = kmap(skb_frag_page(frag));
 	 tmpCsum = compat_csum_and_copy_to_user(vaddr + skb_frag_off(frag),
-						curr, skb_frag_size(frag));
+						curr, skb_frag_size(frag),
+						&err);
 	 kunmap(skb_frag_page(frag));
 
-	 if (!tmpCsum)
-		 return -EFAULT;
+	 if (err) {
+	    return err;
+	 }
 	 csum = csum_block_add(csum, tmpCsum, curr - buf);
 	 curr += skb_frag_size(frag);
       }
