@@ -809,12 +809,14 @@ static Bool
 VNetBridgeIsDeviceWireless(struct net_device *dev) //IN: sock
 {
 #if defined(CONFIG_WIRELESS_EXT)
-   return dev->ieee80211_ptr != NULL || dev->wireless_handlers != NULL;
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 19, 0) || IS_ENABLED(CONFIG_CFG80211)
-   return dev->ieee80211_ptr != NULL;
-#else
-   return FALSE;
+   if (dev->wireless_handlers)
+      return TRUE;
 #endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 19, 0) || IS_ENABLED(CONFIG_CFG80211)
+   if (dev->ieee80211_ptr)
+      return TRUE;
+#endif
+   return FALSE;
 }
 
 
