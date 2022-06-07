@@ -813,10 +813,14 @@ VNetBridgeIsDeviceWireless(struct net_device *dev) //IN: sock
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 22)
 #  if defined(CONFIG_WIRELESS_EXT)
-   return dev->ieee80211_ptr != NULL || dev->wireless_handlers != NULL;
-#  else
-   return dev->ieee80211_ptr != NULL;
+   if (dev->wireless_handlers)
+      return true;
 #  endif
+#  if IS_ENABLED(CONFIG_CFG80211)
+   if (dev->ieee80211_ptr)
+      return true;
+#  endif
+   return false;
 #elif defined(CONFIG_WIRELESS_EXT)
    return dev->wireless_handlers != NULL;
 #elif !defined(CONFIG_NET_RADIO)
