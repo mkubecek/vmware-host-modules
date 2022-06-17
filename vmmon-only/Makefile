@@ -106,8 +106,6 @@ export VM_CCVER
 VM_CC := $(CC)
 export VM_CC
 
-MAKEOVERRIDES := $(filter-out CC=%,$(MAKEOVERRIDES))
-
 #
 # Define a setup target that gets built before the actual driver.
 # This target may not be used at all, but if it is then it will be defined
