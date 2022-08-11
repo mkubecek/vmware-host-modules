@@ -720,7 +720,7 @@ typedef int pid_t;
                                                      lfMessageFont)
 
 /* This is not intended to be thread-safe. */
-#define DO_ONCE(code)                                                   \
+#define VMWARE_DO_ONCE(code)                                                   \
    do {                                                                 \
       static Bool _doOnceDone = FALSE;                                  \
       if (UNLIKELY(!_doOnceDone)) {                                     \
