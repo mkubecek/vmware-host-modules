@@ -264,7 +264,7 @@ void WarningThrottled(uint32 *count, const char *fmt, ...) PRINTF_DECL(2, 3);
 #endif
 
 #define ASSERT_NOT_TESTED(cond) (UNLIKELY(!(cond)) ? NOT_TESTED() : (void)0)
-#define NOT_TESTED_ONCE()       DO_ONCE(NOT_TESTED())
+#define NOT_TESTED_ONCE()       VMWARE_DO_ONCE(NOT_TESTED())
 
 #define NOT_TESTED_1024()                                               \
    do {                                                                 \
@@ -273,7 +273,7 @@ void WarningThrottled(uint32 *count, const char *fmt, ...) PRINTF_DECL(2, 3);
       count = (count + 1) & 1023;                                       \
    } while (0)
 
-#define LOG_ONCE(...) DO_ONCE(Log(__VA_ARGS__))
+#define LOG_ONCE(...) VMWARE_DO_ONCE(Log(__VA_ARGS__))
 
 
 /*
