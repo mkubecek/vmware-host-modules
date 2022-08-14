@@ -34,6 +34,7 @@
 #include <linux/sockios.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
+#include <linux/uaccess.h>
 #include <linux/version.h>
 #include <linux/wait.h>
 #include <linux/taskstats_kern.h>  // For <linux/sched/signal.h> without version dependency
@@ -42,6 +43,7 @@
 #include <net/sock.h>
 
 #include <asm/io.h>
+#include <asm/checksum.h>
 
 #include "vnetInt.h"
 #include "compat_skbuff.h"
@@ -563,8 +565,12 @@ VNetCsumCopyDatagram(const struct sk_buff *skb,	// IN: skb to copy
 
 #if COMPAT_LINUX_VERSION_CHECK_LT(5, 10, 0)
    csum = csum_and_copy_to_user(skb->data + offset, curr, len, 0, &err);
-#else
+#elif COMPAT_LINUX_VERSION_CHECK_LT(5, 19, 0)
    csum = csum_and_copy_to_user(skb->data + offset, curr, len);
+   err = (csum == 0) ? -EFAULT : 0;
+#else
+   csum = (copy_to_user(curr, skb->data + offset, len) == 0) ?
+    csum_partial(skb->data + offset, len, ~0U) : 0;
    err = (csum == 0) ? -EFAULT : 0;
 #endif
    if (err) {
@@ -583,10 +589,15 @@ VNetCsumCopyDatagram(const struct sk_buff *skb,	// IN: skb to copy
 #if COMPAT_LINUX_VERSION_CHECK_LT(5, 10, 0)
 	 tmpCsum = csum_and_copy_to_user(vaddr + skb_frag_off(frag),
 					 curr, skb_frag_size(frag), 0, &err);
-#else
+#elif COMPAT_LINUX_VERSION_CHECK_LT(5, 19, 0)
 	 tmpCsum = csum_and_copy_to_user(vaddr + skb_frag_off(frag),
 					 curr, skb_frag_size(frag));
          err = (tmpCsum == 0) ? -EFAULT : 0;
+#else
+	 tmpCsum = (copy_to_user(curr, vaddr + skb_frag_off(frag),
+					 skb_frag_size(frag)) == 0 ) ?
+	  csum_partial(vaddr + skb_frag_off(frag), skb_frag_size(frag), ~0U) : 0;
+	     err = (tmpCsum == 0) ? -EFAULT : 0;
 #endif
 	 kunmap(skb_frag_page(frag));
 
