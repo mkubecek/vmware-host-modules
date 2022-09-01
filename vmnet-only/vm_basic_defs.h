@@ -707,7 +707,7 @@ typedef int pid_t;
                                                      lfMessageFont)
 
 /* This is not intended to be thread-safe. */
-#define VMWARE_DO_ONCE(code)                                                   \
+#define VMWARE_DO_ONCE(code)                                            \
    do {                                                                 \
       static MONITOR_ONLY(PERVCPU) Bool _doOnceDone = FALSE;            \
       if (UNLIKELY(!_doOnceDone)) {                                     \
