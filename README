@@ -12,14 +12,18 @@ a particular version of Player or Workstation.
 
 From these tags, branches "player-${version}" and "workstation-${version}"
 are forked. These branches track changes needed to build these modules
-against recent kernel versions. Tag "p${ver}-k${kver}" marks the set of
-changes needed to build modules from Player ${ver} against kernel ${kver},
-e.g. p12.5.5-k4.11 is for Player 12.5.5 and kernel 4.11; similar naming
-scheme "w${ver}-k${kver}" is used for Workstation modules. In general,
-later points in the branch should also work with older kernels (e.g.
-p12.5.5-k4.11 with kernel 4.10) but it's not guaranteed; it may happen that
-a fix for new kernel version may be too complicated to make also work with
-older versions.
+against recent kernel versions. In general, one should always use current
+branch head for the build.
+
+In the past, tags in the form "w${ver}-k${ver}" and "p${ver}-k${kver}" were
+also provided to mark the snapshots deemed sufficient to build modules for
+Workstation/Player version $ver at the moment of kernel $kver release. This
+practice turned to be a bad idea; more often an issue affecting older
+kernel versions was discovered later than a fix for newer kernel did not
+work with older ones. Unfortunately, misinterpreting these tags often
+resulted in building modules from old branch snapshots and reporting issues
+that have been addressed long ago. Therefore, starting with kernel 6.0,
+these per kernel tags are no longer going to be provided.
 
 At the moment, changes are tested to build against all (vanilla) kernel
 releases starting with 4.9.
