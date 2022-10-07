@@ -402,7 +402,7 @@ VNetEvent_Send(VNetEvent_Sender *s, // IN: a sender
       p->nextEvent = s->firstEvent;
       s->firstEvent = p;
    }
-   memcpy(&p->event, e, e->size);
+   VNet_Event_copy(&p->event, e);
 
    /* send event */
    classSet = e->classSet;
