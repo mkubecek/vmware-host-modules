@@ -91,6 +91,10 @@
 
 #define NOT_REACHED_MINIMAL __builtin_unreachable
 
+#ifndef ASM_RET
+#define ASM_RET "ret\n"
+#endif
+
 void VmmToHost(void);
 void SwitchDBHandler(void);
 void SwitchUDHandler(void);
@@ -643,7 +647,7 @@ CrossPage_CodePage(void)
    "movq            2(%%rsp),         %%rax\n" /* DTR.offset */
    "addq            $0x10,            %%rsp\n"
    "andq            %[PageAlignMask], %%rax\n"
-   "ret\n"
+   ASM_RET
 
    EXPORTED_ASM_SYMBOL(CrossPage_CodeEnd)
 
