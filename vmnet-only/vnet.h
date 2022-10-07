@@ -269,6 +269,7 @@ typedef struct VNet_EventHeader {
    uint32 eventId;
    uint32 classSet;
    uint32 type;
+   char payload[];
 } VNet_EventHeader;
 #pragma pack(pop)
 
@@ -285,6 +286,13 @@ typedef struct VNet_LinkStateEvent {
    char _pad[3];
 } VNet_LinkStateEvent;
 #pragma pack(pop)
+
+static inline void VNet_Event_copy(VNet_EventHeader *dst,
+			      const VNet_EventHeader *src)
+{
+	*dst = *src;
+	memcpy(dst->payload, src->payload, src->size - sizeof(*src));
+}
 
 /*
  *----------------------------------------------------------------------------
