@@ -226,7 +226,7 @@ VNetUserListenerEventHandler(void *context,       // IN: the user listener
       return;
    }
    t->nextEvent = NULL;
-   memcpy(&t->event, e, e->size);
+   VNet_Event_copy(&t->event, e);
 
    /* append event to event list */
    userListener = (VNetUserListener*)context;
