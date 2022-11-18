@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2014, 2019-2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 2014, 2019-2020, 2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -22,8 +22,8 @@
  *      Performance counters (x64 specific).
  */
 
-#ifndef _X86_PERFCTR_ARCH_H_
-#define _X86_PERFCTR_ARCH_H_
+#ifndef _PERFCTR_X86_H_
+#define _PERFCTR_X86_H_
 
 #ifndef _PERFCTR_H_
 #error "This file can only be included by perfctr.h"
@@ -486,25 +486,27 @@
 #define PERFCTR_CORE_BRANCH_MISPRED_RETIRED      0xc5
 
 /* Non-Architectural event counters in Intel Core and Core 2 */
-#define PERFCTR_CORE_L2_LINES_IN                 0x24
-#define PERFCTR_CORE_L2_M_LINES_IN               0x25
-#define PERFCTR_CORE_L2_LINES_OUT                0x26
-#define PERFCTR_CORE_L2_M_LINES_OUT              0x27
-#define PERFCTR_CORE_DATA_MEM_REF                0x43
-#define PERFCTR_CORE_DATA_MEM_CACHE_REF          0x44
-#define PERFCTR_CORE_DCACHE_REPL                 0x45
-#define PERFCTR_CORE_DCACHE_M_REPL               0x46
-#define PERFCTR_CORE_DCACHE_M_EVICT              0x47
-#define PERFCTR_CORE_DCACHE_PEND_MISS            0x48
-#define PERFCTR_CORE_DTLB_MISS                   0x49
-#define PERFCTR_CORE_BUS_TRANS                   0x70
-#define PERFCTR_CORE_ICACHE_READS                0x80
-#define PERFCTR_CORE_ICACHE_MISSES               0x81
-#define PERFCTR_CORE_ITLB_MISSES                 0x85
-#define PERFCTR_CORE_UOPS_RETIRED                0xC2
-#define PERFCTR_CORE_RESOURCE_STALLS             0xDC
-#define PERFCTR_NEHALEM_OFFCORE_RESP0_EVENT      (0xB7 | (0x01 << 8))
-#define PERFCTR_NEHALEM_OFFCORE_RESP1_EVENT      (0xBB | (0x01 << 8))
+#define PERFCTR_CORE_L2_LINES_IN                      0x24
+#define PERFCTR_CORE_L2_M_LINES_IN                    0x25
+#define PERFCTR_CORE_L2_LINES_OUT                     0x26
+#define PERFCTR_CORE_L2_M_LINES_OUT                   0x27
+#define PERFCTR_CORE_DATA_MEM_REF                     0x43
+#define PERFCTR_CORE_DATA_MEM_CACHE_REF               0x44
+#define PERFCTR_CORE_DCACHE_REPL                      0x45
+#define PERFCTR_CORE_DCACHE_M_REPL                    0x46
+#define PERFCTR_CORE_DCACHE_M_EVICT                   0x47
+#define PERFCTR_CORE_DCACHE_PEND_MISS                 0x48
+#define PERFCTR_CORE_DTLB_MISS                        0x49
+#define PERFCTR_CORE_BUS_TRANS                        0x70
+#define PERFCTR_CORE_ICACHE_READS                     0x80
+#define PERFCTR_CORE_ICACHE_MISSES                    0x81
+#define PERFCTR_CORE_ITLB_MISSES                      0x85
+#define PERFCTR_CORE_UOPS_RETIRED                     0xC2
+#define PERFCTR_CORE_RESOURCE_STALLS                  0xDC
+#define PERFCTR_NEHALEM_OFFCORE_RESP0_EVENT           (0xB7 | (0x01 << 8))
+#define PERFCTR_NEHALEM_OFFCORE_RESP1_EVENT           (0xBB | (0x01 << 8))
+#define PERFCTR_SAPPHIRERAPIDS_OFFCORE_RESP0_EVENT    (0x2A | (0x01 << 8))
+#define PERFCTR_SAPPHIRERAPIDS_OFFCORE_RESP1_EVENT    (0x2B | (0x01 << 8))
 
 /* Intel TSX performance events introduced on Haswell */
 #define PERFCTR_HASWELL_HLE_RETIRED_START        (0xc8 | (0x01 << 8))
@@ -754,4 +756,4 @@ PerfCtr_PTAvailable(void)
    return FALSE;
 }
 
-#endif // _X86_PERFCTR_ARCH_H_
+#endif // _PERFCTR_X86_H_

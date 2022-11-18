@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2003-2021 VMware, Inc. All rights reserved.
+ * Copyright (C) 2003-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -50,7 +50,10 @@
  * References:
  *   C90 7.17, C99 7.19, C11 7.19
  */
-#if !defined(VMKERNEL)
+/* Use linux/stddef.h when building Linux kernel modules. */
+#ifdef KBUILD_MODNAME
+#  include <linux/stddef.h>
+#elif !defined(VMKERNEL)
 #  include <stddef.h>
 #else
    /*
@@ -270,6 +273,10 @@ Max(int a, int b)
 #define BYTES_2_PAGES(_nbytes)  ((_nbytes) >> PAGE_SHIFT)
 #endif
 
+#ifndef BYTES_2_PAGES_4KB
+#define BYTES_2_PAGES_4KB(_nbytes)  ((_nbytes) >> PAGE_SHIFT_4KB)
+#endif
+
 #ifndef PAGES_2_BYTES
 #define PAGES_2_BYTES(_npages)  (((uint64)(_npages)) << PAGE_SHIFT)
 #endif
@@ -294,6 +301,11 @@ Max(int a, int b)
 #ifndef MBYTES_2_PAGES
 #define MBYTES_2_PAGES(_nMbytes) \
    ((uint64)(_nMbytes) << (MBYTES_SHIFT - PAGE_SHIFT))
+#endif
+
+#ifndef MBYTES_2_PAGES_4KB
+#define MBYTES_2_PAGES_4KB(_nMbytes) \
+   ((uint64)(_nMbytes) << (MBYTES_SHIFT - PAGE_SHIFT_4KB))
 #endif
 
 #ifndef PAGES_2_KBYTES
@@ -564,6 +576,13 @@ typedef int pid_t;
 #define DEBUG_ONLY(...)
 #endif
 
+#if defined(VMX86_DEBUG) || defined(VMX86_ENABLE_SPLOCK_STATS)
+#define LOCK_STATS_ON
+#define LOCK_STATS_ONLY(...)  __VA_ARGS__
+#else
+#define LOCK_STATS_ONLY(...)
+#endif
+
 #ifdef VMX86_STATS
 #define vmx86_stats   1
 #define STATS_ONLY(x) x
@@ -627,6 +646,13 @@ typedef int pid_t;
 #define vmkernel 0
 #define VMKERNEL_ONLY(x)
 #endif
+
+/*
+ * In MSVC, _WIN32 is defined as 1 when the compilation target is
+ * 32-bit ARM, 64-bit ARM, x86, or x64 (which implies _WIN64). This
+ * is documented in C/C++ preprocessor section of the Microsoft C++,
+ * C, and Assembler documentation (https://via.vmw.com/EchK).
+ */
 
 #ifdef _WIN32
 #define WIN32_ONLY(x) x
@@ -819,6 +845,11 @@ typedef int pid_t;
  * wasted.  On x86, GCC 6.3.0 behaves sub-optimally when variables are declared
  * on the stack using the aligned attribute, so this pattern is preferred.
  * See PRs 1795155, 1819963.
+ *
+ * GCC9 has been shown to exhibit aliasing issues when using
+ * '-fstrict-aliasing=2' that did not happen under GCC6 with this
+ * construct.
+ * See @9503890, PR 2906490.
  */
 #define WITH_PTR_TO_ALIGNED_VAR(_type, _align, _var)                     \
    do {                                                                  \

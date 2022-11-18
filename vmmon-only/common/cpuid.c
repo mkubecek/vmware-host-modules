@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998, 2016-2021 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998, 2016-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -21,9 +21,6 @@
 #   include "driver-config.h"
 
 #   include <linux/string.h>
-#endif
-#ifdef __APPLE__
-#   include <string.h> // For strcmp().
 #endif
 
 #include "vm_assert.h"
@@ -77,7 +74,7 @@ CPUIDExtendedSupported(void)
 void
 CPUID_Init(void)
 {
-   CPUIDRegs regs, regs88;
+   CPUIDRegs regs, regs72, regs88;
    uint32 *ptr;
    char name[16];
 
@@ -107,10 +104,12 @@ CPUID_Init(void)
    }
 
    __GET_CPUID2(7, 0, &regs);
+   __GET_CPUID2(7, 2, &regs72);
    __GET_CPUID2(0x80000008, 0, &regs88);
    hostHasSpecCtrl =  CPUID_ISSET(7, EDX, IBRSIBPB, regs.edx) ||
                       CPUID_ISSET(7, EDX, STIBP, regs.edx)    ||
-                      CPUID_ISSET(7, EDX, SSBD,  regs.edx)    ||
+                      CPUID_ISSET(7, EDX, SSBD, regs.edx)     ||
+                      CPUID_ISSET(7, EDX, PSFD, regs72.edx)   ||
                       CPUID_ISSET(0x80000008, EBX, LEAF88_SSBD_SPEC_CTRL,
                                   regs88.ebx)                 ||
                       CPUID_ISSET(0x80000008, EBX, LEAF88_PSFD, regs88.ebx);

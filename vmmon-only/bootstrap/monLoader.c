@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2015-2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 2015-2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -265,31 +265,6 @@ MonLoaderMapMPN(MonLoaderContext *ctx,    // IN/OUT
 /*
  *----------------------------------------------------------------------
  *
- * MonLoaderBuildsPtLevel --
- *
- *      Determines whether MonLoader allocates and maps the page table(s) for
- *      the monitor at the given level.
- *
- * Result:
- *      TRUE if MonLoader creates the page table at the given level, FALSE
- *      otherwise.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-static Bool
-MonLoaderCreatesPtLevel(PT_Level level)
-{
-   ASSERT(level >= PT_LEVEL_STOP && level <= PT_MAX_LEVELS);
-   return FALSE;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
  * MonLoaderCreateAddressSpace --
  *
  *      Creates or verifies an address space.  The VPN range specified by
@@ -338,91 +313,75 @@ MonLoaderCreateAddressSpace(MonLoaderContext *ctx,      // IN/OUT
 
    ptMPNs = &ctx->vcpu.ptMPNs;
 
-   if (MonLoaderCreatesPtLevel(PT_LEVEL_4)) {
-      NOT_IMPLEMENTED();
-   } else {
-      /* Verify the VMX's allocation. */
-      mpn = MonLoaderCallout_GetPageRoot(ctx->envCtx, vcpu);
-      if (mpn == INVALID_MPN) {
-         return ML_ERROR_CALLOUT_PAGEROOT_GET;
-      }
-      LOG(5, "%s: vcpu %u page root=0x%"FMT64"x\n", __FUNCTION__, vcpu, mpn);
-      ptMPNs->L4MPNs[0] = mpn;
-      MonLoaderCallout_ImportPage(ctx->envCtx, mpn, vcpu);
+   /* Verify the VMX's allocation. */
+   mpn = MonLoaderCallout_GetPageRoot(ctx->envCtx, vcpu);
+   if (mpn == INVALID_MPN) {
+      return ML_ERROR_CALLOUT_PAGEROOT_GET;
    }
+   LOG(5, "%s: vcpu %u page root=0x%"FMT64"x\n", __FUNCTION__, vcpu, mpn);
+   ptMPNs->L4MPNs[0] = mpn;
+   MonLoaderCallout_ImportPage(ctx->envCtx, mpn, vcpu);
    ptMPNs->L4MPNCount = 1;
 
    for (i = 0; i < L3MPNsNeeded; i++) {
-      if (MonLoaderCreatesPtLevel(PT_LEVEL_3)) {
-         NOT_IMPLEMENTED();
-      } else {
-         VPN monVPN = firstVPN + i * PT_PAGES_PER_L4E;
-         unsigned L4Off = PT_LPN_2_L4OFF(monVPN);
-         PT_L1E pte;
-         if (!MonLoaderCallout_GetPTE(ctx->envCtx, ptMPNs->L4MPNs[0], L4Off,
-                                      vcpu, &pte)) {
-            return ML_ERROR_CALLOUT_GETPTE;
-         }
-         LOG(5, "%s: monVPN=0x%"FMTVPN"x: L4E=0x%"FMT64"x\n", __FUNCTION__,
-                 monVPN, pte);
-         mpn = ML_PTE_2_PFN(pte);
-         if (mpn == INVALID_MPN || !ML_PERMS_MATCH(pte, flags)) {
-            return ML_ERROR_PAGE_TABLE_IMPORT;
-         }
-         MonLoaderCallout_ImportPage(ctx->envCtx, mpn, vcpu);
+      VPN monVPN = firstVPN + i * PT_PAGES_PER_L4E;
+      unsigned L4Off = PT_LPN_2_L4OFF(monVPN);
+      PT_L1E pte;
+      if (!MonLoaderCallout_GetPTE(ctx->envCtx, ptMPNs->L4MPNs[0], L4Off,
+                                   vcpu, &pte)) {
+         return ML_ERROR_CALLOUT_GETPTE;
       }
+      LOG(5, "%s: monVPN=0x%"FMTVPN"x: L4E=0x%"FMT64"x\n", __FUNCTION__,
+              monVPN, pte);
+      mpn = ML_PTE_2_PFN(pte);
+      if (mpn == INVALID_MPN || !ML_PERMS_MATCH(pte, flags)) {
+         return ML_ERROR_PAGE_TABLE_IMPORT;
+      }
+      MonLoaderCallout_ImportPage(ctx->envCtx, mpn, vcpu);
       ptMPNs->L3MPNs[i] = mpn;
    }
    ptMPNs->L3MPNCount = L3MPNsNeeded;
       
    for (i = 0; i < L2MPNsNeeded; i++) {
-      if (MonLoaderCreatesPtLevel(PT_LEVEL_2)) {
-         NOT_IMPLEMENTED();
-      } else {
-         VPN monVPN = firstVPN + i * PT_PAGES_PER_L3E;
-         unsigned L3Off = PT_LPN_2_L3OFF(monVPN);
-         unsigned L3Page = L3EArrayIdx(ctx->vcpu.ASFirstVPN, monVPN);
-         PT_L1E pte;
-         if (!MonLoaderCallout_GetPTE(ctx->envCtx, ptMPNs->L3MPNs[L3Page],
-                                      L3Off, vcpu, &pte)) {
-            return ML_ERROR_CALLOUT_GETPTE;
-         }
-         LOG(5, "%s: monVPN=0x%"FMTVPN"x: L3E=0x%"FMT64"x\n", __FUNCTION__,
-                 monVPN, pte);
-         mpn = ML_PTE_2_PFN(pte);
-         if (mpn == INVALID_MPN || !ML_PERMS_MATCH(pte, flags)) {
-            return ML_ERROR_PAGE_TABLE_IMPORT;
-         }
-         MonLoaderCallout_ImportPage(ctx->envCtx, mpn, vcpu);
+      VPN monVPN = firstVPN + i * PT_PAGES_PER_L3E;
+      unsigned L3Off = PT_LPN_2_L3OFF(monVPN);
+      unsigned L3Page = L3EArrayIdx(ctx->vcpu.ASFirstVPN, monVPN);
+      PT_L1E pte;
+      if (!MonLoaderCallout_GetPTE(ctx->envCtx, ptMPNs->L3MPNs[L3Page],
+                                   L3Off, vcpu, &pte)) {
+         return ML_ERROR_CALLOUT_GETPTE;
       }
+      LOG(5, "%s: monVPN=0x%"FMTVPN"x: L3E=0x%"FMT64"x\n", __FUNCTION__,
+              monVPN, pte);
+      mpn = ML_PTE_2_PFN(pte);
+      if (mpn == INVALID_MPN || !ML_PERMS_MATCH(pte, flags)) {
+         return ML_ERROR_PAGE_TABLE_IMPORT;
+      }
+      MonLoaderCallout_ImportPage(ctx->envCtx, mpn, vcpu);
       ptMPNs->L2MPNs[i] = mpn;
    }
    ptMPNs->L2MPNCount = L2MPNsNeeded;
 
    for (i = 0; i < L1MPNsNeeded; i++) {
-      if (MonLoaderCreatesPtLevel(PT_LEVEL_1)) {
-         NOT_IMPLEMENTED();
-      } else {
-         VPN monVPN = firstVPN + i * PT_PAGES_PER_L2E;
-         unsigned L2Off = PT_LPN_2_L2OFF(monVPN);
-         unsigned L2Page = L2EArrayIdx(ctx->vcpu.ASFirstVPN, monVPN);
-         PT_L1E pte;
-         if (!MonLoaderCallout_GetPTE(ctx->envCtx, ptMPNs->L2MPNs[L2Page],
-                                      L2Off, vcpu, &pte)) {
-            return ML_ERROR_CALLOUT_GETPTE;
-         }
-         LOG(5, "%s: monVPN=0x%"FMTVPN"x: L2E=0x%"FMT64"x\n", __FUNCTION__,
-                 monVPN, pte);
-         if (!ML_PERM_PRESENT(pte)) {
-            ptMPNs->L1MPNs[i] = INVALID_MPN;
-            continue;
-         }
-         mpn = ML_PTE_2_PFN(pte);
-         if (mpn == INVALID_MPN || !ML_PERMS_MATCH(pte, flags)) {
-            return ML_ERROR_PAGE_TABLE_IMPORT;
-         }
-         MonLoaderCallout_ImportPage(ctx->envCtx, mpn, vcpu);
+      VPN monVPN = firstVPN + i * PT_PAGES_PER_L2E;
+      unsigned L2Off = PT_LPN_2_L2OFF(monVPN);
+      unsigned L2Page = L2EArrayIdx(ctx->vcpu.ASFirstVPN, monVPN);
+      PT_L1E pte;
+      if (!MonLoaderCallout_GetPTE(ctx->envCtx, ptMPNs->L2MPNs[L2Page],
+                                   L2Off, vcpu, &pte)) {
+         return ML_ERROR_CALLOUT_GETPTE;
       }
+      LOG(5, "%s: monVPN=0x%"FMTVPN"x: L2E=0x%"FMT64"x\n", __FUNCTION__,
+              monVPN, pte);
+      if (!ML_PERM_PRESENT(pte)) {
+         ptMPNs->L1MPNs[i] = INVALID_MPN;
+         continue;
+      }
+      mpn = ML_PTE_2_PFN(pte);
+      if (mpn == INVALID_MPN || !ML_PERMS_MATCH(pte, flags)) {
+         return ML_ERROR_PAGE_TABLE_IMPORT;
+      }
+      MonLoaderCallout_ImportPage(ctx->envCtx, mpn, vcpu);
       ptMPNs->L1MPNs[i] = mpn;
    }
    ptMPNs->L1MPNCount = L1MPNsNeeded;
@@ -457,7 +416,6 @@ MonLoaderMapPageTables(MonLoaderContext *ctx,      // IN/OUT
                        VPN               monVPN,   // IN
                        uint64            monPages) // IN
 {
-   Bool verify = !MonLoaderCreatesPtLevel(level);
    uint64    i;
    unsigned  count;
    MPN      *ptMPNs;
@@ -498,17 +456,13 @@ MonLoaderMapPageTables(MonLoaderContext *ctx,      // IN/OUT
       
       for (i = 0; i < monPages; i++) {
          VPN vpn = monVPN + i;
-         if (verify) {
-            PT_L1E l1e;
-            if (ptMPNs[i] == INVALID_MPN && level == PT_LEVEL_1) {
-               continue;
-            }
-            if (MonLoaderTranslateMonVPNToL1E(ctx, vpn, &l1e) != ML_OK ||
-                ML_PTE_2_PFN(l1e) != ptMPNs[i] || !ML_PERMS_MATCH(l1e, flags)) {
-               return ML_ERROR_PAGE_TABLE_VERIFY;
-            }
-         } else {
-            NOT_IMPLEMENTED();
+         PT_L1E l1e;
+         if (ptMPNs[i] == INVALID_MPN && level == PT_LEVEL_1) {
+            continue;
+         }
+         if (MonLoaderTranslateMonVPNToL1E(ctx, vpn, &l1e) != ML_OK ||
+             ML_PTE_2_PFN(l1e) != ptMPNs[i] || !ML_PERMS_MATCH(l1e, flags)) {
+            return ML_ERROR_PAGE_TABLE_VERIFY;
          }
       }
    }

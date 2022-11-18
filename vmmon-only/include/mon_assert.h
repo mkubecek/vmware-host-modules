@@ -96,7 +96,7 @@
 typedef uint32 Assert_MonSrcLoc;
 
 #define ADEF(type, fmt) type
-typedef enum Assert_Type {  
+typedef enum Assert_Type {
    ALL_ASSERT_TYPES
 } Assert_Type;
 #undef ADEF
@@ -115,7 +115,7 @@ typedef struct Assert_Info {
 
 #define ASSERT_NULL_MONSRCLOC     0             // there is never line 0
 
-#if defined(VMM) && !defined(MONITOR_APP) // {
+#if defined(VMM) && !defined(DECODER)
 /*
  * Assertion information is collected in a non-loadable section
  * named .assert_info.  Each record in this section contains
@@ -196,6 +196,6 @@ extern uint64 bsAssertRIP;
    ({COMPILER_MEM_BARRIER();                                             \
      ASSERT_RECORDINFO("", AssertType_##name##Bug, bug);                 \
      __builtin_trap();})
-#endif // VMM && !MONITOR_APP}
+#endif
 
 #endif // _MON_ASSERT_H_

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2017-2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 2017-2020, 2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -28,10 +28,8 @@
 #include "vm_assert.h"
 #include "hostif.h"
 #include "vmmblob.h"
+#include "vmm_constants.h"
 #include "monLoader.h"
-
-#define VMMBLOB_SIZE_MAX (22 * 1024 * 1024) /* Ensure enough space for
-                                             * obj build with * GCOV_VMM=1. */
 
 /*
  *----------------------------------------------------------------------
@@ -176,9 +174,14 @@ VmmBlob_Load(UserVA64 blobAddr,
 
    if (numBytes > VMMBLOB_SIZE_MAX || headerOffset > numBytes ||
        fixedHdrSize > numBytes - headerOffset) {
-      Warning("Invalid arguments for processing bootstrap. "
-              "Header offset: %u, Fixed header size: %"FMTSZ"u bytes, "
-              "Blob size: %u bytes\n", headerOffset, fixedHdrSize, numBytes);
+      Warning("Invalid arguments for processing bootstrap:");
+      Warning("  Size          : %u  (expected <= %u)\n",
+              numBytes, VMMBLOB_SIZE_MAX);
+      Warning("  Hdr Offs      : %u  (expected <= %d)\n",
+              headerOffset, numBytes);
+      Warning("  Fixed Hdr Offs: %"FMTSZ"u (expected <= %d)",
+              fixedHdrSize, numBytes - headerOffset);
+      Warning("  Blob size: %u bytes\n", numBytes);
       goto error;
    }
    mpns = HostIF_AllocKernelMem(numPages * sizeof(*mpns), FALSE);

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2006,2016 VMware, Inc. All rights reserved.
+ * Copyright (C) 2006,2016,2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -41,19 +41,13 @@
 
 #if 000 // defined(_MSC_VER)
 #define USE_DBGPRINT 1
-#define USE_MACPORT80 0
 #else
 #define USE_DBGPRINT 0
-#ifdef __APPLE__
-#define USE_MACPORT80 1
-#else
-#define USE_MACPORT80 0
-#endif
 #endif
 
 #if USE_DBGPRINT
 void DbgPrint(char const *format, ...);
-#elif !USE_MACPORT80
+#else
 #define IOBASE 0x3F8  // COM1 base IO port number
 #define BAUD 115200   // baud rate
 #define THR 0         // transmitter holding register
@@ -66,7 +60,7 @@ void DbgPrint(char const *format, ...);
 void
 CP_Init(void)
 {
-#if !USE_DBGPRINT && !USE_MACPORT80
+#if !USE_DBGPRINT
    OUTB(IOBASE+3, 0x83);               // LCR=select DLL/DLH, wordlen=8 bits
    OUTB(IOBASE+0, (115200/BAUD)&255);  // DLL=lo order baud rate
    OUTB(IOBASE+1, (115200/BAUD)/256);  // DLH=hi order baud rate
@@ -83,13 +77,6 @@ CP_PutChr(uint8 ch) // IN
 {
 #if USE_DBGPRINT
    DbgPrint("%c", ch);
-#elif USE_MACPORT80
-   int bit;
-
-   OUTB(0x80, (ch & 1) | 0x10);
-   for (bit = 1; bit < 64; bit ++) {
-      OUTB(0x80, (ch >> (bit & 7)) & 1);
-   }
 #else
    if (ch == '\n') CP_PutChr('\r');
    while ((INB(IOBASE+LSR) & LSR_TE) == 0) { }

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2003-2021 VMware, Inc. All rights reserved.
+ * Copyright (C) 2003-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -773,7 +773,7 @@ RDTSC(void)
     * bora/lib/vprobe/arm64/vp_emit_tc.c::VpEmit_BuiltinRDTSCWork()
     * bora/modules/vmkernel/tests/core/xmapTest/xmapTest_arm64.c::XMapTest_SetupLoopCode()
     */
-#if (defined(VMKERNEL) || defined(VMM)) && !defined(VMK_ARM_EL1)
+#if (defined(VMKERNEL) || defined(VMM)) && !defined(VMK_ARM_EL1_OR_VHE)
    return MRS(CNTPCT_EL0);
 #else
    return MRS(CNTVCT_EL0);
@@ -830,9 +830,10 @@ RDTSC(void)
 /*
  *-----------------------------------------------------------------------------
  *
- * {Clear,Set,Test}Bit{32,64} --
+ * {Clear, Set, Test, Toggle}Bit{32, 64} --
  *
- *    Sets tests or clears a specified single bit in the provided variable.
+ *    Sets tests clears or toggles a specified single bit in the provided
+ *    variable.
  *
  *    The index input value specifies which bit to modify and is 0-based.
  *    Index is truncated by hardware to a 5-bit or 6-bit offset for the
@@ -858,6 +859,12 @@ ClearBit32(uint32 *var, unsigned index)
 }
 
 static INLINE void
+ToggleBit32(uint32 *var, unsigned index)
+{
+   *var ^= 1 << index;
+}
+
+static INLINE void
 SetBit64(uint64 *var, unsigned index)
 {
    *var |= CONST64U(1) << index;
@@ -867,6 +874,12 @@ static INLINE void
 ClearBit64(uint64 *var, unsigned index)
 {
    *var &= ~(CONST64U(1) << index);
+}
+
+static INLINE void
+ToggleBit64(uint64 *var, unsigned index)
+{
+   *var ^= (CONST64U(1) << index);
 }
 
 static INLINE Bool
@@ -1262,7 +1275,7 @@ PopCount64(uint64 value)
  *      Enforce ordering on memory operations witnessed by and
  *      affected by interrupt handlers.
  *
- *      This should be used to replace the legacy COMPILER_*_BARRIER
+ *      This should be used to replace the legacy COMPILER_MEM_BARRIER
  *      for code that has been audited to determine it only needs
  *      ordering with respect to interrupt handlers, and not to other
  *      CPUs (SMP_*), memory-mapped I/O (MMIO_*), or DMA (DMA_*).

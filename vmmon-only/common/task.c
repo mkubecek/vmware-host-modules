@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -81,7 +81,7 @@
 #   include "vmmon-asm-x86-64.h"
 #   define USE_TEMPORARY_GDT 1
 #else
-/* It is OK to set this to 1 on 64-bit Linux/Mac OS for testing. */
+/* It is OK to set this to 1 on 64-bit Linux for testing. */
 #   define USE_TEMPORARY_GDT 0
 #endif
 
@@ -2296,6 +2296,18 @@ TaskTestCrossPageExceptionHandlers(VMCrossPageData *crosspage)
 
          asm volatile ("\n"
                        "        movl    $16, %%ecx      \n"
+                       /*
+                        * Initial push/incq sequence is essentially a nop.
+                        * Linux objtool does track push/pop, but not decq.
+                        * So we need to have balanced number of pushes and
+                        * pops.  So we do same number of push/pop and
+                        * incq/decq so objtool does not get upset.
+                        */
+                       "        pushq   %%rax           \n"
+                       "        pushq   %%rcx           \n"
+                       "1000:   incq    %%rsp           \n"
+                       "        loop    1000b           \n"
+                       "        mov     $16, %%cl       \n"
                        "1000:                           \n"
                        "        decq    %%rsp           \n"
                        "        movb    $0xDB, (%%rsp)  \n"
@@ -2581,30 +2593,13 @@ Task_Switch(VMDriver *vm,  // IN
           *
           * 2) prevent us from faulting if they happen to be in the LDT
           *    (since the LDT is saved and restored here too).
-          *
-          * Also, the 32-bit Mac OS running in legacy mode has
-          * CS, DS, ES, SS in the LDT!
           */
          cs = GET_CS();
          ss = GET_SS();
-#if defined __APPLE__
-         /*
-          * The 64-bit Mac OS kernel leaks segment selectors from
-          * other threads into 64-bit threads.  When the selectors
-          * reference a foreign thread's LDT, we may not be able to
-          * reload them using our thread's LDT.  So, let's just clear
-          * them instead of trying to preserve them.  [PR 467140]
-          */
-         ds = 0;
-         es = 0;
-         fs = 0;
-         gs = 0;
-#else
          ds = GET_DS();
          es = GET_ES();
          fs = GET_FS();
          gs = GET_GS();
-#endif
          GET_LDT(hostLDT);
          GET_TR(hostTR);
 

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2018, 2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -38,5 +38,12 @@
 #define VMM_PANIC_VCPU         4
 
 #define VMM_PANIC_MSG_SIZE     256
+
+/* Ensure enough space for obj build with GCOV_VMM=1. */
+#if defined(VMX86_SERVER)
+#define VMMBLOB_SIZE_MAX (24 * 1024 * 1024)
+#else
+#define VMMBLOB_SIZE_MAX (24 * 1024 * 1024)
+#endif
 
 #endif

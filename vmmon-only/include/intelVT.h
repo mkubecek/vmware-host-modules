@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2008-2021 VMware, Inc. All rights reserved.
+ * Copyright (C) 2008-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -416,7 +416,8 @@ IntelVT_Supported(const MSRCache *cache, uint32 pcpu)
       uint64 cpu   = MSRCache_Get(cache, MSR_VMX_TRUE_PROCBASED_CTLS, pcpu);
       uint64 entry = MSRCache_Get(cache, MSR_VMX_TRUE_ENTRY_CTLS, pcpu);
       uint64 exit  = MSRCache_Get(cache, MSR_VMX_TRUE_EXIT_CTLS, pcpu);
-      return VT_SupportedFromFeatures(pin, cpu, entry, exit, basic);
+      uint64 ept   = MSRCache_Get(cache, MSR_VMX_EPT_VPID, pcpu);
+      return VT_SupportedFromFeatures(pin, cpu, entry, exit, basic, ept);
    } else {
       /* Bug 1914425 - VMM no longer supports CPUs without TRUE_xxx_CTLS */
       return FALSE;

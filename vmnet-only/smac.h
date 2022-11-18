@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2002 VMware, Inc. All rights reserved.
+ * Copyright (C) 2002-2010,2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -70,11 +70,11 @@ Bool BridgeIPv6MatchAddrMAC(const IPv6Addr *addr, const uint8 *mac);
 Bool BridgeIPv4MatchAddrMAC(const ULONG ipAddr, const uint8 *mac);
 #endif
 void SMACINT
-SMAC_InitState(struct SMACState **ptr);           // IN: state to alloc/init
+SMAC_InitState(struct SMACState **ptr);                 // IN: state to alloc/init
 void SMACINT
-SMAC_SetMac(struct SMACState *state, uint8 *mac); // IN: state, and host MAC
+SMAC_SetMac(struct SMACState *state, const uint8 *mac); // IN: state, and host MAC
 void SMACINT
-SMAC_CleanupState(struct SMACState **ptr);        // IN: state to cleanup/dealloc
+SMAC_CleanupState(struct SMACState **ptr);              // IN: state to cleanup/dealloc
 
 /* 
  * Structure is used to separate out differences 

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2008-2021 VMware, Inc. All rights reserved.
+ * Copyright (C) 2008-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -75,6 +75,7 @@
                                       VT_VMCS_2ND_VMEXEC_CTL_PML |          \
                                       VT_VMCS_2ND_VMEXEC_CTL_ENCLS |        \
                                       VT_VMCS_2ND_VMEXEC_CTL_ENCLV |        \
+                                      VT_VMCS_2ND_VMEXEC_CTL_UMWAIT |       \
                                       VT_VMCS_2ND_VMEXEC_CTL_EPC_VIRT_EXT)
 
 #define VVT_2ND_CTLS                 QWORD(VVT_2ND_CTLS1,                   \
@@ -122,6 +123,7 @@
                                       VT_VMCS_VMEXIT_CTL_LOAD_EFER |        \
                                       VT_VMCS_VMEXIT_CTL_CLEAR_BNDCFGS |    \
                                       VT_VMCS_VMEXIT_CTL_LOAD_PKRS |        \
+                                      VT_VMCS_VMEXIT_CTL_LOAD_CET |         \
                                       VT_VMCS_VMEXIT_CTL_LOAD_PGC)
 #define VVT_TRUE_EXIT_CTLS           QWORD(VVT_TRUE_EXIT_CTLS1,             \
                                            VVT_TRUE_EXIT_CTLS0)
@@ -132,6 +134,7 @@
                                       VT_VMCS_VMENTRY_CTL_LOAD_EFER |       \
                                       VT_VMCS_VMENTRY_CTL_LOAD_BNDCFGS |    \
                                       VT_VMCS_VMENTRY_CTL_LOAD_PKRS    |    \
+                                      VT_VMCS_VMENTRY_CTL_LOAD_CET     |    \
                                       VT_VMCS_VMENTRY_CTL_LOAD_PGC)
 #define VVT_TRUE_ENTRY_CTLS          QWORD(VVT_TRUE_ENTRY_CTLS1,            \
                                            VVT_TRUE_ENTRY_CTLS0)
@@ -182,9 +185,9 @@
 #define VVT_EPT_SUPPORT              (VT_REQUIRED_EPT_SUPPORT | \
                                       MSR_VMX_EPT_VPID_EPTE_X | \
                                       MSR_VMX_EPT_VPID_ETMT_UC | \
-                                      MSR_VMX_EPT_VPID_INVEPT_EPT_CTX | \
                                       MSR_VMX_EPT_VPID_INVEPT_GLOBAL | \
                                       MSR_VMX_EPT_VPID_ACCESS_DIRTY | \
+                                      MSR_VMX_EPT_VPID_SUP_SHADOW_STK | \
                                       MSR_VMX_EPT_VPID_ADV_EXIT_INFO)
 
 #define VVT_VPID_SUPPORT             (VT_REQUIRED_VPID_SUPPORT | \

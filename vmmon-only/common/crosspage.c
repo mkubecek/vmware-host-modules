@@ -62,20 +62,6 @@
 #include "vm_idt_x86.h"
 #include "crosspage.h"
 
-#ifdef __APPLE__
-/*
- * The Mac compiler expects symbols to have a _ prefix.
- * This arranges for any symbol being exported out of the assembly code
- * to be accessible.
- */
-#define ASM_PREFIX "_"
-/*
- * OSX uses a segment,section style syntax for specifying output sections.
- * https://developer.apple.com/library/archive/documentation/Performance/
- * Conceptual/CodeFootprint/Articles/MachOOverview.html
- */
-#define ASM_SECTION "__TEXT,cross"
-#else
 /*
  * This is a COFF grouped section identifier.  This ensures the crosspage code
  * is merged with the normal .text area but as a separate unit so it can have
@@ -86,10 +72,10 @@
  */
 #define ASM_SECTION ".text$cross"
 #define ASM_PREFIX
-#endif
 
 #define EXPORTED_ASM_SYMBOL(fn) ".global " ASM_PREFIX #fn "\n"   \
                                 ASM_PREFIX #fn ":\n"
+#define ENDBR ".byte 0xf3, 0x0f, 0x1e, 0xfa\n"
 
 /*
  * Tag the crosspage code C wrapper with the crosspage section and page
@@ -309,6 +295,7 @@ CrossPage_CodePage(void)
 
    ".p2align 4\n"
    EXPORTED_ASM_SYMBOL(SwitchDBHandler)
+   ENDBR
    "pushq        %%rax\n"
    "call         SwitchExcGetCrossPageData\n"
    "addq         %[wsExceptionDB], %%rax\n"
@@ -347,6 +334,7 @@ CrossPage_CodePage(void)
 
    ".p2align 4\n"
    EXPORTED_ASM_SYMBOL(SwitchUDHandler)
+   ENDBR
    "pushq        %%rax\n"
    "pushq        %%rbx\n"
    "pushq        %%rcx\n"
@@ -415,6 +403,7 @@ CrossPage_CodePage(void)
 
    ".p2align 4\n"
    EXPORTED_ASM_SYMBOL(SwitchNMIHandler)
+   ENDBR
    "pushq        %%rax\n"
    "call         SwitchExcGetCrossPageData\n"
    "addq         %[wsExceptionNMI], %%rax\n"
@@ -450,6 +439,7 @@ CrossPage_CodePage(void)
 
    ".p2align 4\n"
    EXPORTED_ASM_SYMBOL(SwitchMCEHandler)
+   ENDBR
    "pushq        %%rax\n"
    "call         SwitchExcGetCrossPageData\n"
    "addq         %[wsExceptionMC], %%rax\n"
@@ -570,6 +560,7 @@ CrossPage_CodePage(void)
 
    ".p2align 4\n"
    EXPORTED_ASM_SYMBOL(VmmToHost)
+   ENDBR
    "movq            %c[VMMCROSSPAGE] + %c[crosspageDataLA], %%rcx\n"
    /* Create an lret frame on the monitor stack. */
    "pushq           (%%rsp)\n"

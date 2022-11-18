@@ -124,7 +124,7 @@
 #if defined VM_X86_64
 #include "x86paging_64.h"
 #elif defined VM_ARM_64
-#include "arm64_vmsa.h"
+#include "vmsa.h"
 #endif
 
 #define ML_NAME_MAX 16

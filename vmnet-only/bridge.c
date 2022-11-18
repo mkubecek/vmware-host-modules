@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2013, 2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2013, 2017, 2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -684,14 +684,11 @@ VNetBridgeReceiveFromVNet(VNetJack        *this, // IN: jack
 	 }
          spin_unlock_irqrestore(&bridge->historyLock, flags);
 
-         /*
-          * We used to cli() before calling netif_rx() here. It was probably
-          * unneeded (as we never did it in netif.c, and the code worked). In
-          * any case, now that we are using netif_rx_ni(), we should certainly
-          * not do it, or netif_rx_ni() will deadlock on the cli() lock --hpreg
-          */
-
-	 netif_rx_ni(clone);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0)
+         netif_rx_ni(clone);
+#else
+         netif_rx(clone);
+#endif
 #	 if LOGLEVEL >= 4
 	 do_gettimeofday(&vnetTime);
 #	 endif
@@ -810,8 +807,10 @@ VNetBridgeIsDeviceWireless(struct net_device *dev) //IN: sock
 {
 #if defined(CONFIG_WIRELESS_EXT)
    return dev->ieee80211_ptr != NULL || dev->wireless_handlers != NULL;
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 19, 0) || IS_ENABLED(CONFIG_CFG80211)
    return dev->ieee80211_ptr != NULL;
+#else
+   return FALSE;
 #endif
 }
 

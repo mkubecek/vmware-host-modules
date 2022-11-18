@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998,2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -625,26 +625,23 @@ VNetFileOpPoll(struct file *filp, // IN:
  * VNetFileOpUnlockedIoctl --
  *
  *      The virtual network's ioctl file operation. This is used for
- *      setup of the connection. Currently supported commands are
- *      (taken from sockios.h):
+ *      setup of the connection.
  *
- *      SIOCGIFADDR - get ethernet address          - ioarg OUT: 6 bytes
- *      SIOCSIFADDR - set ethernet address          - ioarg IN:  6 bytes
- *      SIOCSIFFLAGS - set flags                    - ioarg IN:  4 bytes
+ *      Currently supported commands are in device-private ioctl space:
  *
- *      Private ioctl calls, taken from device-private ioctl space
- *      in sockios.h, and defined in includes/vm_oui.h:
- *
+ *      SIOCGETAPIVERSION2 - version check          - ioarg IN: uint32 version
+ *      SIOCSPORTFLAGS - set flags                  - ioarg IN:  4 bytes
  *      SIOCSLADRF (0x89F2) - set logical address filter (for
  *         filtering multicast packets)             - ioarg IN:  8 bytes
- *
  *      SIOCGBRSTATUS - get bridging status         - ioarg OUT: 4 bytes
- *      SIOCSPEER - set bridge peer interface       - ioarg IN:  8 bytes
- *      SIOCSPEER2 - set bridge peer interface      - ioarg IN: 32 bytes
+ *      SIOCSPEER3 - set bridge peer interface      - ioarg IN: 36 bytes
  *      SIOCSBIND - bind to a particular vnet/PVN   - ioarg IN: VNet_Bind
  *      SIOCSFILTERRULES - set host filter rules    - ioarg IN: VNet_Filter
- *      SIOCBRIDGE - (legacy see SIOCSPEER)
  *      SIOCSUSERLISTENER - set user listener - ioarg IN: VNet_SetUserListener
+ *      SIOCNETIF - set peer                        - ioarg IN: 8-char name
+ *      SIOCGETMACADDR - get ethernet address       - ioarg OUT: 6 bytes
+ *      SIOCSETMACADDR - set ethernet address       - ioarg IN: 6 bytes
+ *      SIOCSMCASTFILTER - set multicast filter     - ioarg IN: VNetMcastFilter
  *
  *      Supported flags are (taken from if.h):
  *
@@ -687,21 +684,9 @@ VNetFileOpUnlockedIoctl(struct file    *filp,  // IN:
    // sprintf(vnetHub[hubNum]->devName, "vmnet%d", hubNum);
 
    switch (iocmd) {
-   case SIOCSPEER:
-   case SIOCBRIDGE:
-   case SIOCSPEER2:
    case SIOCSPEER3:
-      memset(&bridgeParams, 0, sizeof bridgeParams);
-      if (iocmd == SIOCSPEER3) {
-         retval = copy_from_user(&bridgeParams, (void *)ioarg,
-                                 sizeof bridgeParams);
-      } else if (iocmd == SIOCSPEER2) {
-         retval = copy_from_user(&bridgeParams.name, (void *)ioarg,
-                                 sizeof bridgeParams.name);
-      } else {
-         retval = copy_from_user(&bridgeParams.name, (void *)ioarg, 8);
-      }
-
+      retval = copy_from_user(&bridgeParams, (void *)ioarg,
+                              sizeof bridgeParams);
       if (retval) {
          return -EFAULT;
       }
@@ -746,16 +731,6 @@ VNetFileOpUnlockedIoctl(struct file    *filp,  // IN:
          }
          mutex_unlock(&vnetIoctlMutex);
       }
-      break;
-
-   case SIOCPORT:
-      mutex_lock(&vnetIoctlMutex);
-      retval = VNetUserIf_Create(&new);
-      if (retval == 0) {
-         retval = VNetSwitchToDifferentPeer(&port->jack, &new->jack,
-                                            TRUE, filp, port, new);
-      }
-      mutex_unlock(&vnetIoctlMutex);
       break;
 
    case SIOCNETIF:
@@ -845,7 +820,7 @@ VNetFileOpUnlockedIoctl(struct file    *filp,  // IN:
       }
       break;
 
-   case SIOCGIFADDR:
+   case SIOCGETMACADDR:
       {
          uint8 paddr[ETH_ALEN];
 
@@ -856,9 +831,6 @@ VNetFileOpUnlockedIoctl(struct file    *filp,  // IN:
          retval = copy_to_user((void *)ioarg, paddr, ETH_ALEN) ? -EFAULT : 0;
       }
       break;
-
-   case SIOCSIFADDR:
-      return -EFAULT;
 
    case SIOCSLADRF:
       {
@@ -877,7 +849,7 @@ VNetFileOpUnlockedIoctl(struct file    *filp,  // IN:
       }
       break;
 
-   case SIOCSIFFLAGS:
+   case SIOCSPORTFLAGS:
       {
          uint32 flags;
 
@@ -971,9 +943,6 @@ VNetFileOpUnlockedIoctl(struct file    *filp,  // IN:
          }
          /* Should we require verFromUser == VNET_API_VERSION? */
       }
-      /* fall thru */
-
-   case SIOCGETAPIVERSION:
       retval = put_user(VNET_API_VERSION, (uint32 *)ioarg) ?  -EFAULT : 0;
       break;
 

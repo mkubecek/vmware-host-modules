@@ -19,11 +19,11 @@
 /*
  * cpu_types_arch.h --
  *
- *     Low-level CPU type definitions for the x86.
+ *      Low-level CPU type definitions for x86.
  */
 
-#if !defined(_X86_CPU_TYPES_ARCH_H_)
-#define _X86_CPU_TYPES_ARCH_H_
+#ifndef _CPU_TYPES_X86_H_
+#define _CPU_TYPES_X86_H_
 
 #define INCLUDE_ALLOW_USERLEVEL
 
@@ -142,7 +142,7 @@ typedef struct {
 
 // Task defaults to Task32 for everyone except vmkernel. Task64 is used where
 // needed by these products.
-#if defined VMX86_SERVER && defined VMKERNEL
+#if defined VMX86_SERVER && defined VMKERNEL || defined VSAN_USERLEVEL
 #ifdef VM_X86_64
 typedef Task64 Task;
 #else
@@ -461,5 +461,4 @@ typedef union SharedUReg64 {
    UReg64 ureg64;
 } SharedUReg64;
 
-#endif /* _X86_CPU_TYPES_ARCH_H_ */
-
+#endif /* _CPU_TYPES_X86_H_ */

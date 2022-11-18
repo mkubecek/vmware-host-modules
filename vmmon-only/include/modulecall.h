@@ -31,7 +31,6 @@
 #include "includeCheck.h"
 
 #include "cpu_types.h"
-#include "x86desc.h"
 #include "ptsc.h"
 #include "vcpuid.h"
 #include "vcpuset.h"
@@ -128,6 +127,7 @@ typedef enum ModuleCallType {
 #define WS_INTR_STRESS 0
 
 
+#if !defined VMX86_SERVER && defined VM_X86_64
 /*----------------------------------------------------------------------
  *
  * VMMPageTablePatch
@@ -175,6 +175,7 @@ typedef struct VMMPageTablePatch {
    VM_PDPTE pte;                /* PTE.                                */
 } VMMPageTablePatch;
 #pragma pack(pop)
+#endif // !defined VMX86_SERVER && defined VM_X86_64
 
 #define MODULECALL_NUM_ARGS  4
 
@@ -276,9 +277,11 @@ typedef struct VMCrossPageData {
    uint16   _pad2[3];
    /* A hardcoded value for monitor %rip which facilitates backtraces. */
    uint64   monRIP;
+#if !defined VMX86_SERVER && defined VM_X86_64
    Task64   monTask;          /* vmm's task */
 
    VMMPageTablePatch vmmPTP[MAX_SWITCH_PT_PATCHES]; /* page table patch */
+#endif
 
    /*
     * The monitor may requests up to two actions when returning to the

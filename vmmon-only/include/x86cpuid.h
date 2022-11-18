@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2021 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -98,7 +98,7 @@ typedef struct CPUIDQuery {
 #endif
 
 /*
- * CPUID levels the monitor caches.
+ * Table of known CPUID levels.
  *
  * The first parameter defines whether the level has its default masks
  * generated from the values in this file. Any level which is marked as FALSE
@@ -120,14 +120,14 @@ typedef struct CPUIDQuery {
  */
 
 /*            MASKS, LVL, VAL,      CNT, HWV */
-#define CPUID_CACHED_LEVELS                  \
+#define CPUID_KNOWN_LEVELS                   \
    CPUIDLEVEL(TRUE,  0,   0x0,        0,  0) \
    CPUIDLEVEL(TRUE,  1,   0x1,        0,  0) \
    CPUIDLEVEL(FALSE, 2,   0x2,        0,  0) \
    CPUIDLEVEL(FALSE, 4,   0x4,        7,  0) \
    CPUIDLEVEL(FALSE, 5,   0x5,        0,  0) \
    CPUIDLEVEL(TRUE,  6,   0x6,        0,  0) \
-   CPUIDLEVEL(TRUE,  7,   0x7,        2,  0) \
+   CPUIDLEVEL(TRUE,  7,   0x7,        3,  0) \
    CPUIDLEVEL(TRUE,  9,   0x9,        0, 17) \
    CPUIDLEVEL(FALSE, A,   0xa,        0,  0) \
    CPUIDLEVEL(FALSE, B,   0xb,        3,  0) \
@@ -148,6 +148,7 @@ typedef struct CPUIDQuery {
    CPUIDLEVEL(TRUE,  1E,  0x1e,       1, 19) \
    CPUIDLEVEL(FALSE, 1F,  0x1f,       6, 17) \
    CPUIDLEVEL(TRUE,  20,  0x20,       1, 20) \
+   CPUIDLEVEL(TRUE , 21,  0x21,       1, 20) \
    CPUIDLEVEL(FALSE, 400, 0x40000000, 0,  0) \
    CPUIDLEVEL(FALSE, 401, 0x40000001, 0,  0) \
    CPUIDLEVEL(FALSE, 402, 0x40000002, 0,  0) \
@@ -174,22 +175,23 @@ typedef struct CPUIDQuery {
    CPUIDLEVEL(FALSE, 81E, 0x8000001e, 0,  0) \
    CPUIDLEVEL(TRUE,  81F, 0x8000001f, 0, 14) \
    CPUIDLEVEL(TRUE,  820, 0x80000020, 2, 17) \
-   CPUIDLEVEL(TRUE,  821, 0x80000021, 0, 17)
+   CPUIDLEVEL(TRUE,  821, 0x80000021, 0, 17) \
+   CPUIDLEVEL(TRUE,  822, 0x80000022, 0, 20) \
+   CPUIDLEVEL(TRUE,  823, 0x80000023, 0, 20) \
+   CPUIDLEVEL(FALSE, 826, 0x80000026, 4, 20)
 
-#define CPUID_ALL_LEVELS CPUID_CACHED_LEVELS
-
-/* Define cached CPUID levels in the form: CPUID_LEVEL_<ShortName> */
+/* Define all CPUID levels in the form: CPUID_LEVEL_<ShortName> */
 typedef enum {
 #define CPUIDLEVEL(t, s, v, c, h) CPUID_LEVEL_##s,
-   CPUID_CACHED_LEVELS
+   CPUID_KNOWN_LEVELS
 #undef CPUIDLEVEL
-   CPUID_NUM_CACHED_LEVELS
-} CpuidCachedLevel;
+   CPUID_NUM_KNOWN_LEVELS
+} CpuidLevel;
 
 /* Enum to translate between shorthand name and actual CPUID level value. */
 enum {
 #define CPUIDLEVEL(t, s, v, c, h) CPUID_LEVEL_VAL_##s = v,
-   CPUID_ALL_LEVELS
+   CPUID_KNOWN_LEVELS
 #undef CPUIDLEVEL
 };
 
@@ -200,6 +202,7 @@ enum {
 #define CPUID_MWAIT_FEATURES         5
 #define CPUID_PMC_FEATURES           0xa
 #define CPUID_XSAVE_FEATURES         0xd
+#define CPUID_RDT_FEATURES           0x10
 #define CPUID_SGX_FEATURES           0x12
 #define CPUID_PT_FEATURES            0x14
 #define CPUID_HYPERVISOR_LEVEL_0     0x40000000
@@ -230,24 +233,26 @@ typedef enum {
 #define CPUID_CYRIX_VENDOR_STRING       "CyriteadxIns"
 #define CPUID_VIA_VENDOR_STRING         "CentaulsaurH"
 #define CPUID_HYGON_VENDOR_STRING       "HygouinenGen"
+#define CPUID_INTEL_TDX_VENDOR_STRING   "Inte    lTDX"
 
 #define CPUID_HYPERV_HYPERVISOR_VENDOR_STRING  "Microsoft Hv"
 #define CPUID_KVM_HYPERVISOR_VENDOR_STRING     "KVMKVMKVM\0\0\0"
 #define CPUID_VMWARE_HYPERVISOR_VENDOR_STRING  "VMwareVMware"
 #define CPUID_XEN_HYPERVISOR_VENDOR_STRING     "XenVMMXenVMM"
 
-#define CPUID_INTEL_VENDOR_STRING_FIXED "GenuineIntel"
-#define CPUID_AMD_VENDOR_STRING_FIXED   "AuthenticAMD"
-#define CPUID_CYRIX_VENDOR_STRING_FIXED "CyrixInstead"
-#define CPUID_VIA_VENDOR_STRING_FIXED   "CentaurHauls"
-#define CPUID_HYGON_VENDOR_STRING_FIXED "HygonGenuine"
+#define CPUID_INTEL_VENDOR_STRING_FIXED      "GenuineIntel"
+#define CPUID_AMD_VENDOR_STRING_FIXED        "AuthenticAMD"
+#define CPUID_CYRIX_VENDOR_STRING_FIXED      "CyrixInstead"
+#define CPUID_VIA_VENDOR_STRING_FIXED        "CentaurHauls"
+#define CPUID_HYGON_VENDOR_STRING_FIXED      "HygonGenuine"
+#define CPUID_INTEL_TDX_VENDOR_STRING_FIXED  "IntelTDX    "
 
 /*
  * FIELD can be defined to process the CPUID information provided in the
  * following CPUID_FIELD_DATA macro.
  *
  * The first parameter is the CPUID level of the feature (must be defined in
- * CPUID_ALL_LEVELS, above).
+ * CPUID_KNOWN_LEVELS, above).
  *
  * The second parameter is the CPUID sub-level (subleaf) of the feature. Please
  * make sure here the number is consistent with the "subleaf count" in
@@ -350,7 +355,7 @@ FIELD(  1,  0, EBX, 24,  8, APICID,                              ANY,   4 ) \
 FLAG(   1,  0, ECX,  0,  1, SSE3,                                YES,   4 ) \
 FLAG(   1,  0, ECX,  1,  1, PCLMULQDQ,                           YES,   4 ) \
 FLAG(   1,  0, ECX,  2,  1, DTES64,                              NO,    0 ) \
-FLAG(   1,  0, ECX,  3,  1, MWAIT,                               YES,   4 ) \
+FLAG(   1,  0, ECX,  3,  1, MWAIT,                               YES,   7 ) \
 FLAG(   1,  0, ECX,  4,  1, DSCPL,                               NO,    0 ) \
 FLAG(   1,  0, ECX,  5,  1, VMX,                                 YES,   8 ) \
 FLAG(   1,  0, ECX,  6,  1, SMX,                                 YES, FUT ) \
@@ -495,7 +500,7 @@ FLAG(   7,  0, EBX,  0,  1, FSGSBASE,                            YES,   9 ) \
 FLAG(   7,  0, EBX,  1,  1, TSC_ADJUST,                          ANY,  11 ) \
 FLAG(   7,  0, EBX,  2,  1, SGX,                                 ANY,  17 ) \
 FLAG(   7,  0, EBX,  3,  1, BMI1,                                YES,   9 ) \
-FLAG(   7,  0, EBX,  4,  1, HLE,                                 YES,  11 ) \
+FLAG(   7,  0, EBX,  4,  1, HLE,                                 ANY,  11 ) \
 FLAG(   7,  0, EBX,  5,  1, AVX2,                                YES,  11 ) \
 FLAG(   7,  0, EBX,  6,  1, FDP_EXCPTN_ONLY,                     ANY,   4 ) \
 FLAG(   7,  0, EBX,  7,  1, SMEP,                                YES,   9 ) \
@@ -506,7 +511,7 @@ FLAG(   7,  0, EBX, 11,  1, RTM,                                 YES,  11 ) \
 FLAG(   7,  0, EBX, 12,  1, PQM,                                 NO,    0 ) \
 FLAG(   7,  0, EBX, 13,  1, FP_SEGMENT_ZERO,                     ANY,  11 ) \
 FLAG(   7,  0, EBX, 14,  1, MPX,                                 ANY,  13 ) \
-FLAG(   7,  0, EBX, 15,  1, PQE,                                 NO,    0 ) \
+FLAG(   7,  0, EBX, 15,  1, PQE,                                 YES,  20 ) \
 FLAG(   7,  0, EBX, 16,  1, AVX512F,                             YES,  13 ) \
 FLAG(   7,  0, EBX, 17,  1, AVX512DQ,                            YES,  13 ) \
 FLAG(   7,  0, EBX, 18,  1, RDSEED,                              YES,  11 ) \
@@ -527,9 +532,9 @@ FLAG(   7,  0, ECX,  1,  1, AVX512VBMI,                          YES,  17 ) \
 FLAG(   7,  0, ECX,  2,  1, UMIP,                                YES,  17 ) \
 FLAG(   7,  0, ECX,  3,  1, PKU,                                 YES,  13 ) \
 FLAG(   7,  0, ECX,  4,  1, OSPKE,                               ANY,  13 ) \
-FLAG(   7,  0, ECX,  5,  1, WAITPKG,                             NO,    0 ) \
+FLAG(   7,  0, ECX,  5,  1, WAITPKG,                             YES, FUT ) \
 FLAG(   7,  0, ECX,  6,  1, AVX512VBMI2,                         YES,  17 ) \
-FLAG(   7,  0, ECX,  7,  1, CET_SS,                              NO,    0 ) \
+FLAG(   7,  0, ECX,  7,  1, CET_SS,                              YES,  20 ) \
 FLAG(   7,  0, ECX,  8,  1, GFNI,                                YES,  17 ) \
 FLAG(   7,  0, ECX,  9,  1, VAES,                                YES,  17 ) \
 FLAG(   7,  0, ECX, 10,  1, VPCLMULQDQ,                          YES,  17 ) \
@@ -541,6 +546,7 @@ FLAG(   7,  0, ECX, 16,  1, VA57,                                NO,    0 ) \
 FIELD(  7,  0, ECX, 17,  5, MAWA,                                NO,    0 ) \
 FLAG(   7,  0, ECX, 22,  1, RDPID,                               YES,  17 ) \
 FLAG(   7,  0, ECX, 23,  1, KEY_LOCKER,                          NO,    0 ) \
+FLAG(   7,  0, ECX, 24,  1, BUS_LOCK_DB,                         NO,    0 ) \
 FLAG(   7,  0, ECX, 25,  1, CLDEMOTE,                            YES,  18 ) \
 FLAG(   7,  0, ECX, 27,  1, MOVDIRI,                             YES,  18 ) \
 FLAG(   7,  0, ECX, 28,  1, MOVDIR64B,                           YES,  18 ) \
@@ -558,12 +564,12 @@ FLAG(   7,  0, EDX, 14,  1, SERIALIZE,                           YES,  20 ) \
 FLAG(   7,  0, EDX, 15,  1, HYBRID,                              NO,    0 ) \
 FLAG(   7,  0, EDX, 16,  1, TSXLDTRK,                            NO,    0 ) \
 FLAG(   7,  0, EDX, 18,  1, PCONFIG,                             NO,    0 ) \
-FLAG(   7,  0, EDX, 19,  1, ARCH_LBR,                            NO,    0 ) \
-FLAG(   7,  0, EDX, 20,  1, CET_IBT,                             NO,    0 ) \
-FLAG(   7,  0, EDX, 22,  1, AMX_BF16,                            NO,    0 ) \
-FLAG(   7,  0, EDX, 23,  1, AVX512FP16,                          NO,    0 ) \
-FLAG(   7,  0, EDX, 24,  1, AMX_TILE,                            NO,    0 ) \
-FLAG(   7,  0, EDX, 25,  1, AMX_INT8,                            NO,    0 ) \
+FLAG(   7,  0, EDX, 19,  1, ARCH_LBR,                            YES,  20 ) \
+FLAG(   7,  0, EDX, 20,  1, CET_IBT,                             YES,  20 ) \
+FLAG(   7,  0, EDX, 22,  1, AMX_BF16,                            YES,  20 ) \
+FLAG(   7,  0, EDX, 23,  1, AVX512FP16,                          YES,  20 ) \
+FLAG(   7,  0, EDX, 24,  1, AMX_TILE,                            YES,  20 ) \
+FLAG(   7,  0, EDX, 25,  1, AMX_INT8,                            YES,  20 ) \
 FLAG(   7,  0, EDX, 26,  1, IBRSIBPB,                            ANY,   9 ) \
 FLAG(   7,  0, EDX, 27,  1, STIBP,                               YES,   9 ) \
 FLAG(   7,  0, EDX, 28,  1, FCMD,                                YES,   9 ) \
@@ -572,11 +578,12 @@ FLAG(   7,  0, EDX, 30,  1, CORE_CAPABILITIES,                   NO,    0 ) \
 FLAG(   7,  0, EDX, 31,  1, SSBD,                                YES,   9 ) \
 FLAG(   7,  1, EAX,  4,  1, AVX_VNNI,                            YES,  20 ) \
 FLAG(   7,  1, EAX,  5,  1, AVX512BF16,                          YES,  18 ) \
-FLAG(   7,  1, EAX, 10,  1, FAST_ZERO_MOVSB,                     NO,    0 ) \
-FLAG(   7,  1, EAX, 11,  1, FAST_SHORT_STOSB,                    NO,    0 ) \
-FLAG(   7,  1, EAX, 12,  1, FAST_SHORT_CMPSB_SCASB,              NO,    0 ) \
+FLAG(   7,  1, EAX, 10,  1, FAST_ZERO_MOVSB,                     YES,  20 ) \
+FLAG(   7,  1, EAX, 11,  1, FAST_SHORT_STOSB,                    YES,  20 ) \
+FLAG(   7,  1, EAX, 12,  1, FAST_SHORT_CMPSB_SCASB,              YES,  20 ) \
 FLAG(   7,  1, EAX, 22,  1, HRESET,                              NO,    0 ) \
-FLAG(   7,  1, EAX, 26,  1, LAM,                                 NO,    0 )
+FLAG(   7,  1, EAX, 26,  1, LAM,                                 NO,    0 ) \
+FLAG(   7,  2, EDX,  0,  1, PSFD,                                YES,  20 )
 
 /*    LEVEL, SUB-LEVEL, REG, POS, SIZE, NAME,               MON SUPP, HWV  */
 #define CPUID_FIELD_DATA_LEVEL_9                                            \
@@ -623,8 +630,8 @@ FLAG(   D,  0, EAX,  5,  1, XCR0_MASTER_OPMASK,                  YES,  13 ) \
 FLAG(   D,  0, EAX,  6,  1, XCR0_MASTER_ZMM_H,                   YES,  13 ) \
 FLAG(   D,  0, EAX,  7,  1, XCR0_MASTER_HI16_ZMM,                YES,  13 ) \
 FLAG(   D,  0, EAX,  9,  1, XCR0_MASTER_PKRU,                    YES,  13 ) \
-FLAG(   D,  0, EAX, 17,  1, XCR0_MASTER_XTILECFG,                NO,    0 ) \
-FLAG(   D,  0, EAX, 18,  1, XCR0_MASTER_XTILEDATA,               NO,    0 ) \
+FLAG(   D,  0, EAX, 17,  1, XCR0_MASTER_XTILECFG,                YES,  20 ) \
+FLAG(   D,  0, EAX, 18,  1, XCR0_MASTER_XTILEDATA,               YES,  20 ) \
 FIELD(  D,  0, EBX,  0, 32, XSAVE_ENABLED_SIZE,                  ANY,   8 ) \
 FIELD(  D,  0, ECX,  0, 32, XSAVE_MAX_SIZE,                      YES,   8 ) \
 FIELD(  D,  0, EDX,  0, 29, XCR0_MASTER_UPPER,                   NO,    0 ) \
@@ -634,12 +641,12 @@ FLAG(   D,  1, EAX,  0,  1, XSAVEOPT,                            YES,  11 ) \
 FLAG(   D,  1, EAX,  1,  1, XSAVEC,                              YES,  13 ) \
 FLAG(   D,  1, EAX,  2,  1, XGETBV_ECX1,                         YES,  17 ) \
 FLAG(   D,  1, EAX,  3,  1, XSAVES,                              YES,  13 ) \
-FLAG(   D,  1, EAX,  4,  1, XFD,                                 NO,    0 ) \
+FLAG(   D,  1, EAX,  4,  1, XFD,                                 YES,  20 ) \
 FIELD(  D,  1, EBX,  0, 32, XSAVES_ENABLED_SIZE,                 ANY,  13 ) \
 FLAG(   D,  1, ECX,  8,  1, XSS_MASTER_PT,                       NO,    0 ) \
 FLAG(   D,  1, ECX, 10,  1, XSS_MASTER_PASID,                    NO,    0 ) \
-FLAG(   D,  1, ECX, 11,  1, XSS_MASTER_CET_U,                    NO,    0 ) \
-FLAG(   D,  1, ECX, 12,  1, XSS_MASTER_CET_S,                    NO,    0 ) \
+FLAG(   D,  1, ECX, 11,  1, XSS_MASTER_CET_U,                    YES,  20 ) \
+FLAG(   D,  1, ECX, 12,  1, XSS_MASTER_CET_S,                    YES,  20 ) \
 FLAG(   D,  1, ECX, 13,  1, XSS_MASTER_HDC,                      NO,    0 ) \
 FLAG(   D,  1, ECX, 14,  1, XSS_MASTER_UINTR,                    NO,    0 ) \
 FLAG(   D,  1, ECX, 15,  1, XSS_MASTER_LBR,                      NO,    0 ) \
@@ -688,14 +695,14 @@ FIELD(  D, 10, EAX,  0, 32, XSAVES_PASID_STATE_SIZE,             NO,    0 ) \
 FLAG(   D, 10, ECX,  0,  1, XSAVES_PASID_STATE_SUP_BY_XSS,       NO,    0 ) \
 FLAG(   D, 10, ECX,  1,  1, XSAVES_PASID_STATE_ALIGN,            NO,    0 ) \
 FLAG(   D, 10, ECX,  2,  1, XSAVES_PASID_STATE_XFD,              NO,    0 ) \
-FIELD(  D, 11, EAX,  0, 32, XSAVES_CET_U_SIZE,                   NO,    0 ) \
-FLAG(   D, 11, ECX,  0,  1, XSAVES_CET_U_SUP_BY_XSS,             NO,    0 ) \
-FLAG(   D, 11, ECX,  1,  1, XSAVES_CET_U_ALIGN,                  NO,    0 ) \
-FLAG(   D, 11, ECX,  2,  1, XSAVES_CET_U_XFD,                    NO,    0 ) \
-FIELD(  D, 12, EAX,  0, 32, XSAVES_CET_S_SIZE,                   NO,    0 ) \
-FLAG(   D, 12, ECX,  0,  1, XSAVES_CET_S_SUP_BY_XSS,             NO,    0 ) \
-FLAG(   D, 12, ECX,  1,  1, XSAVES_CET_S_ALIGN,                  NO,    0 ) \
-FLAG(   D, 12, ECX,  2,  1, XSAVES_CET_S_XFD,                    NO,    0 ) \
+FIELD(  D, 11, EAX,  0, 32, XSAVES_CET_U_SIZE,                   YES,  20 ) \
+FLAG(   D, 11, ECX,  0,  1, XSAVES_CET_U_SUP_BY_XSS,             YES,  20 ) \
+FLAG(   D, 11, ECX,  1,  1, XSAVES_CET_U_ALIGN,                  YES,  20 ) \
+FLAG(   D, 11, ECX,  2,  1, XSAVES_CET_U_XFD,                    YES,  20 ) \
+FIELD(  D, 12, EAX,  0, 32, XSAVES_CET_S_SIZE,                   YES,  20 ) \
+FLAG(   D, 12, ECX,  0,  1, XSAVES_CET_S_SUP_BY_XSS,             YES,  20 ) \
+FLAG(   D, 12, ECX,  1,  1, XSAVES_CET_S_ALIGN,                  YES,  20 ) \
+FLAG(   D, 12, ECX,  2,  1, XSAVES_CET_S_XFD,                    YES,  20 ) \
 FIELD(  D, 13, EAX,  0, 32, XSAVES_HDT_SIZE,                     NO,    0 ) \
 FLAG(   D, 13, ECX,  0,  1, XSAVES_HDT_SUP_BY_XSS,               NO,    0 ) \
 FLAG(   D, 13, ECX,  1,  1, XSAVES_HDT_ALIGN,                    NO,    0 ) \
@@ -712,16 +719,16 @@ FIELD(  D, 16, EAX,  0, 32, XSAVES_HWP_SIZE,                     NO,    0 ) \
 FLAG(   D, 16, ECX,  0,  1, XSAVES_HWP_SUP_BY_XSS,               NO,    0 ) \
 FLAG(   D, 16, ECX,  1,  1, XSAVES_HWP_ALIGN,                    NO,    0 ) \
 FLAG(   D, 16, ECX,  2,  1, XSAVES_HWP_XFD,                      NO,    0 ) \
-FIELD(  D, 17, EAX,  0, 32, XSAVE_XTILECFG_SIZE,                 NO,    0 ) \
-FIELD(  D, 17, EBX,  0, 32, XSAVE_XTILECFG_OFFSET,               NO,    0 ) \
+FIELD(  D, 17, EAX,  0, 32, XSAVE_XTILECFG_SIZE,                 YES,  20 ) \
+FIELD(  D, 17, EBX,  0, 32, XSAVE_XTILECFG_OFFSET,               YES,  20 ) \
 FLAG(   D, 17, ECX,  0,  1, XSAVE_XTILECFG_SUP_BY_XSS,           NO,    0 ) \
-FLAG(   D, 17, ECX,  1,  1, XSAVE_XTILECFG_ALIGN,                NO,    0 ) \
-FLAG(   D, 17, ECX,  2,  1, XSAVE_XTILECFG_XFD,                  NO,    0 ) \
-FIELD(  D, 18, EAX,  0, 32, XSAVE_XTILEDATA_SIZE,                NO,    0 ) \
-FIELD(  D, 18, EBX,  0, 32, XSAVE_XTILEDATA_OFFSET,              NO,    0 ) \
+FLAG(   D, 17, ECX,  1,  1, XSAVE_XTILECFG_ALIGN,                YES,  20 ) \
+FLAG(   D, 17, ECX,  2,  1, XSAVE_XTILECFG_XFD,                  YES,  20 ) \
+FIELD(  D, 18, EAX,  0, 32, XSAVE_XTILEDATA_SIZE,                YES,  20 ) \
+FIELD(  D, 18, EBX,  0, 32, XSAVE_XTILEDATA_OFFSET,              YES,  20 ) \
 FLAG(   D, 18, ECX,  0,  1, XSAVE_XTILEDATA_SUP_BY_XSS,          NO,    0 ) \
-FLAG(   D, 18, ECX,  1,  1, XSAVE_XTILEDATA_ALIGN,               NO,    0 ) \
-FLAG(   D, 18, ECX,  2,  1, XSAVE_XTILEDATA_XFD,                 NO,    0 ) \
+FLAG(   D, 18, ECX,  1,  1, XSAVE_XTILEDATA_ALIGN,               YES,  20 ) \
+FLAG(   D, 18, ECX,  2,  1, XSAVE_XTILEDATA_XFD,                 YES,  20 ) \
 /* D, 62: AMD LWP leaf on BD, PD, SR. Dropped in Zen. Never referenced. */
 
 /*    LEVEL, SUB-LEVEL, REG, POS, SIZE, NAME,               MON SUPP, HWV  */
@@ -735,12 +742,19 @@ FLAG(   F,  1, EDX,  1,  1, PQM_MBM_TOTAL,                       NO,    0 ) \
 FLAG(   F,  1, EDX,  2,  1, PQM_MBM_LOCAL,                       NO,    0 )
 
 /*    LEVEL, SUB-LEVEL, REG, POS, SIZE, NAME,               MON SUPP, HWV  */
-#define CPUID_FIELD_DATA_LEVEL_10                                          \
-FLAG(  10,  0, EBX,  1,  1, PQE_L3,                              NO,    0 ) \
-FIELD( 10,  1, EAX,  0,  5, PQE_L3_MASK_LENGTH,                  NO,    0 ) \
+#define CPUID_FIELD_DATA_LEVEL_10                                           \
+FLAG(  10,  0, EBX,  1,  1, PQE_L3,                              YES,  20 ) \
+FLAG(  10,  0, EBX,  2,  1, PQE_L2,                              NO,    0 ) \
+FLAG(  10,  0, EBX,  3,  1, PQE_MBA,                             NO,    0 ) \
+FIELD( 10,  1, EAX,  0,  5, PQE_L3_MASK_LENGTH,                  YES,  20 ) \
 FIELD( 10,  1, EBX,  0, 32, PQE_L3_ISOLATION_UNIT_MAP,           NO,    0 ) \
 FLAG(  10,  1, ECX,  2,  1, PQE_L3_CDP,                          NO,    0 ) \
-FIELD( 10,  1, EDX,  0, 16, PQE_L3_MAX_COS_NUMBER,               NO,    0 )
+FIELD( 10,  1, EDX,  0, 16, PQE_L3_MAX_COS_NUMBER,               YES,  20 ) \
+FIELD( 10,  2, EAX,  0,  5, PQE_L2_MASK_LENGTH,                  NO,    0 ) \
+FIELD( 10,  2, EBX,  0, 32, PQE_L2_ISOLATION_UNIT_MAP,           NO,    0 ) \
+FLAG(  10,  2, ECX,  2,  1, PQE_L2_CDP,                          NO,    0 ) \
+FIELD( 10,  2, EDX,  0, 16, PQE_L2_MAX_COS_NUMBER,               NO,    0 )
+
 
 /*    LEVEL, SUB-LEVEL, REG, POS, SIZE, NAME,               MON SUPP, HWV  */
 #define CPUID_FIELD_DATA_LEVEL_12                                           \
@@ -860,29 +874,29 @@ FIELD( 1B,  0, EDX,  0, 32, PCONFIG_TARGET_ID3,                  NO,    0 )
 
 /*    LEVEL, SUB-LEVEL, REG, POS, SIZE, NAME,               MON SUPP, HWV  */
 #define CPUID_FIELD_DATA_LEVEL_1C                                           \
-FIELD( 1C,  0, EAX,  0,  8, LBR_DEPTH,                           NO,    0 ) \
-FLAG(  1C,  0, EAX, 30,  1, LBR_DEEP_CSTATE_RESET,               NO,    0 ) \
-FLAG(  1C,  0, EAX, 31,  1, LBR_IP_CONTAINS_LIP,                 NO,    0 ) \
-FLAG(  1C,  0, EBX,  0,  1, LBR_CPL_FILTERING,                   NO,    0 ) \
-FLAG(  1C,  0, EBX,  1,  1, LBR_BRANCH_FILTERING,                NO,    0 ) \
-FLAG(  1C,  0, EBX,  2,  1, LBR_CALL_STACK_MODE,                 NO,    0 ) \
-FLAG(  1C,  0, ECX,  0,  1, LBR_MISPREDICT,                      NO,    0 ) \
-FLAG(  1C,  0, ECX,  1,  1, LBR_TIMED_LBRS,                      NO,    0 ) \
-FLAG(  1C,  0, ECX,  2,  1, LBR_BRANCH_TYPE,                     NO,    0 ) \
+FIELD( 1C,  0, EAX,  0,  8, LBR_DEPTH,                           YES,  20 ) \
+FLAG(  1C,  0, EAX, 30,  1, LBR_DEEP_CSTATE_RESET,               YES,  20 ) \
+FLAG(  1C,  0, EAX, 31,  1, LBR_IP_CONTAINS_LIP,                 YES,  20 ) \
+FLAG(  1C,  0, EBX,  0,  1, LBR_CPL_FILTERING,                   YES,  20 ) \
+FLAG(  1C,  0, EBX,  1,  1, LBR_BRANCH_FILTERING,                YES,  20 ) \
+FLAG(  1C,  0, EBX,  2,  1, LBR_CALL_STACK_MODE,                 YES,  20 ) \
+FLAG(  1C,  0, ECX,  0,  1, LBR_MISPREDICT,                      YES,  20 ) \
+FLAG(  1C,  0, ECX,  1,  1, LBR_TIMED_LBRS,                      YES,  20 ) \
+FLAG(  1C,  0, ECX,  2,  1, LBR_BRANCH_TYPE,                     YES,  20 ) \
 
 /*    LEVEL, SUB-LEVEL, REG, POS, SIZE, NAME,               MON SUPP, HWV  */
 #define CPUID_FIELD_DATA_LEVEL_1D                                           \
-FIELD( 1D,  0, EAX,  0, 32, TILE_PALETTE_MAX,                    NO,    0 ) \
-FIELD( 1D,  1, EAX,  0, 16, TILE_PALETTE1_TOTAL_BYTES,           NO,    0 ) \
-FIELD( 1D,  1, EAX, 16, 16, TILE_PALETTE1_BYTES_PER_TILE,        NO,    0 ) \
-FIELD( 1D,  1, EBX,  0, 16, TILE_PALETTE1_BYTES_PER_ROW,         NO,    0 ) \
-FIELD( 1D,  1, EBX, 16, 16, TILE_PALETTE1_NUM_REGS,              NO,    0 ) \
-FIELD( 1D,  1, ECX,  0, 16, TILE_PALETTE1_MAX_ROWS,              NO,    0 )
+FIELD( 1D,  0, EAX,  0, 32, TILE_PALETTE_MAX,                    YES,    20 ) \
+FIELD( 1D,  1, EAX,  0, 16, TILE_PALETTE1_TOTAL_BYTES,           YES,    20 ) \
+FIELD( 1D,  1, EAX, 16, 16, TILE_PALETTE1_BYTES_PER_TILE,        YES,    20 ) \
+FIELD( 1D,  1, EBX,  0, 16, TILE_PALETTE1_BYTES_PER_ROW,         YES,    20 ) \
+FIELD( 1D,  1, EBX, 16, 16, TILE_PALETTE1_NUM_REGS,              YES,    20 ) \
+FIELD( 1D,  1, ECX,  0, 16, TILE_PALETTE1_MAX_ROWS,              YES,    20 )
 
 /*    LEVEL, SUB-LEVEL, REG, POS, SIZE, NAME,               MON SUPP, HWV  */
 #define CPUID_FIELD_DATA_LEVEL_1E                                           \
-FIELD( 1E,  0, EBX,  0,  8, TMUL_MAX_K,                          NO,    0 ) \
-FIELD( 1E,  0, EBX,  8, 16, TMUL_MAX_N,                          NO,    0 )
+FIELD( 1E,  0, EBX,  0,  8, TMUL_MAX_K,                          YES,    20 ) \
+FIELD( 1E,  0, EBX,  8, 16, TMUL_MAX_N,                          YES,    20 )
 
 /*    LEVEL, SUB-LEVEL, REG, POS, SIZE, NAME,               MON SUPP, HWV  */
 #define CPUID_FIELD_DATA_LEVEL_1F                                           \
@@ -896,6 +910,13 @@ FIELD( 1F,  0, EDX,  0, 32, TOPOLOGY_V2_X2APIC_ID,               NA,    0 )
 #define CPUID_FIELD_DATA_LEVEL_20                                           \
 FIELD( 20,  0, EAX,  0, 32, HRESET_MAX_SUBLEAF,                  NO,    0 ) \
 FIELD( 20,  0, EBX,  0, 32, HRESET_ENABLE_MSR_VALID_BITS,        NO,    0 )
+
+/*    LEVEL, SUB-LEVEL, REG, POS, SIZE, NAME,               MON SUPP, HWV  */
+#define CPUID_FIELD_DATA_LEVEL_21                                           \
+FIELD( 21,  0, EAX,  0, 32, TDX_MAX_SUBLEAF,                     NO,    0 ) \
+FIELD( 21,  0, EBX,  0, 32, TDX_VENDOR1,                         NO,    0 ) \
+FIELD( 21,  0, ECX,  0, 32, TDX_VENDOR3,                         NO,    0 ) \
+FIELD( 21,  0, EDX,  0, 32, TDX_VENDOR2,                         NO,    0 )
 
 /*    LEVEL, SUB-LEVEL, REG, POS, SIZE, NAME,               MON SUPP, HWV  */
 #define CPUID_FIELD_DATA_LEVEL_400                                          \
@@ -963,7 +984,9 @@ FLAG( 403,  0, EDX, 10,  1, GUEST_CRASH_MSRS_AVAIL,              NA,    0 ) \
 FLAG( 403,  0, EDX, 11,  1, DEBUG_MSRS_AVAIL,                    NA,    0 ) \
 FLAG( 403,  0, EDX, 12,  1, NPIEP1_AVAIL,                        NA,    0 ) \
 FLAG( 403,  0, EDX, 13,  1, DISABLE_HYPERVISOR_AVAIL,            NA,    0 ) \
-FLAG( 403,  0, EDX, 15,  1, XMM_REGS_FOR_HYPERCALL_OUTPUT,       NA,    0 )
+FLAG( 403,  0, EDX, 15,  1, XMM_REGS_FOR_HYPERCALL_OUTPUT,       NA,    0 ) \
+FLAG( 403,  0, EDX, 17,  1, SINT_POLLING_AVAIL,                  NA,    0 ) \
+FLAG( 403,  0, EDX, 19,  1, DIRECT_SYN_TIMER,                    NA,    0 )
 
 /*    LEVEL, SUB-LEVEL, REG, POS, SIZE, NAME,               MON SUPP, HWV  */
 #define CPUID_FIELD_DATA_LEVEL_404                                         \
@@ -1001,7 +1024,6 @@ FIELD(410,  0, EAX,  0, 32, TSC_HZ,                              NA,    0 ) \
 FIELD(410,  0, EBX,  0, 32, APICBUS_HZ,                          NA,    0 ) \
 FLAG( 410,  0, ECX,  0,  1, VMMCALL_BACKDOOR,                    NA,    0 ) \
 FLAG( 410,  0, ECX,  1,  1, VMCALL_BACKDOOR,                     NA,    0 ) \
-FLAG( 410,  0, ECX,  2,  1, TDX_ENABLED,                         NA,    0 ) \
 FLAG( 410,  0, ECX,  3,  1, TDX_API_ENABLED,                     NA,    0 )
 
 /*    LEVEL, SUB-LEVEL, REG, POS, SIZE, NAME,               MON SUPP, HWV  */
@@ -1046,7 +1068,7 @@ FLAG(  81,  0, ECX, 24,  1, PERFNB,                              NO,    0 ) \
 FLAG(  81,  0, ECX, 26,  1, DATABK,                              NO,    0 ) \
 FLAG(  81,  0, ECX, 27,  1, PERFTSC,                             NO,    0 ) \
 FLAG(  81,  0, ECX, 28,  1, PERFL3,                              NO,    0 ) \
-FLAG(  81,  0, ECX, 29,  1, MWAITX,                              NO,    0 ) \
+FLAG(  81,  0, ECX, 29,  1, MONITORX,                            NO,    0 ) \
 FLAG(  81,  0, ECX, 30,  1, ADDR_MASK_EXT,                       NO,    0 ) \
 FLAG(  81,  0, EDX,  0,  1, LEAF81_FPU,                          YES,   4 ) \
 FLAG(  81,  0, EDX,  1,  1, LEAF81_VME,                          YES,   4 ) \
@@ -1175,12 +1197,12 @@ FLAG(  88,  0, EBX,  9,  1, WBNOINVD,                            YES,  17 ) \
 FLAG(  88,  0, EBX, 10,  1, LBREXTN,                             NO,    0 ) \
 FLAG(  88,  0, EBX, 12,  1, LEAF88_IBPB,                         ANY,   9 ) \
 FLAG(  88,  0, EBX, 13,  1, WBINVD_INT,                          NO,    0 ) \
-FLAG(  88,  0, EBX, 14,  1, LEAF88_IBRS,                         NO,    0 ) \
+FLAG(  88,  0, EBX, 14,  1, LEAF88_IBRS,                         ANY,  20 ) \
 FLAG(  88,  0, EBX, 15,  1, LEAF88_STIBP,                        NO,    0 ) \
-FLAG(  88,  0, EBX, 16,  1, LEAF88_IBRS_ALWAYS,                  NO,    0 ) \
+FLAG(  88,  0, EBX, 16,  1, LEAF88_IBRS_ALWAYS,                  YES,  20 ) \
 FLAG(  88,  0, EBX, 17,  1, LEAF88_STIBP_ALWAYS,                 NO,    0 ) \
-FLAG(  88,  0, EBX, 18,  1, LEAF88_PREFER_IBRS,                  NO,    0 ) \
-FLAG(  88,  0, EBX, 19,  1, LEAF88_IBRS_SAME_MODE,               NO,    0 ) \
+FLAG(  88,  0, EBX, 18,  1, LEAF88_PREFER_IBRS,                  YES,  20 ) \
+FLAG(  88,  0, EBX, 19,  1, LEAF88_IBRS_SAME_MODE,               YES,  20 ) \
 FLAG(  88,  0, EBX, 20,  1, LMSLE_UNSUPPORTED,                   NO,    0 ) \
 FLAG(  88,  0, EBX, 23,  1, PPIN,                                NO,    0 ) \
 FLAG(  88,  0, EBX, 24,  1, LEAF88_SSBD_SPEC_CTRL,               YES,  20 ) \
@@ -1222,7 +1244,8 @@ CPUID_8A_EDX_14 \
 FLAG(  8A,  0, EDX, 15,  1, SVM_V_VMSAVE_VMLOAD,                 NO,    0 ) \
 FLAG(  8A,  0, EDX, 16,  1, SVM_VGIF,                            NO,    0 ) \
 FLAG(  8A,  0, EDX, 17,  1, SVM_GMET,                            YES,  17 ) \
-FIELD( 8A,  0, EDX, 18,  2, SVMEDX_RSVD3,                        NO,    0 ) \
+FLAG(  8A,  0, EDX, 18,  1, SVMEDX_RSVD3,                        NO,    0 ) \
+FLAG(  8A,  0, EDX, 19,  1, SVM_SSS,                             YES,  20 ) \
 FLAG(  8A,  0, EDX, 20,  1, SVM_GUEST_SPEC_CTRL,                 NO,    0 ) \
 FIELD( 8A,  0, EDX, 21,  3, SVMEDX_RSVD4,                        NO,    0 ) \
 FLAG(  8A,  0, EDX, 24,  1, SVM_TLB_CTL,                         NO,    0 ) \
@@ -1325,6 +1348,7 @@ FLAG( 81F,  0, EAX,  2,  1, PAGE_FLUSH_MSR,                      NO,    0 ) \
 FLAG( 81F,  0, EAX,  3,  1, SEV_ES,                              YES,  17 ) \
 FLAG( 81F,  0, EAX,  4,  1, SEV_SNP,                             NO,    0 ) \
 FLAG( 81F,  0, EAX,  5,  1, VMPL,                                NO,    0 ) \
+FLAG( 81F,  0, EAX,  9,  1, TSC_AUX_VIRT,                        YES,  20 ) \
 FLAG( 81F,  0, EAX, 10,  1, SEV_HEC,                             NO,    0 ) \
 FLAG( 81F,  0, EAX, 11,  1, SEV_64BIT_REQ,                       NO,    0 ) \
 FLAG( 81F,  0, EAX, 12,  1, SEV_RESTR_INJECTION,                 NO,    0 ) \
@@ -1343,7 +1367,14 @@ FLAG( 820,  0, EBX,  1,  1, LEAF820_MBE,                         NO,    0 ) \
 FIELD(820,  1, EAX,  0, 32, CAPACITY_MASK_LEN,                   NO,    0 ) \
 FIELD(820,  1, EDX,  0, 32, NUM_SERVICE_CLASSES,                 NO,    0 )
 
-#define CPUID_FIELD_DATA_LEVEL_821
+#define CPUID_FIELD_DATA_LEVEL_821                                          \
+FLAG( 821,  0, EAX,  7,  1, UPPER_ADDRESS_IGNORE,                YES,  20 )
+
+#define CPUID_FIELD_DATA_LEVEL_822
+
+#define CPUID_FIELD_DATA_LEVEL_823
+
+#define CPUID_FIELD_DATA_LEVEL_826
 
 #define CPUID_FIELD_DATA                                              \
    CPUID_FIELD_DATA_LEVEL_0                                           \
@@ -1373,6 +1404,7 @@ FIELD(820,  1, EDX,  0, 32, NUM_SERVICE_CLASSES,                 NO,    0 )
    CPUID_FIELD_DATA_LEVEL_1E                                          \
    CPUID_FIELD_DATA_LEVEL_1F                                          \
    CPUID_FIELD_DATA_LEVEL_20                                          \
+   CPUID_FIELD_DATA_LEVEL_21                                          \
    CPUID_FIELD_DATA_LEVEL_400                                         \
    CPUID_FIELD_DATA_LEVEL_401                                         \
    CPUID_FIELD_DATA_LEVEL_402                                         \
@@ -1399,7 +1431,10 @@ FIELD(820,  1, EDX,  0, 32, NUM_SERVICE_CLASSES,                 NO,    0 )
    CPUID_FIELD_DATA_LEVEL_81E                                         \
    CPUID_FIELD_DATA_LEVEL_81F                                         \
    CPUID_FIELD_DATA_LEVEL_820                                         \
-   CPUID_FIELD_DATA_LEVEL_821
+   CPUID_FIELD_DATA_LEVEL_821                                         \
+   CPUID_FIELD_DATA_LEVEL_822                                         \
+   CPUID_FIELD_DATA_LEVEL_823                                         \
+   CPUID_FIELD_DATA_LEVEL_826
 
 /*
  * Define all field and flag values as an enum.  The result is a full
@@ -1638,9 +1673,12 @@ CPUIDCheck(int32 eaxIn, int32 eaxInCheck,
 #define CPUID_MODEL_ICELAKE_7E        0x7e  // Ice Lake U/Y
 #define CPUID_MODEL_ICELAKE_6A        0x6a  // Ice Lake SP (ICX)
 #define CPUID_MODEL_ICELAKE_6C        0x6c  // Ice Lake D
-#define CPUID_MODEL_TIGERLAKE_8C      0x8c  // Tiger Lake
+#define CPUID_MODEL_TIGERLAKE_8C      0x8c  // Tiger Lake UP3/UP4/H35
+#define CPUID_MODEL_TIGERLAKE_8D      0x8d  // Tiger Lake H81
 #define CPUID_MODEL_KNM_85            0x85  // Knights Mill
 #define CPUID_MODEL_KABYLAKE_8E       0x8e  // Kaby Lake U/Y QS
+#define CPUID_MODEL_ALDERLAKE_97      0x97  // Alder Lake-S
+#define CPUID_MODEL_ALDERLAKE_9A      0x9a  // Alder Lake-P
 #define CPUID_MODEL_KABYLAKE_9E       0x9e  // Kaby Lake S/H QS
 #define CPUID_MODEL_COMETLAKE_A5      0xa5  // Comet Lake S
 #define CPUID_MODEL_COMETLAKE_A6      0xa6  // Comet Lake U
@@ -1713,7 +1751,7 @@ CPUIDCheck(int32 eaxIn, int32 eaxInCheck,
  *----------------------------------------------------------------------
  */
 static INLINE Bool
-CPUID_IsRawVendor(CPUIDRegs *id0, const char* vendor)
+CPUID_IsRawVendor(const CPUIDRegs *id0, const char* vendor)
 {
    // hard to get strcmp() in some environments, so do it in the raw
    return (id0->ebx == *(const uint32 *)(uintptr_t) (vendor + 0) &&
@@ -1722,25 +1760,25 @@ CPUID_IsRawVendor(CPUIDRegs *id0, const char* vendor)
 }
 
 static INLINE Bool
-CPUID_IsVendorAMD(CPUIDRegs *id0)
+CPUID_IsVendorAMD(const CPUIDRegs *id0)
 {
    return CPUID_IsRawVendor(id0, CPUID_AMD_VENDOR_STRING);
 }
 
 static INLINE Bool
-CPUID_IsVendorIntel(CPUIDRegs *id0)
+CPUID_IsVendorIntel(const CPUIDRegs *id0)
 {
    return CPUID_IsRawVendor(id0, CPUID_INTEL_VENDOR_STRING);
 }
 
 static INLINE Bool
-CPUID_IsVendorVIA(CPUIDRegs *id0)
+CPUID_IsVendorVIA(const CPUIDRegs *id0)
 {
    return CPUID_IsRawVendor(id0, CPUID_VIA_VENDOR_STRING);
 }
 
 static INLINE Bool
-CPUID_IsVendorHygon(CPUIDRegs *id0)
+CPUID_IsVendorHygon(const CPUIDRegs *id0)
 {
    return CPUID_IsRawVendor(id0, CPUID_HYGON_VENDOR_STRING);
 }
@@ -1753,7 +1791,8 @@ CPUID_EFFECTIVE_FAMILY(uint32 v) /* %eax from CPUID with %eax=1. */
       CPUID_GET(1, EAX, EXTENDED_FAMILY, v);
 }
 
-/* Normally only used when FAMILY==CPUID_FAMILY_EXTENDED, but Intel is
+/*
+ * Normally only used when FAMILY==CPUID_FAMILY_EXTENDED, but Intel is
  * now using the extended model field for FAMILY==CPUID_FAMILY_P6 to
  * refer to the newer Core2 CPUs
  */
@@ -2014,7 +2053,8 @@ CPUID_MODEL_IS_TIGERLAKE(uint32 v) // IN: %eax from CPUID with %eax=1.
 {
    /* Assumes the CPU manufacturer is Intel. */
    return CPUID_FAMILY_IS_P6(v) &&
-          (CPUID_EFFECTIVE_MODEL(v) == CPUID_MODEL_TIGERLAKE_8C);
+          (CPUID_EFFECTIVE_MODEL(v) == CPUID_MODEL_TIGERLAKE_8C ||
+           CPUID_EFFECTIVE_MODEL(v) == CPUID_MODEL_TIGERLAKE_8D);
 }
 
 static INLINE Bool
@@ -2032,6 +2072,15 @@ CPUID_UARCH_IS_ICELAKE(uint32 v) // IN: %eax from CPUID with %eax=1.
    return CPUID_MODEL_IS_ICELAKE(v)  ||
           CPUID_MODEL_IS_TIGERLAKE(v) ||
           CPUID_MODEL_IS_ROCKETLAKE(v);
+}
+
+static INLINE Bool
+CPUID_MODEL_IS_ALDERLAKE(uint32 v) // IN: %eax from CPUID with %eax=1.
+{
+   /* Assumes the CPU manufacturer is Intel. */
+   return CPUID_FAMILY_IS_P6(v) &&
+          (CPUID_EFFECTIVE_MODEL(v) == CPUID_MODEL_ALDERLAKE_97 ||
+           CPUID_EFFECTIVE_MODEL(v) == CPUID_MODEL_ALDERLAKE_9A);
 }
 
 
@@ -2242,6 +2291,7 @@ CPUID_FAMILY_IS_ZEN3(uint32 eax)
    return CPUID_EFFECTIVE_FAMILY(eax) == CPUID_FAMILY_ZEN3;
 }
 
+
 /*
  * AMD Barcelona (of either Opteron or Phenom kind).
  */
@@ -2373,14 +2423,10 @@ CPUID_MODEL_IS_DHYANA_A(uint32 eax)
 static INLINE Bool
 CPUID_MODEL_IS_ZEN3(uint32 eax)
 {
-  return CPUID_EFFECTIVE_FAMILY(eax) == CPUID_FAMILY_ZEN3 &&
-         CPUID_EFFECTIVE_MODEL(eax) <= CPUID_MODEL_ZEN3_0F;
+   return CPUID_EFFECTIVE_FAMILY(eax) == CPUID_FAMILY_ZEN3 &&
+          CPUID_EFFECTIVE_MODEL(eax) <= CPUID_MODEL_ZEN3_0F;
 }
 
-
-#define CPUID_TYPE_PRIMARY     0
-#define CPUID_TYPE_OVERDRIVE   1
-#define CPUID_TYPE_SECONDARY   2
 
 #define CPUID_LEAF4_CACHE_TYPE_NULL      0
 #define CPUID_LEAF4_CACHE_TYPE_DATA      1
@@ -2388,9 +2434,6 @@ CPUID_MODEL_IS_ZEN3(uint32 eax)
 #define CPUID_LEAF4_CACHE_TYPE_UNIF      3
 #define CPUID_LEAF4_CACHE_INDEXING_DIRECT  0
 #define CPUID_LEAF4_CACHE_INDEXING_COMPLEX 1
-
-#define CPUID_LEAF4_CACHE_SELF_INIT      0x00000100
-#define CPUID_LEAF4_CACHE_FULLY_ASSOC    0x00000200
 
 #define CPUID_TOPOLOGY_LEVEL_TYPE_INVALID   0
 #define CPUID_TOPOLOGY_LEVEL_TYPE_SMT       1
@@ -2406,20 +2449,11 @@ CPUID_MODEL_IS_ZEN3(uint32 eax)
 #define CPUID_AMD_LEAF81D_CACHE_TYPE_INST   2
 #define CPUID_AMD_LEAF81D_CACHE_TYPE_UNIF   3
 
-/*
- * For certain AMD processors, an lfence instruction is necessary at various
- * places to ensure ordering.
- */
-
-static INLINE Bool
-CPUID_RequiresFence(CpuidVendor vendor, // IN
-                    uint32 version)     // IN: %eax from CPUID with %eax=1.
-{
-   return vendor == CPUID_VENDOR_AMD &&
-          CPUID_EFFECTIVE_FAMILY(version) == CPUID_FAMILY_K8 &&
-          CPUID_EFFECTIVE_MODEL(version) < 0x40;
-}
-
+#define CPUID_AMD_TOPOLOGY_LEVEL_TYPE_INVALID   0
+#define CPUID_AMD_TOPOLOGY_LEVEL_TYPE_CORE      1
+#define CPUID_AMD_TOPOLOGY_LEVEL_TYPE_COMPLEX   2
+#define CPUID_AMD_TOPOLOGY_LEVEL_TYPE_CCD       3
+#define CPUID_AMD_TOPOLOGY_LEVEL_TYPE_SOCKET    4
 
 /*
  * Hypervisor CPUID space is 0x400000XX.
@@ -2449,7 +2483,7 @@ CPUID_LevelUsesEcx(uint32 level) {
       case v:                         \
          return c != 0;
 
-      CPUID_ALL_LEVELS
+      CPUID_KNOWN_LEVELS
 
 #undef CPUIDLEVEL
 

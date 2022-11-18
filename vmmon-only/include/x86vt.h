@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2004-2021 VMware, Inc. All rights reserved.
+ * Copyright (C) 2004-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -34,11 +34,6 @@
 #include "vm_basic_defs.h"
 #include "vm_assert.h"
 #include "x86msr.h"
-#if defined(USERLEVEL) || defined(MONITOR_APP)
-#include "vm_basic_asm.h"
-#else
-#include "vm_asm.h"
-#endif
 #ifdef VM_X86_ANY
 #include "x86cpuid_asm.h"  // for CPUID_ISSET in VT_CapableCPU
 #endif
@@ -86,8 +81,8 @@
    (CONST64U(1) << MSR_VMX_BASIC_ADVANCED_IOINFO_SHIFT)
 #define MSR_VMX_BASIC_TRUE_CTLS                 \
    (CONST64U(1) << MSR_VMX_BASIC_TRUE_CTLS_SHIFT)
-#define MSR_VMX_BASIC_VMENTRY_NO_ERR_CODE       \
-   (CONST64U(1) << MSR_VMX_BASIC_VMENTRY_NO_ERR_CODE_SHIFT)
+#define MSR_VMX_BASIC_VMENTRY_IGNS_ERR_CODE     \
+   (CONST64U(1) << MSR_VMX_BASIC_VMENTRY_IGNS_ERR_CODE_SHIFT)
 
 #define MSR_VMX_MISC_VMEXIT_SAVES_LMA           \
    (CONST64U(1) << MSR_VMX_MISC_VMEXIT_SAVES_LMA_SHIFT)
@@ -141,6 +136,8 @@
    (CONST64U(1) << MSR_VMX_EPT_VPID_INVVPID_VPID_CTX_LOCAL_SHIFT)
 #define MSR_VMX_EPT_VPID_ADV_EXIT_INFO          \
    (CONST64U(1) << MSR_VMX_EPT_VPID_ADV_EXIT_INFO_SHIFT)
+#define MSR_VMX_EPT_VPID_SUP_SHADOW_STK         \
+   (CONST64U(1) << MSR_VMX_EPT_VPID_SUP_SHADOW_STK_SHIFT)
 
 #define VT_VMCS_STANDARD_TAG           0x00000000
 #define VT_VMCS_SHADOW_TAG             0x80000000
@@ -151,6 +148,7 @@
 #define VT_ENCODING_ACCESS_HIGH        0x00000001
 #define VT_ENCODING_INDEX_MASK         0x000003fe
 #define VT_ENCODING_INDEX_SHIFT                 1
+#define VT_ENCODING_NUM_INDEXES               512
 #define VT_ENCODING_TYPE_MASK          0x00000c00
 #define VT_ENCODING_TYPE_SHIFT                 10
 #define VT_ENCODING_TYPE_CTL                    0
@@ -167,11 +165,29 @@
 #define VT_ENCODING_NUM_SIZES                   4
 #define VT_ENCODING_RSVD               0xffff9000
 
+/* 512 indices * 4 types * 4 sizes = 8192 fields. */
+#define VT_ENCODING_NUM_FIELDS   (VT_ENCODING_NUM_INDEXES * \
+                                  VT_ENCODING_NUM_TYPES *   \
+                                  VT_ENCODING_NUM_SIZES)
 /*
  * The highest index of any currently defined field is 27, for
  * ENCLV_EXITING_BITMAP.
  */
 #define VT_ENCODING_MAX_INDEX                  27
+
+/* VMCS ID's for various CPU models. */
+#define  VT_VMCS_ID_VMWARE       1
+#define  VT_VMCS_ID_AVOTON       2
+#define  VT_VMCS_ID_NOCONA       3
+#define  VT_VMCS_ID_SKYLAKE      4
+#define  VT_VMCS_ID_MEROM        7
+#define  VT_VMCS_ID_CLOVERTOWN   11
+#define  VT_VMCS_ID_PENRYN       13
+#define  VT_VMCS_ID_NEHALEM      14
+#define  VT_VMCS_ID_WESTMERE     15
+#define  VT_VMCS_ID_SANDYBRIDGE  16
+#define  VT_VMCS_ID_HASWELL      18
+#define  VT_VMCS_ID_TREMONT      19
 
 enum {
 #define VMCS_FIELD(_name, _val, ...) VT_VMCS_##_name = _val,
@@ -212,14 +228,14 @@ enum {
    VMXCAP(_BASIC, _field, _pos, _len)
 #define VMX_BASIC_CAP_NDA
 #define VMX_BASIC_CAP_PUB                                \
-   VMX_BASIC(VMCS_ID,               0, 32)               \
-   VMX_BASIC(VMCS_SIZE,            32, 13)               \
-   VMX_BASIC(32BITPA,              48,  1)               \
-   VMX_BASIC(DUALVMM,              49,  1)               \
-   VMX_BASIC(MEMTYPE,              50,  4)               \
-   VMX_BASIC(ADVANCED_IOINFO,      54,  1)               \
-   VMX_BASIC(TRUE_CTLS,            55,  1)               \
-   VMX_BASIC(VMENTRY_NO_ERR_CODE,  56,  1)
+   VMX_BASIC(VMCS_ID,                0, 32)              \
+   VMX_BASIC(VMCS_SIZE,             32, 13)              \
+   VMX_BASIC(32BITPA,               48,  1)              \
+   VMX_BASIC(DUALVMM,               49,  1)              \
+   VMX_BASIC(MEMTYPE,               50,  4)              \
+   VMX_BASIC(ADVANCED_IOINFO,       54,  1)              \
+   VMX_BASIC(TRUE_CTLS,             55,  1)              \
+   VMX_BASIC(VMENTRY_IGNS_ERR_CODE, 56,  1)
 
 #define VMX_BASIC_CAP                                    \
         VMX_BASIC_CAP_NDA                                \
@@ -541,10 +557,11 @@ enum {
 #define VT_VMCS_PENDDBG_B1         0x00000002
 #define VT_VMCS_PENDDBG_B2         0x00000004
 #define VT_VMCS_PENDDBG_B3         0x00000008
+#define VT_VMCS_PENDDBG_BUS_LOCK   0x00000800
 #define VT_VMCS_PENDDBG_BE         0x00001000
 #define VT_VMCS_PENDDBG_BS         0x00004000
 #define VT_VMCS_PENDDBG_RTM        0x00010000
-#define VT_VMCS_PENDDBG_MBZ        0xfffeaff0
+#define VT_VMCS_PENDDBG_MBZ        0xfffea7f0
 
 /* Exception error must-be-zero bits for VMEntry */
 #define VT_XCP_ERR_MBZ             0xffff0000
@@ -665,6 +682,8 @@ enum {
 #define VT_EPT_QUAL_GUEST_RW           (1 << 10)
 #define VT_EPT_QUAL_GUEST_NX           (1 << 11)
 #define VT_EPT_QUAL_NMIUNMASK          (1 << 12)
+#define VT_EPT_QUAL_ACCESS_SS          (1 << 13)
+#define VT_EPT_QUAL_SSS_LEAF           (1 << 14)
 #define VT_EPT_QUAL_SYNTH_PML_FULL     (1 << 31)
 
 
@@ -731,6 +750,7 @@ enum {
     VT_VMCS_CPU_VMEXEC_CTL_STCR8                     | \
     VT_VMCS_CPU_VMEXEC_CTL_TPR_SHADOW                | \
     VT_VMCS_CPU_VMEXEC_CTL_VNMI_WINDOW               | \
+    VT_VMCS_CPU_VMEXEC_CTL_MSRBITMAP                 | \
     VT_VMCS_CPU_VMEXEC_CTL_MONITOR)
 
 #define VT_DEFAULT_PROCBASED_CTLS                      \
@@ -741,7 +761,6 @@ enum {
      ~VT_VMCS_CPU_VMEXEC_CTL_STCR8                   & \
      ~VT_VMCS_CPU_VMEXEC_CTL_LDCR3                   & \
      ~VT_VMCS_CPU_VMEXEC_CTL_STCR3)                  | \
-    VT_VMCS_CPU_VMEXEC_CTL_MSRBITMAP                 | \
     VT_VMCS_CPU_VMEXEC_CTL_USE_2ND)
 
 #define VT_DEFAULT_PROCBASED_CTLS2                     \
@@ -756,19 +775,23 @@ enum {
 
 #define VT_REQUIRED_EXIT_CTLS                          \
    (VT_EXIT_CTLS_DEFAULT1                            | \
+    VT_VMCS_VMEXIT_CTL_LOAD_EFER                     | \
     VT_VMCS_VMEXIT_CTL_LONGMODE                      | \
     VT_VMCS_VMEXIT_CTL_INTRACK)
 
 #define VT_DEFAULT_EXIT_CTLS                           \
    (VT_REQUIRED_EXIT_CTLS                            & \
+    ~VT_VMCS_VMEXIT_CTL_LOAD_EFER                    & \
     ~VT_VMCS_VMEXIT_CTL_SAVE_DEBUGCTL)
 
 #define VT_REQUIRED_ENTRY_CTLS                         \
    (VT_ENTRY_CTLS_DEFAULT1                           | \
+    VT_VMCS_VMENTRY_CTL_LOAD_EFER                    | \
     VT_VMCS_VMENTRY_CTL_LONGMODE)
 
 #define VT_DEFAULT_ENTRY_CTLS                          \
    (VT_REQUIRED_ENTRY_CTLS                           & \
+    ~VT_VMCS_VMENTRY_CTL_LOAD_EFER                   & \
     ~VT_VMCS_VMENTRY_CTL_LOAD_DEBUGCTL)
 
 #define VT_REQUIRED_VPID_SUPPORT                       \
@@ -781,7 +804,12 @@ enum {
    (MSR_VMX_EPT_VPID_GAW_48                          | \
     MSR_VMX_EPT_VPID_ETMT_WB                         | \
     MSR_VMX_EPT_VPID_SP_2MB                          | \
-    MSR_VMX_EPT_VPID_INVEPT)
+    MSR_VMX_EPT_VPID_INVEPT                          | \
+    MSR_VMX_EPT_VPID_INVEPT_EPT_CTX)
+
+#define VT_REQUIRED_EPT_VPID_SUPPORT                   \
+   (VT_REQUIRED_VPID_SUPPORT                         | \
+    VT_REQUIRED_EPT_SUPPORT)
 
 #define VT_TSQUAL_CALL  0
 #define VT_TSQUAL_IRET  1
@@ -1031,7 +1059,8 @@ VT_LockedFromFeatures(uint64 featCtl)
  */
 static INLINE Bool
 VT_SupportedFromFeatures(uint64 pinBasedCtl, uint64 procBasedCtl,
-                         uint64 entryCtl, uint64 exitCtl, uint64 basicCtl)
+                         uint64 entryCtl, uint64 exitCtl, uint64 basicCtl,
+                         uint64 eptVpidFeat)
 {
    unsigned memType;
 
@@ -1053,7 +1082,15 @@ VT_SupportedFromFeatures(uint64 pinBasedCtl, uint64 procBasedCtl,
       return FALSE;
    }
 
-   return TRUE;
+   if ((eptVpidFeat & VT_REQUIRED_EPT_VPID_SUPPORT) !=
+       VT_REQUIRED_EPT_VPID_SUPPORT) {
+      return FALSE;
+   }
+
+   /* Check that intercepts for MOV to/from CR3 and INVLPG can be cleared. */
+   return ((procBasedCtl & (VT_VMCS_CPU_VMEXEC_CTL_INVLPG |
+                            VT_VMCS_CPU_VMEXEC_CTL_LDCR3  |
+                            VT_VMCS_CPU_VMEXEC_CTL_STCR3)) == 0);
 }
 
 
@@ -1113,8 +1150,10 @@ VT_ConvEPTViolSupportedFromFeatures(uint64 secondary)
    return (HIDWORD(secondary) & VT_VMCS_2ND_VMEXEC_CTL_EPT_VIOL_VE) != 0;
 }
 
-
-#if !defined(USERLEVEL) && !defined(MONITOR_APP) /* { */
+#if !defined(VM_ARM_64) /* PR 2822467 */ &&                     \
+    (defined(DECODER) || defined(FROBOS) || defined(ULM) ||     \
+     defined(VMKBOOT) || defined(VMKERNEL) || defined(VMM) ||   \
+     defined(VMMON)) /* { */
 /*
  *----------------------------------------------------------------------
  *
@@ -1156,7 +1195,8 @@ VT_SupportedCPU(void)
                                    X86MSR_GetMSR(MSR_VMX_TRUE_PROCBASED_CTLS),
                                    X86MSR_GetMSR(MSR_VMX_TRUE_ENTRY_CTLS),
                                    X86MSR_GetMSR(MSR_VMX_TRUE_EXIT_CTLS),
-                                   X86MSR_GetMSR(MSR_VMX_BASIC));
+                                   X86MSR_GetMSR(MSR_VMX_BASIC),
+                                   X86MSR_GetMSR(MSR_VMX_EPT_VPID));
 }
 
 #endif /* } !defined(USERLEVEL) */

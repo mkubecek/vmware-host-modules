@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2013,2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014,2016,2019,2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -253,7 +253,11 @@ VNetNetIf_Create(char *devName,  // IN:
 
    memset(&netIf->stats, 0, sizeof netIf->stats);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
    memcpy(dev->dev_addr, netIf->port.paddr, sizeof netIf->port.paddr);
+#else
+   eth_hw_addr_set(dev, netIf->port.paddr);
+#endif
 
    if (register_netdev(dev) != 0) {
       LOG(0, (KERN_NOTICE "%s: could not register network device\n",
@@ -345,7 +349,11 @@ VNetNetIfReceive(VNetJack        *this, // IN: jack
    /* send to the host interface */
    skb->dev = netIf->dev;
    skb->protocol = eth_type_trans(skb, netIf->dev);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0)
    netif_rx_ni(skb);
+#else
+   netif_rx(skb);
+#endif
    netIf->stats.rx_packets++;
 
    return;
@@ -532,7 +540,11 @@ VNetNetifSetMAC(struct net_device *dev, // IN:
       return -EINVAL;
    }
    memcpy(netIf->port.paddr, addr->sa_data, dev->addr_len);
-   memcpy(dev->dev_addr, addr->sa_data, dev->addr_len);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
+   memcpy(dev->dev_addr, netIf->port.paddr, dev->addr_len);
+#else
+   eth_hw_addr_set(dev, netIf->port.paddr);
+#endif
    return 0;
 }
 

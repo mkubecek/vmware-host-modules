@@ -68,6 +68,7 @@
 #include "apic.h"
 #include "memDefaults.h"
 #include "vcpuid.h"
+#include "vm_asm_x86.h"
 #include "x86svm.h"
 #include "crosspage.h"
 #include "cpu_defs.h"
@@ -1260,31 +1261,6 @@ HostIFGetUserPages(void *uvAddr,          // IN
 
 
 /*
- *----------------------------------------------------------------------
- *
- * HostIF_IsLockedByMPN --
- *
- *      Checks if mpn was locked using allowMultipleMPNsPerVA.
- *
- * Results:
- *      TRUE if mpn is present in the physTracker.
- *
- *
- * Side effects:
- *     None.
- *
- *----------------------------------------------------------------------
- */
-
-Bool
-HostIF_IsLockedByMPN(VMDriver *vm,  // IN:
-                     MPN mpn)       // IN:
-{
-  return PhysTrack_Test(vm->vmhost->lockedPages, mpn);
-}
-
-
-/*
  *-----------------------------------------------------------------------------
  *
  * HostIF_LockPage --
@@ -2356,7 +2332,11 @@ isVAReadable(VA r)  // IN:
    int ret;
 
    r = APICR_TO_ADDR(r, APICR_VERSION);
-#ifdef HAVE_GET_KERNEL_NOFAULT
+#if defined(HAVE_GET_KERNEL_NOFAULT) || LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
+   /*
+    * Exists from 5.10, first indicated by HAVE_GET_KERNEL_NOFAULT,
+    * and from post-5.17 just existing everywhere.
+    */
    ret = get_kernel_nofault(dummy, (void *)r);
 #else
    {
