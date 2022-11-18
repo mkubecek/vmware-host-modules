@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -256,7 +256,7 @@ LinuxDriverInitTSCkHz(void)
 /*
  *----------------------------------------------------------------------
  *
- * init_module --
+ * LinuxDriverInit --
  *
  *      linux module entry point. Called by /sbin/insmod command
  *
@@ -268,7 +268,7 @@ LinuxDriverInitTSCkHz(void)
  */
 
 int
-init_module(void)
+LinuxDriverInit(void)
 {
    int retval;
 
@@ -328,16 +328,15 @@ init_module(void)
 /*
  *----------------------------------------------------------------------
  *
- * cleanup_module --
+ * LinuxDriverExit --
  *
  *      Called by /sbin/rmmod
- *
  *
  *----------------------------------------------------------------------
  */
 
 void
-cleanup_module(void)
+LinuxDriverExit(void)
 {
    /*
     * XXX smp race?
@@ -725,7 +724,6 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
    case IOCTL_VMX86_SET_UID:
    case IOCTL_VMX86_GET_NUM_VMS:
    case IOCTL_VMX86_SET_HARD_LIMIT:
-   case IOCTL_VMX86_GET_IPI_VECTORS:
    case IOCTL_VMX86_GET_KHZ_ESTIMATE:
    case IOCTL_VMX86_GET_ALL_CPUID:
    case IOCTL_VMX86_GET_ALL_MSRS:
@@ -735,6 +733,7 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
    case IOCTL_VMX86_GET_PSEUDO_TSC:
    case IOCTL_VMX86_SYNC_GET_TSCS:
    case IOCTL_VMX86_GET_UNAVAIL_PERF_CTRS:
+   case IOCTL_VMX86_KERNEL_CET_ENABLED:
       break;
 
    default:
@@ -764,16 +763,15 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       if (retval != 0) {
          break;
       }
-      vm = Vmx86_CreateVM(args.bsBlob, args.bsBlobSize, args.numVCPUs);
-
-      if (vm == NULL) {
-         retval = -ENOMEM;
-      } else {
+      vm = Vmx86_CreateVM(args.bsBlob, args.bsBlobSize, args.numVCPUs,
+                          &args.status);
+      if (vm != NULL) {
          device->vm = vm;
+         ASSERT(vm->userID <= MAX_UINT16);
          args.vmid = vm->userID;
          vm->vmhost->vmmonData = (void *__user)args.vmmonData;
-         retval = HostIF_CopyToUser((VA64)ioarg, &args, sizeof args);
       }
+      retval = HostIF_CopyToUser((VA64)ioarg, &args, sizeof args);
       break;
    }
 
@@ -913,22 +911,6 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       break;
    }
 
-   case IOCTL_VMX86_GET_VMM_PAGE_ROOT: {
-      VcpuPageRoot args;
-
-      retval = HostIF_CopyFromUser(&args, ioarg, sizeof args);
-      if (retval) {
-         break;
-      }
-      if (args.vcpuid >= vm->numVCPUs || vm->ptRootMpns == NULL) {
-         retval = -EINVAL;
-      } else {
-         args.pageRoot = vm->ptRootMpns[args.vcpuid];
-         retval = HostIF_CopyToUser(ioarg, &args, sizeof args);
-      }
-      break;
-   }
-
    case IOCTL_VMX86_GET_NUM_VMS:
       retval = Vmx86_GetNumVMs();
       break;
@@ -1052,16 +1034,6 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
          HostIF_IPI(vm, &ipiTargets);
       }
 
-      break;
-   }
-
-   case IOCTL_VMX86_GET_IPI_VECTORS: {
-      IPIVectors ipiVectors;
-
-      ipiVectors.monitorIPIVector = HostIF_GetMonitorIPIVector();
-      ipiVectors.hvIPIVector      = HostIF_GetHVIPIVector();
-
-      retval = HostIF_CopyToUser(ioarg, &ipiVectors, sizeof ipiVectors);
       break;
    }
 
@@ -1315,6 +1287,13 @@ LinuxDriver_Ioctl(struct file *filp,    // IN:
       break;
    }
 
+   case IOCTL_VMX86_KERNEL_CET_ENABLED: {
+      Bool kernelCETEnabled = Vmx86_KernelCETEnabled();
+      retval = HostIF_CopyToUser(ioarg, &kernelCETEnabled,
+                                 sizeof kernelCETEnabled);
+      break;
+   }
+
    default:
       Warning("Unknown ioctl %d\n", iocmd);
       retval = -EINVAL;
@@ -1450,3 +1429,5 @@ MODULE_LICENSE("GPL v2");
  * by default (i.e., neither mkinitrd nor modprobe will accept it).
  */
 MODULE_INFO(supported, "external");
+module_init(LinuxDriverInit);
+module_exit(LinuxDriverExit);

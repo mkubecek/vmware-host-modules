@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014,2016,2018-2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014,2016,2018-2020,2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -136,6 +136,13 @@ LMPTEIsSafe(VM_PAE_PTE pte, PT_Level level, uint64 physMask)
 #define VA64_CANONICAL_MASK        ~((CONST64U(1) << (VA64_IMPL_BITS - 1)) - 1)
 #define VA64_CANONICAL_HOLE_START   (CONST64U(1) << (VA64_IMPL_BITS - 1))
 #define VA64_CANONICAL_HOLE_LEN  VA64_CANONICAL_MASK - VA64_CANONICAL_HOLE_START
+
+/*
+ * x86-64 architecture allows 57 bits of virtual address space if 5-level
+ * paging is enabled.
+ */
+#define VA64_L5_IMPL_BITS          57
+#define VA64_L5_IMPL_MASK          ((CONST64U(1) << VA64_L5_IMPL_BITS) - 1)
 
 static INLINE Bool
 x86IsCanonicalC(VA64 va)

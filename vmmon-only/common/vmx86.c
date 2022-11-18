@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2021 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -33,10 +33,6 @@
 #   include <string.h>
 #endif
 
-#ifdef __APPLE__
-#include <IOKit/IOLib.h>
-#endif
-
 #include "vm_assert.h"
 #include "vm_basic_math.h"
 #include "vmx86.h"
@@ -64,6 +60,7 @@
 #include "statVarsVmmon.h"
 #include "intelVT.h"
 #include "cpu_defs.h"
+#include "x86cet.h"
 
 PseudoTSC pseudoTSC;
 
@@ -1071,6 +1068,33 @@ Vmx86_CacheNXState(void)
 
 
 /*
+ *----------------------------------------------------------------------
+ *
+ * Vmx865LvlPagingEnabled --
+ *
+ *       Checks if 5-level paging enabled on the current CPU.  It is assumed
+ *       that the host OS will not support a mix of 4 and 5-level paging.
+ *
+ * Results:
+ *       None.
+ *
+ * Side effects:
+ *       None.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static Bool
+Vmx865LvlPagingEnabled(void)
+{
+   uintptr_t cr4;
+
+   GET_CR4(cr4);
+   return (cr4 & CR4_LA57) != 0;
+}
+
+
+/*
  *-----------------------------------------------------------------------------
  *
  * Vmx86_CreateVM --
@@ -1079,6 +1103,7 @@ Vmx86_CacheNXState(void)
  *
  * Results:
  *      VMDriver structure or NULL on error.
+ *      'status' is populated with the status of the operation.
  *
  * Side effects:
  *      May allocate kernel memory.
@@ -1087,7 +1112,10 @@ Vmx86_CacheNXState(void)
  */
 
 VMDriver *
-Vmx86_CreateVM(VA64 bsBlob, uint32 bsBlobSize, uint32 numVCPUs)
+Vmx86_CreateVM(VA64 bsBlob,            // IN:
+               uint32 bsBlobSize,      // IN:
+               uint32 numVCPUs,        // IN:
+               VMCreateStatus *status) // OUT:
 {
    VMDriver *vm;
    Vcpuid v;
@@ -1095,18 +1123,26 @@ Vmx86_CreateVM(VA64 bsBlob, uint32 bsBlobSize, uint32 numVCPUs)
    BSVMM_HostParams *bsParams;
 
    /* Disallow VM creation if the vmx passes us an invalid number of vcpus. */
-   if (numVCPUs == 0 || numVCPUs > MAX_VCPUS) {
+   if (numVCPUs == 0) {
+      *status = VM_CREATE_ERR_NO_VCPUS;
+      return NULL;
+   }
+
+   if (numVCPUs > MAX_VCPUS) {
+      *status = VM_CREATE_ERR_TOO_MANY_VCPUS;
       return NULL;
    }
 
    /* Disallow VM creation if NX is disabled on the host as VMM requires NX. */
    if (!hostUsesNX) {
+      *status = VM_CREATE_ERR_NO_NX;
       Log("NX/XD must be enabled.  Cannot create VM.\n");
       return NULL;
    }
 
    vm = Vmx86AllocVMDriver(numVCPUs);
    if (vm == NULL) {
+      *status = VM_CREATE_ERR_NO_MEM;
       return NULL;
    }
 
@@ -1119,43 +1155,61 @@ Vmx86_CreateVM(VA64 bsBlob, uint32 bsBlobSize, uint32 numVCPUs)
       vm->ptRootMpns[v] = INVALID_MPN;
    }
    if (!HostIF_Init(vm, numVCPUs)) {
+      *status = VM_CREATE_ERR_NO_MEM;
       goto cleanup;
    }
 
-   /* The ULM does not use the cross GDT. */
+   /* If the BS blob exists then the VMM is in use. */
    if (bsBlobSize != 0) {
+
+      /* Disallow VM creation if 5 level paging is enabled with the VMM. */
+      if (Vmx865LvlPagingEnabled()) {
+         Log("5 level paging must not be enabled.  Cannot create VM.\n");
+         *status = VM_CREATE_ERR_5LP;
+         goto cleanup;
+      }
+
+      /* The ULM does not use the cross GDT. */
       bsBuf = HostIF_AllocKernelMem(bsBlobSize, FALSE);
       if (bsBuf == NULL) {
+         *status = VM_CREATE_ERR_NO_MEM;
          goto cleanup;
       }
       if (HostIF_CopyFromUser(bsBuf, bsBlob, bsBlobSize) != 0) {
+         *status = VM_CREATE_ERR_NO_BLOB;
          goto cleanup;
       }
       bsParams = BSVMM_Validate(bsBuf, bsBlobSize);
       if (bsParams == NULL) {
+         *status = VM_CREATE_ERR_INV_BLOB;
          Warning("Could not validate the VMM bootstrap blob");
          goto cleanup;
       }
 
       if (!Task_CreateCrossGDT(&bsParams->gdtInit)) {
+         *status = VM_CREATE_ERR_CROSS_GDT;
          goto cleanup;
       }
    }
 
    vm->ptpTracker = MemTrack_Init(vm);
    if (vm->ptpTracker == NULL) {
+      *status = VM_CREATE_ERR_NO_MEM;
       goto cleanup;
    }
    vm->vmmTracker = MemTrack_Init(vm);
    if (vm->vmmTracker == NULL) {
+      *status = VM_CREATE_ERR_NO_MEM;
       goto cleanup;
    }
    vm->sharedArea = SharedAreaVmmon_Init(vm);
    if (vm->sharedArea == NULL) {
+      *status = VM_CREATE_ERR_NO_MEM;
       goto cleanup;
    }
    vm->statVars = StatVarsVmmon_Init(vm);
    if (vm->statVars == NULL) {
+      *status = VM_CREATE_ERR_NO_MEM;
       goto cleanup;
    }
 
@@ -1163,11 +1217,13 @@ Vmx86_CreateVM(VA64 bsBlob, uint32 bsBlobSize, uint32 numVCPUs)
 
 #ifdef _WIN32
    if (vmCount >= MAX_VMS_WIN32) {
+      *status = VM_CREATE_ERR_TOO_MANY_VMS;
       HostIF_GlobalUnlock(0);
       goto cleanup;
    }
 #endif
    if (vmCount >= MAX_VMS) {
+      *status = VM_CREATE_ERR_TOO_MANY_VMS;
       HostIF_GlobalUnlock(0);
       goto cleanup;
    }
@@ -1179,9 +1235,12 @@ Vmx86_CreateVM(VA64 bsBlob, uint32 bsBlobSize, uint32 numVCPUs)
    if (bsBuf != NULL) {
       HostIF_FreeKernelMem(bsBuf);
    }
+   *status = VM_CREATE_SUCCESS;
    return vm;
 
 cleanup:
+   ASSERT(*status != VM_CREATE_SUCCESS);
+
    if (bsBuf != NULL) {
       HostIF_FreeKernelMem(bsBuf);
    }
@@ -1532,53 +1591,6 @@ Vmx86_ComputekHz(uint64 cycles, uint64 uptime)
 }
 
 
-#ifdef __APPLE__
-/*
- *----------------------------------------------------------------------
- *
- * Vmx86GetBusyKHzEstimate
- *
- *      Return an estimate the of the processor's kHz rating, based on
- *      a spinloop.  This is especially useful on systems where the TSC
- *      is known to run at its maximum rate when we are using the CPU.
- *      As of 2006, Intel Macs are this way... the TSC rate is 0 if the
- *      CPU is in a deep enough sleep state, or at its max rate otherwise.
- *
- * Results:
- *      Processor speed in kHz.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-static INLINE_SINGLE_CALLER uint32
-Vmx86GetBusyKHzEstimate(void)
-{
-   static const int ITERS = 100;
-   static const int CYCLES_PER_ITER = 20000;
-   int i;
-   uint64 j;
-   uint64 aggregateCycles = 0;
-   uint64 aggregateUptime = 0;
-
-   for (i = 0; i < ITERS; i++) {
-      NO_INTERRUPTS_BEGIN() {
-         aggregateCycles -= RDTSC();
-         aggregateUptime -= HostIF_ReadUptime();
-         for (j = RDTSC() + CYCLES_PER_ITER; RDTSC() < j; )
-            ;
-         aggregateCycles += RDTSC();
-         aggregateUptime += HostIF_ReadUptime();
-      } NO_INTERRUPTS_END();
-   }
-
-   return Vmx86_ComputekHz(aggregateCycles, aggregateUptime);
-}
-#else // ifdef __APPLE__
-
-
 /*
  *----------------------------------------------------------------------
  *
@@ -1606,7 +1618,6 @@ Vmx86GetkHzEstimate(VmTimeStart *st)   // IN: start time
 
    return Vmx86_ComputekHz(cDiff, tDiff);
 }
-#endif // ifdef __APPLE__
 
 
 /*
@@ -1643,11 +1654,7 @@ Vmx86_GetkHzEstimate(VmTimeStart *st)   // IN: start time
       return kHz;
    }
 
-#ifdef __APPLE__
-   return kHz = Vmx86GetBusyKHzEstimate();
-#else
    return kHz = Vmx86GetkHzEstimate(st);
-#endif
 }
 
 
@@ -3160,14 +3167,6 @@ Vmx86_YieldToSet(VMDriver *vm,       // IN:
       return;
    }
 
-#ifdef __APPLE__
-   if (skew) {
-      /* Mac scheduler yield does fine in the skew case */
-      (void)thread_block(THREAD_CONTINUE_NULL);
-      return;
-   }
-#endif
-
    /* Crosscalls should spin a few times before blocking */
    if (!skew && usecs < CROSSCALL_SPIN_SHORT_US) {
       HostIF_WakeUpYielders(vm, currVcpu);
@@ -3589,14 +3588,6 @@ Bool
 Vmx86_CreateHVIOBitmap(void)
 {
    if (!CPUID_HostSupportsSVM()) {
-      return TRUE;
-   }
-   if (vmx86_apple) {
-      /*
-       * This function is not called on MacOS.  No supported MacOS system is
-       * available for AMD so that platform has no need to create the SVM I/O
-       * bitmap.
-       */
       return TRUE;
    }
    hvIOBitmap = HostIF_AllocContigPages(NULL, SVM_VMCB_IO_BITMAP_PAGES);
@@ -4034,3 +4025,40 @@ Vmx86_CheckMSRUniformity(void)
    return TRUE;
 }
 
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * Vmx86_KernelCETEnabled --
+ *
+ *      Check if kernel mode shadow stacks are enabled by examining
+ *      the current shadow stack pointer.
+ *
+ * Results:
+ *      TRUE if any CPU has kernel mode shadow stacks enabled.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static void
+Vmx86KernelCETEnabledOnCPU(void *data)
+{
+   uint64 ssp = GET_SSP();
+
+   if (ssp != INVALID_SSP) {
+      Atomic_Bool *kernelCETEnabled = (Atomic_Bool *)data;
+
+      Atomic_WriteBool(kernelCETEnabled, TRUE);
+   }
+}
+
+
+Bool
+Vmx86_KernelCETEnabled(void)
+{
+   Atomic_Bool kernelCETEnabled;
+
+   Atomic_WriteBool(&kernelCETEnabled, FALSE);
+   HostIF_CallOnEachCPU(Vmx86KernelCETEnabledOnCPU, &kernelCETEnabled);
+   return Atomic_ReadBool(&kernelCETEnabled);
+}

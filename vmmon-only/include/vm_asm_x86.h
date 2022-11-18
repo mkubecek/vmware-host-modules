@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014,2016-2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014,2016-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -63,13 +63,22 @@
  *                                                 : sizeof(expr) <= 2)
  * The __builtin_choose_expr is due to GCC bug 79482:
  * https://gcc.gnu.org/bugzilla/show_bug.cgi?id=79482
+ * but only works on gcc >= 6. The gcc test is for >= 9 because it was only
+ * tested on gcc >= 9.
  */
 #ifndef USE_UBSAN
+#if __GNUC__ >= 9
 #define ASSERT_ON_COMPILE_SELECTOR_SIZE(expr)                                \
    ASSERT_ON_COMPILE(sizeof(Selector) == 2 &&                                \
                      __builtin_choose_expr(__builtin_constant_p(expr),       \
                                            ((expr) >> 16) == 0,              \
                                            sizeof(expr) <= 2))
+#else /* __GNUC__ < 9 */
+#define ASSERT_ON_COMPILE_SELECTOR_SIZE(expr)                                \
+   ASSERT_ON_COMPILE(sizeof(Selector) == 2 &&                                \
+                     ((__builtin_constant_p(expr) && ((expr) >> 16) == 0) || \
+                      sizeof(expr) <= 2))
+#endif /* __GNUC__ >= 9 */
 #else
 #define ASSERT_ON_COMPILE_SELECTOR_SIZE(expr)
 #endif
@@ -365,6 +374,22 @@ CLTS(void)
 #define CLEAR_INTERRUPTS()  __asm__ __volatile__ ("cli": : :"memory")
 #define RAISE_INTERRUPT(_x)  __asm__ __volatile__("int %0" :: "g" (_x))
 #define RETURN_FROM_INT()   __asm__ __volatile__("iret" :: )
+
+#ifdef VM_X86_64
+static INLINE uint64
+GET_SSP(void)
+{
+   uint64 ssp = 0x3; /* INVALID_SSP */
+   /*
+    * rdsspq %rax
+    * On systems without CET support, or when shadow stacks are
+    * disabled at the current CPL, rdsspq is a nop.
+    */
+   __asm__ __volatile__(".byte 0xf3, 0x48, 0x0f, 0x1e, 0xc8\n"
+                        : "+a" (ssp) : : "memory");
+   return ssp;
+}
+#endif
 
 /* End of the section whose correctness has NOT been checked */
 

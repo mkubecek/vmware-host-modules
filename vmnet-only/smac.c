@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2002,2018,2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 2002-2018,2020,2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -4116,7 +4116,7 @@ SMAC_InitState(SMACState **ptr) // OUT: pointer to alloced/inited state
 
 void SMACINT
 SMAC_SetMac(SMACState *state,  // IN: state to update
-	    uint8 *mac)        // IN: pointer to host adapter's MAC
+	    const uint8 *mac)  // IN: pointer to host adapter's MAC
 {
    VNETKdPrintCall(("SMAC_SetMac"));
    ASSERT(state);

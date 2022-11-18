@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998,2017,2019,2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998,2017,2019-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -522,6 +522,50 @@ VNetCopyDatagram(const struct sk_buff *skb,	// IN: skb to copy
 /*
  *----------------------------------------------------------------------
  *
+ * VNetCsumAndCopyToUser --
+ *
+ *      Checksum data and copy them to userspace.
+ *
+ * Results:
+ *      folded checksum (non-zero value) on success,
+ *      err set to 0 on success, negative errno on failure.
+ *
+ * Side effects:
+ *      Data copied to the buffer.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static unsigned int
+VNetCsumAndCopyToUser(const void *src,   // IN: Source
+                      void *dst,         // IN: Destination
+                      int len,           // IN: Bytes to copy
+                      int *err)          // OUT: Error code
+{
+   unsigned int csum;
+
+#if COMPAT_LINUX_VERSION_CHECK_LT(5, 10, 0)
+   csum = csum_and_copy_to_user(src, dst, len, 0, err);
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(5, 19, 0)
+   csum = csum_and_copy_to_user(src, dst, len);
+   *err = (csum == 0) ? -EFAULT : 0;
+#else
+   if (!user_access_begin(dst, len)) {
+      *err = -EFAULT;
+      csum = 0;
+   } else {
+      *err = 0;
+      csum = csum_partial_copy_nocheck(src, dst, len);
+      user_access_end();
+   }
+#endif
+   return csum;
+}
+
+
+/*
+ *----------------------------------------------------------------------
+ *
  * VNetCsumCopyDatagram --
  *
  *      Copy part of datagram to userspace doing checksum at same time.
@@ -561,12 +605,7 @@ VNetCsumCopyDatagram(const struct sk_buff *skb,	// IN: skb to copy
       return -EINVAL;
    }
 
-#if COMPAT_LINUX_VERSION_CHECK_LT(5, 10, 0)
-   csum = csum_and_copy_to_user(skb->data + offset, curr, len, 0, &err);
-#else
-   csum = csum_and_copy_to_user(skb->data + offset, curr, len);
-   err = (csum == 0) ? -EFAULT : 0;
-#endif
+   csum = VNetCsumAndCopyToUser(skb->data + offset, curr, len, &err);
    if (err) {
       return err;
    }
@@ -580,14 +619,8 @@ VNetCsumCopyDatagram(const struct sk_buff *skb,	// IN: skb to copy
 	 const void *vaddr;
 
 	 vaddr = kmap(skb_frag_page(frag));
-#if COMPAT_LINUX_VERSION_CHECK_LT(5, 10, 0)
-	 tmpCsum = csum_and_copy_to_user(vaddr + skb_frag_off(frag),
-					 curr, skb_frag_size(frag), 0, &err);
-#else
-	 tmpCsum = csum_and_copy_to_user(vaddr + skb_frag_off(frag),
-					 curr, skb_frag_size(frag));
-         err = (tmpCsum == 0) ? -EFAULT : 0;
-#endif
+         tmpCsum = VNetCsumAndCopyToUser(vaddr + skb_frag_off(frag),
+                                         curr, skb_frag_size(frag), &err);
 	 kunmap(skb_frag_page(frag));
 
 	 if (err) {
@@ -853,8 +886,6 @@ VNetUserIfIoctl(VNetPort      *port,  // IN
    VNetUserIF *userIf = (VNetUserIF*)port->jack.private;
 
    switch (iocmd) {
-   case SIOCSETNOTIFY:
-      return -EINVAL;
    case SIOCSETNOTIFY2:
    /*
     * ORs pollMask into the integer pointed to by ptr if pending packet. Is
@@ -887,21 +918,21 @@ VNetUserIfIoctl(VNetPort      *port,  // IN
       VNetUserIfUnsetupNotify(userIf);
       break;
 
-   case SIOCSIFFLAGS:
-      /* 
-       * Drain queue when interface is no longer active. We drain the queue to 
+   case SIOCSPORTFLAGS:
+      /*
+       * Drain queue when interface is no longer active. We drain the queue to
        * avoid having old packets delivered to the guest when reneabled.
        */
-      
+
       if (!UP_AND_RUNNING(userIf->port.flags)) {
          struct sk_buff *skb;
          unsigned long flags;
          struct sk_buff_head *q = &userIf->packetQueue;
-         
+
          while ((skb = skb_dequeue(q)) != NULL) {
             dev_kfree_skb(skb);
          }
-         
+
          spin_lock_irqsave(&q->lock, flags);
          if (userIf->pollPtr) {
             if (skb_queue_empty(q)) {
@@ -918,11 +949,11 @@ VNetUserIfIoctl(VNetPort      *port,  // IN
    case SIOCINJECTLINKSTATE:
       {
          uint8 linkUpFromUser;
-         if (copy_from_user(&linkUpFromUser, (void *)ioarg, 
+         if (copy_from_user(&linkUpFromUser, (void *)ioarg,
                             sizeof linkUpFromUser)) {
             return -EFAULT;
          }
-         
+
          if (linkUpFromUser != 0 && linkUpFromUser != 1) {
             return -EINVAL;
          }
@@ -934,7 +965,7 @@ VNetUserIfIoctl(VNetPort      *port,  // IN
       return -ENOIOCTLCMD;
       break;
    }
-   
+
    return 0;
 }
 

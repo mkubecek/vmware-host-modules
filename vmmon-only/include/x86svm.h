@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2005-2014,2017-2021 VMware, Inc. All rights reserved.
+ * Copyright (C) 2005-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -45,13 +45,12 @@
 #include "x86cpuid.h"
 #include "x86msr.h"
 #include "x86vendor.h"
-#if defined(USERLEVEL) || defined(MONITOR_APP)
-#include "vm_basic_asm.h"
-#else
-#include "vm_asm.h"
-#endif
 #ifdef VM_X86_ANY
 #include "x86cpuid_asm.h"
+#endif
+#if !defined(VMMON)
+#include "vmcore_types.h"
+#include "cpuidInfo.h"
 #endif
 
 #define SVM_VMCB_IO_BITMAP_PAGES   (3)
@@ -157,6 +156,7 @@
 #define SVM_VMCB_NPTCTL_SEV_ENABLE         (1 << 1)
 #define SVM_VMCB_NPTCTL_SEV_ES_ENABLE      (1 << 2)
 #define SVM_VMCB_NPTCTL_GMET_ENABLE        (1 << 3)
+#define SVM_VMCB_NPTCTL_SSS_CHECK_ENABLE   (1 << 4)
 
 /* VMCB.virtExt */
 #define SVM_VMCB_VIRTEXT_LBR_ENABLE        (1 << 0)
@@ -218,7 +218,12 @@
 #define SVM_VMSA_SEV_FEAT_BTB_ISOLATE  0x0000000000000080ULL
 #define SVM_VMSA_SEV_FEAT_RSVD         0xffffffffffffff00ULL
 
-/* Unique Exit Codes */
+/*
+ * Unique Exit Codes
+ * The HW exit codes are comprised of two contiguous groups.  If you add a new
+ * exit reason you should update either SVM_LAST_LO_EXIT_REASON or
+ * SVM_LAST_HI_EXIT_REASON and update svmExitStats.h.
+ */
 #define SVM_EXITCODE_CR_READ(n)             (0 + (n))
 #define SVM_EXITCODE_CR_WRITE(n)           (16 + (n))
 #define SVM_EXITCODE_DR_READ(n)            (32 + (n))
@@ -272,16 +277,31 @@
 #define SVM_EXITCODE_XSETBV               141
 #define SVM_EXITCODE_EFER_WRITE_TRAP      143
 #define SVM_EXITCODE_CR_WRITE_TRAP(n)    (144 + (n))
+/* Adjust SVM_LAST_LO_EXIT_REASON if you add a high exit reason. */
+#define SVM_FIRST_LO_EXIT_REASON 0
+#define SVM_LAST_LO_EXIT_REASON  159
+#define SVM_NUM_LO_EXIT_REASONS  (SVM_LAST_LO_EXIT_REASON + 1 - \
+                                  SVM_FIRST_LO_EXIT_REASON)
+
 #define SVM_EXITCODE_NPF                 1024
 #define SVM_EXITCODE_AVIC_INCOMPLETE_IPI 1025
 #define SVM_EXITCODE_AVIC_NOACCEL        1026
 #define SVM_EXITCODE_VMGEXIT             1027
 #define SVM_EXITCODE_PVALIDATE           1028
+/* Adjust SVM_LAST_HI_EXIT_REASON if you add a high exit reason. */
+#define SVM_FIRST_HI_EXIT_REASON 1024
+#define SVM_LAST_HI_EXIT_REASON  1028
+#define SVM_NUM_HI_EXIT_REASONS  (SVM_LAST_HI_EXIT_REASON + 1 - \
+                                  SVM_FIRST_HI_EXIT_REASON)
+
 #define SVM_EXITCODE_MMIO_READ           0x80000001   // SW only
 #define SVM_EXITCODE_MMIO_WRITE          0x80000002   // SW only
 #define SVM_EXITCODE_NMI_COMPLETE        0x80000003   // SW only
 #define SVM_EXITCODE_AP_RESET_HOLD       0x80000004   // SW only
 #define SVM_EXITCODE_AP_JUMP_TABLE       0x80000005   // SW only
+#define SVM_EXITCODE_SNP_PSC_REQ         0x80000010   // SW only
+#define SVM_EXITCODE_SNP_GUEST_REQ       0x80000011   // SW only
+#define SVM_EXITCODE_HV_FEATURES         0x8000FFFD   // SW only
 #define SVM_EXITCODE_UNSUPPORTED         0x8000FFFF   // SW only
 #define SVM_EXITCODE_INVALID             (-1ULL)
 
@@ -307,6 +327,7 @@
 #define SVM_IOEXIT_SBZ           0x0000e000
 
 /* ExitInfo1 for MSR exits */
+#define SVM_MSREXIT_RDMSR        0x00000000
 #define SVM_MSREXIT_WRMSR        0x00000001
 
 /* ExitInfo1 for CR exits */
@@ -336,13 +357,19 @@
 #define SVM_SMIEXIT_MBZ            0x0000fc00fffffffeULL
 
 /* ExitInfo1 for NPF exits */
-#define SVM_NPFEXIT_P              (1 << 0)
-#define SVM_NPFEXIT_RW             (1 << 1)
-#define SVM_NPFEXIT_US             (1 << 2)
-#define SVM_NPFEXIT_RSVD           (1 << 3)
-#define SVM_NPFEXIT_ID             (1 << 4)
+#define SVM_NPFEXIT_P              (1ULL << 0)
+#define SVM_NPFEXIT_RW             (1ULL << 1)
+#define SVM_NPFEXIT_US             (1ULL << 2)
+#define SVM_NPFEXIT_RSVD           (1ULL << 3)
+#define SVM_NPFEXIT_ID             (1ULL << 4)
+#define SVM_NPFEXIT_SS             (1ULL << 6)
+#define SVM_NPFEXIT_RMP            (1ULL << 31)    /* APM Vol 2, sec 15.36.10 */
 #define SVM_NPFEXIT_FINAL_ADDR     (1ULL << 32)    /* Rev. C */
 #define SVM_NPFEXIT_PTE_ACCESS     (1ULL << 33)    /* Rev. C */
+#define SVM_NPFEXIT_ENC            (1ULL << 34)    /* APM Vol 2, sec 15.36.10 */
+#define SVM_NPFEXIT_SIZEM          (1ULL << 35)    /* APM Vol 2, sec 15.36.10 */
+#define SVM_NPFEXIT_VMPL           (1ULL << 36)    /* APM Vol 2, sec 15.36.10 */
+#define SVM_NPFEXIT_SSS_LEAF       (1ULL << 37)
 
 /* ExitInfo1 for AP jump table exits */
 #define SVM_APEXIT_SET            0x0
@@ -439,6 +466,43 @@ SVM_ExecCtlBit(uint32 exitCode)
 }
 
 
+#if !defined(VMMON)
+/*
+ *----------------------------------------------------------------------
+ * SVM_MSRNumToIndex --
+ *
+ *   Given MSR number and access mode, return the bit position
+ *   in the VMCS MSR permission bitmap.
+ *
+ *   -1 is returned for invalid input MSR number.
+ *
+ *   The bitmap is organized into three contiguous 2k-bit arrays, one
+ *   for each of three disjoint MSR ranges.  Each array element is 2
+ *   bits, with the low order bit indicating a RDMSR intercept and
+ *   the high order bit indicating a WRMSR intercept.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static INLINE int
+SVM_MSRNumToIndex(uint32 msrNum, AccessMode accessMode)
+{
+   ASSERT(accessMode == ACCESS_MODE_READ || accessMode == ACCESS_MODE_WRITE);
+   if (msrNum < 0x2000) {
+      return msrNum * 2 + (accessMode == ACCESS_MODE_WRITE ? 1 : 0);
+   } else if (msrNum >= 0xC0000000 && msrNum < 0xC0002000) {
+      return 0x4000 + LOWORD(msrNum) * 2 +
+         (accessMode == ACCESS_MODE_WRITE ? 1 : 0);
+   } else if (msrNum >= 0xC0010000 && msrNum < 0xC0012000) {
+      return 0x8000 + LOWORD(msrNum) * 2 +
+         (accessMode == ACCESS_MODE_WRITE ? 1 : 0);
+   } else {
+      return -1;
+   }
+}
+#endif
+
+
 /*
  *----------------------------------------------------------------------
  *
@@ -470,8 +534,8 @@ SVM_LockedFromFeatures(uint64 vmCR)
    return (vmCR & MSR_VM_CR_SVM_LOCK) != 0;
 }
 
-
-#if !defined(USERLEVEL) && !defined(MONITOR_APP) /* { */
+#if defined(FROBOS) || defined(VMKERNEL) || \
+    defined(VMM) || defined(VMMON)
 /*
  *----------------------------------------------------------------------
  * SVM_EnabledCPU --
@@ -485,7 +549,7 @@ SVM_EnabledCPU(void)
 {
    return SVM_EnabledFromFeatures(X86MSR_GetMSR(MSR_VM_CR));
 }
-#endif /* } !defined(USERLEVEL) */
+#endif
 
 
 #ifndef VMM
@@ -509,11 +573,12 @@ SVM_CapableCPU(void)
 #endif  // ifdef VM_X86_ANY
 
 
+#if !defined(VMMON)
 /*
  *----------------------------------------------------------------------
- * SVM_SupportedVersion --
+ * SVM_SupportedRev --
  *
- *   Verify that a CPU has the SVM capabilities required to run the
+ *   Verify that a CPU has the minimum revision required to run the
  *   SVM-enabled monitor.  This function assumes that the processor is
  *   SVM_Capable().  We only support CPUs that populate the exitIntInfo
  *   field of the VMCB when IDT vectoring is interrupted by a task switch
@@ -523,12 +588,33 @@ SVM_CapableCPU(void)
  *----------------------------------------------------------------------
  */
 static INLINE Bool
-SVM_SupportedVersion(CpuidVendor vendor, uint32 version)
+SVM_SupportedRev(const CpuidInfo *cpuid)
 {
-   return (vendor == CPUID_VENDOR_AMD &&
-           CPUID_EFFECTIVE_FAMILY(version) >= CPUID_FAMILY_K8L) ||
+   CpuidVendor vendor = CpuidInfo_Vendor(cpuid);
+   uint32 family = CPUID_EFFECTIVE_FAMILY(CpuidInfo_Version(cpuid));
+
+   return (vendor == CPUID_VENDOR_AMD && family >= CPUID_FAMILY_K8L) ||
           vendor == CPUID_VENDOR_HYGON;
 }
+
+/*
+ *----------------------------------------------------------------------
+ * SVM_SupportedCPU --
+ *
+ *   Verify that a CPU has the SVM capabilities required to run the
+ *   SVM-enabled monitor.  In addition to having the minimum revision the CPU
+ *   must support NPT, NRIP and flush by ASID.
+ *----------------------------------------------------------------------
+ */
+static INLINE Bool
+SVM_SupportedCPU(const CpuidInfo *cpuid)
+{
+   return SVM_SupportedRev(cpuid) &&
+          CpuidInfo_IsSet(SVM_NPT, cpuid) &&
+          CpuidInfo_IsSet(SVM_NRIP, cpuid) &&
+          CpuidInfo_IsSet(SVM_FLUSH_BY_ASID, cpuid);
+}
+#endif /* VMMON */
 #endif /* VMM */
 
 #endif /* _X86SVM_H_ */

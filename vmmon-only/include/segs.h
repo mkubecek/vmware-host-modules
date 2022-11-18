@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2018-2021 VMware, Inc. All rights reserved.
+ * Copyright (C) 2018-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -37,7 +37,7 @@
 #include "x86segdescrs.h"
 #include "x86sel.h"
 #include "addrlayout.h"
-
+#include "vm_atomic.h"
 
 /*
  * For each pcpu, a per-pcpu data area, the GDT, and the Task State
@@ -158,7 +158,14 @@ typedef enum VmwSegs {
 #pragma pack(push, 1)
 typedef struct PcpuData {
    Bool         inVMM;       /* TRUE iff vmm world running in vmm context. */
-   uint8        _unused[PCPU_DATA_SIZE - sizeof(Bool)];
+
+   /*
+    * nmiIPIFromVMkernel is set when vmkernel detects a CPU
+    * lockup inside any of the worlds. This done before
+    * vmkernel sends an NMI IPI to the CPU.
+    */
+   Atomic_Bool  nmiIPIFromVMkernel;
+   uint8        _unused[PCPU_DATA_SIZE - sizeof(Atomic_Bool) - sizeof(Bool)];
 } PcpuData;
 #pragma pack(pop)
 

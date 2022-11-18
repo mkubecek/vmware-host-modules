@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2021 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -146,7 +146,7 @@ PtrToVA64(void const *ptr) // IN
  * the NT specific VMX86_DRIVER_VERSION.
  */
 
-#define VMMON_VERSION           (410 << 16 | 0)
+#define VMMON_VERSION           (416 << 16 | 0)
 #define VMMON_VERSION_MAJOR(v)  ((uint32) (v) >> 16)
 #define VMMON_VERSION_MINOR(v)  ((uint16) (v))
 
@@ -276,6 +276,7 @@ enum IOCTLCmd {
 
    IOCTLCMD(GET_UNAVAIL_PERF_CTRS),
    IOCTLCMD(GET_MONITOR_CONTEXT),
+   IOCTLCMD(KERNEL_CET_ENABLED),
    // Must be last.
    IOCTLCMD(LAST)
 };
@@ -312,10 +313,8 @@ enum IOCTLCmd {
 #define IOCTL_VMX86_RUN_VM              VMIOCTL_NEITHER(RUN_VM)
 #define IOCTL_VMX86_SEND_IPI            VMIOCTL_NEITHER(SEND_IPI)
 #define IOCTL_VMX86_SEND_ONE_IPI        VMIOCTL_BUFFERED(SEND_ONE_IPI)
-#define IOCTL_VMX86_GET_IPI_VECTORS     VMIOCTL_BUFFERED(GET_IPI_VECTORS)
 #define IOCTL_VMX86_GET_SWITCH_ERROR_ADDR VMIOCTL_BUFFERED(GET_SWITCH_ERROR_ADDR)
 #define IOCTL_VMX86_LOOK_UP_MPN         VMIOCTL_BUFFERED(LOOK_UP_MPN)
-#define IOCTL_VMX86_GET_VMM_PAGE_ROOT   VMIOCTL_BUFFERED(GET_VMM_PAGE_ROOT)
 #define IOCTL_VMX86_LOCK_PAGE           VMIOCTL_BUFFERED(LOCK_PAGE)
 #define IOCTL_VMX86_UNLOCK_PAGE         VMIOCTL_BUFFERED(UNLOCK_PAGE)
 #define IOCTL_VMX86_APIC_INIT           VMIOCTL_BUFFERED(APIC_INIT)
@@ -337,10 +336,6 @@ enum IOCTLCmd {
 #define IOCTL_VMX86_GET_NEXT_ANON_PAGE  VMIOCTL_BUFFERED(GET_NEXT_ANON_PAGE)
 #define IOCTL_VMX86_GET_NUM_ANON_PAGES  VMIOCTL_BUFFERED(GET_NUM_ANON_PAGES)
 
-#define IOCTL_VMX86_READ_DISASM_PROC_BINARY \
-                                      VMIOCTL_BUFFERED(READ_DISASM_PROC_BINARY)
-#define IOCTL_VMX86_CHECK_CANDIDATE_VA64 VMIOCTL_BUFFERED(CHECK_CANDIDATE_VA64)
-
 #define IOCTL_VMX86_SET_MEMORY_PARAMS   VMIOCTL_BUFFERED(SET_MEMORY_PARAMS)
 
 #define IOCTL_VMX86_REMEMBER_KHZ_ESTIMATE VMIOCTL_BUFFERED(REMEMBER_KHZ_ESTIMATE)
@@ -356,6 +351,7 @@ enum IOCTLCmd {
 #define IOCTL_VMX86_REMAP_SCATTER_LIST    VMIOCTL_BUFFERED(REMAP_SCATTER_LIST)
 #define IOCTL_VMX86_REMAP_SCATTER_LIST_RO VMIOCTL_BUFFERED(REMAP_SCATTER_LIST_RO)
 #define IOCTL_VMX86_UNMAP_SCATTER_LIST    VMIOCTL_BUFFERED(UNMAP_SCATTER_LIST)
+#define IOCTL_VMX86_KERNEL_CET_ENABLED    VMIOCTL_BUFFERED(KERNEL_CET_ENABLED)
 #endif
 
 
@@ -374,13 +370,6 @@ typedef union {
    VA64 uAddr;        // IN: user address
    VMLockPageRet ret; // OUT: status code and MPN
 } VMLockPage;
-#pragma pack(pop)
-
-#pragma pack(push, 1)
-typedef union {
-   Vcpuid vcpuid; // IN: VCPU
-   MPN pageRoot;  // OUT: MPN of the VCPU's page root
-} VcpuPageRoot;
 #pragma pack(pop)
 
 #define VMX86_DRIVER_VCPUID_OFFSET 1000
@@ -507,23 +496,30 @@ typedef struct PTSCCheckParams {
    uint8  _pad[7];
 } PTSCCheckParams;
 
-typedef struct IPIVectors {
-   /*
-    * Vectors we have allocated or stolen for the monitor interrupts.
-    */
-   uint8 monitorIPIVector;
-   uint8 hvIPIVector;
-} IPIVectors;
-
 /*
  * Arguments and return value for VM creation.
  */
+typedef enum VMCreateStatus {
+   VM_CREATE_SUCCESS,
+   VM_CREATE_ERR_UNKNOWN,
+   VM_CREATE_ERR_NO_VCPUS,
+   VM_CREATE_ERR_TOO_MANY_VCPUS,
+   VM_CREATE_ERR_NO_NX,
+   VM_CREATE_ERR_NO_MEM,
+   VM_CREATE_ERR_5LP,
+   VM_CREATE_ERR_NO_BLOB,
+   VM_CREATE_ERR_INV_BLOB,
+   VM_CREATE_ERR_CROSS_GDT,
+   VM_CREATE_ERR_TOO_MANY_VMS
+} VMCreateStatus;
+
 typedef struct VMCreateBlock {
    VA64               bsBlob;        // IN: User VA of the VMM bootstrap blob.
    VA64               vmmonData;     // IN: User VA of a userlevel scratch area
                                      //     required by the Linux vmmon
    uint32             bsBlobSize;    // IN: Size of VMM bootstrap blob.
    uint32             numVCPUs;      // IN: Number of VCPUs.
+   VMCreateStatus     status;        // OUT: Status of the operation.
    uint16             vmid;          // OUT: VM ID for the created VM.
 } VMCreateBlock;
 

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2020, 2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -73,7 +73,7 @@ REGION(TC_REGION,              1024)
  * area and other contents.
  * Mapped small (allowing non-present mappings and sharing) and read-write.
  */
-REGION(MONITOR_MISC,           5632)
+REGION(MONITOR_MISC,           5120)
 #ifdef VMX86_SERVER
   ITEM(GUARD_PAGE,                2) // Reserved (for symmetry with hosted).
 #else
@@ -114,7 +114,7 @@ REGION(MONITOR_MISC,           5632)
   ITEM(GART_BF_PAGES,             8) // Gart Bloom filter memory pages.
   ITEM(VVT_GUEST_VIRT_APIC,       1) // Inner guest virtual APIC page.
   ITEM(HT_STATE_MAP,              8) // Information used by the SecureHT module
-  ITEM(SHARED_RW_DATA,         5462) // R/W shared data, including the shared
+  ITEM(SHARED_RW_DATA,         4950) // R/W shared data, including the shared
                                      // area and stat vars. Any remaining pages
                                      // are left to the dynamic allocator, which
                                      // extends throughout the entire reclaimed
@@ -126,7 +126,7 @@ REGION(MONITOR_MISC,           5632)
  * extends through to the end of the VMM address space once the bootstrap region
  * is reclaimed.
  */
-REGION(BOOTSTRAP,              8192)
+REGION(BOOTSTRAP,              8704)
   ITEM(BS_TXT,                   17) // bootstrap's .text
   ITEM(BS_RODATA,                10) // bootstrap's .rodata
   ITEM(BS_DATA,                  10) // bootstrap's .data
@@ -135,10 +135,10 @@ REGION(BOOTSTRAP,              8192)
   ITEM(BS_VCPU_L1PT_RANGE,       32) // VCPU L1PT mappings
   ITEM(BS_VCPU_L1PT_PT,           1) // L1PT that maps a VCPU's L1 page tables
   ITEM(BS_INIT_POOL,              1) // pool for initializing VMM pages
-  ITEM(BS_DYNAMIC_ALLOC,       1880) // bs_alloc's dynamic allocator pages
+  ITEM(BS_DYNAMIC_ALLOC,       2300) // bs_alloc's dynamic allocator pages
   ITEM(MON_IDT_TMP,               1) // temporary addr for normal IDT on bsp
   ITEM(IDT_BOOTSTRAP_STUBS,       2) // bootstrap IDT gate stubs
   ITEM(BS_PER_VM_VMX,           300) // vmm64's shared_per_vm_vmx
   ITEM(BS_PER_VCPU,               8) // vmm64's shared_per_vcpu for VCPU 0
   ITEM(BS_PER_VCPU_VMX,         136) // vmm64's shared_per_vcpu_vmx for VCPU 0
-  ITEM(VMM_MODULES,            5783) // ~22.6MB for unlinked VMM modules
+  ITEM(VMM_MODULES,            5875) // ~24.06 MB for unlinked VMM modules

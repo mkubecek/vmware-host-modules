@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2021 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -113,6 +113,14 @@ typedef struct MSRQuery {
 #define MSR_S_CET                            0x6a2
 #define MSR_CET_SH_STK_EN                         (1ULL << 0)
 #define MSR_CET_WR_SHSTK_EN                       (1ULL << 1)
+#define MSR_CET_ENDBR_EN                          (1ULL << 2)
+#define MSR_CET_LEG_IW_EN                         (1ULL << 3)
+#define MSR_CET_NO_TRACK_EN                       (1ULL << 4)
+#define MSR_CET_SUPPRESS_DIS                      (1ULL << 5)
+#define MSR_CET_RSVD                              (0xfULL << 6)
+#define MSR_CET_SUPPRESS                          (1ULL << 10)
+#define MSR_CET_TRACKER                           (1ULL << 11)
+#define MSR_CET_EB_LEG_BITMAP_BASE                (~0xfffULL)  // bits 63:12
 #define MSR_PL0_SSP                          0x6a4
 #define MSR_PL1_SSP                          0x6a5
 #define MSR_PL2_SSP                          0x6a6
@@ -169,11 +177,35 @@ typedef struct MSRQuery {
 #define MSR_PERF_CAPABILITIES_PEBS_ADAPTIVE_DATA     (1u << 14)
 #define MSR_PERF_CAPABILITIES_PERF_METRICS_AVAILABLE (1u << 15)
 
-#define IA32_MSR_PEBS_ENABLE                      0x3f1
+#define IA32_MSR_PEBS_ENABLE                 0x3f1
 
-#define MSR_UMWAIT_CONTROL                        0xe1
-#define MSR_UMWAIT_CONTROL_C0_MASK                0x1
-#define MSR_UMWAIT_CONTROL_TSC_MASK               0xfffffffc
+#define MSR_UMWAIT_CONTROL                   0xe1
+#define MSR_UMWAIT_CONTROL_C0                        (1u << 0)
+#define MSR_UMWAIT_CONTROL_TSC                       0xfffffffc
+
+#define MSR_UINTR_RR                         0x985
+#define MSR_UINTR_HANDLER                    0x986
+#define MSR_UINTR_STACKADJUST                0x987
+#define MSR_UINTR_STACKADJUST_INT_DELIVERY           (1ULL << 0)
+#define MSR_UINTR_MISC                       0x988
+#define MSR_UINTR_MISC_UITTSZ_SHIFT                  0
+#define MSR_UINTR_MISC_UITTSZ_MASK                   CONST64U(0xffffffff)
+                                                                     // [31:0]
+#define MSR_UINTR_MISC_UINV_SHIFT                    32
+#define MSR_UINTR_MISC_UINV_MASK                     CONST64U(0xff)  // [39:32]
+#define MSR_UINTR_MISC_RSVD_SHIFT                    40
+#define MSR_UINTR_MISC_RSVD_MASK                     CONST64U(0xffffff)
+                                                                     // [63:40]
+#define MSR_UINTR_PD                         0x989
+#define MSR_UINTR_PD_RSVD_SHIFT                      0
+#define MSR_UINTR_PD_RSVD_MASK                       CONST64U(0x3f)  // [5:0]
+#define MSR_UINTR_TT                         0x98a
+#define MSR_UINTR_TT_UITTADDR_SHIFT                  4
+#define MSR_UINTR_TT_UITTADDR_MASK                   CONST64U(0xfffffffffffffff)
+                                                                     // [63:4]
+#define MSR_UINTR_TT_RSVD_SHIFT                      1
+#define MSR_UINTR_TT_RSVD_MASK                       CONST64U(0x7)   // [3:1]
+#define MSR_UINTR_TT_SENDUIPI_EN                     (1ULL << 0)
 
 #define MSR_MTRR_BASE0        0x00000200
 #define MSR_MTRR_MASK0        0x00000201
@@ -259,6 +291,8 @@ typedef struct MSRQuery {
 #define MSR_ARCH_LBR_CTL_NEAR_IND_CALL 0x100000
 #define MSR_ARCH_LBR_CTL_NEAR_RET      0x200000
 #define MSR_ARCH_LBR_CTL_OTHER_BRANCH  0x400000
+#define MSR_ARCH_LBR_CTL_CPL_MASK      0x000006
+#define MSR_ARCH_LBR_CTL_BRANCH_MASK   0x7f0000
 #define MSR_ARCH_LBR_CTL_ALL           0x7f000f
 
 /* Power Management MSRs */
@@ -505,12 +539,15 @@ typedef struct MSRQuery {
 #define MSR_RTIT_CR3_MATCH_RSVD CONST64U(0x1f)
 
 /* SGX MSRs */
-#define MSR_SGX_SVN_STATUS               0x00000500
+#define MSR_SGX_SVN_STATUS                       0x00000500
 
 /* SGX SVN status MSR fields */
-#define MSR_SGX_SVN_STATUS_LOCK          0x1
-#define MSR_SGX_SVN_STATUS_SINIT_SVN     CONST64U(0xff0000)
-#define MSR_SGX_SVN_STATUS_RSVD          CONST64U(0xffffffffff00fffe)
+#define MSR_SGX_SVN_STATUS_LOCK                  0x1
+#define MSR_SGX_SVN_STATUS_SINIT_SVN_SHIFT       16
+#define MSR_SGX_SVN_STATUS_SINIT_SVN_MASK        CONST64U(0xff)
+#define MSR_SGX_SVN_STATUS_NP_SEAMLDR_SVN_SHIFT  56
+#define MSR_SGX_SVN_STATUS_NP_SEAMLDR_SVN_MASK   CONST64U(0xff)
+#define MSR_SGX_SVN_STATUS_RSVD                  CONST64U(0xffffffff00fffe)
 
 /*
  * SGX Flexible Launch Control MSRs.
@@ -543,6 +580,7 @@ typedef struct MSRQuery {
 /* DebugCtlMSR bits */
 #define MSR_DEBUGCTL_LBR                   0x00000001
 #define MSR_DEBUGCTL_BTF                   0x00000002
+#define MSR_DEBUGCTL_BUS_LOCK_DB           0x00000004
 #define MSR_DEBUGCTL_TR                    0x00000040
 #define MSR_DEBUGCTL_BTS                   0x00000080
 #define MSR_DEBUGCTL_BTINT                 0x00000100
@@ -553,7 +591,7 @@ typedef struct MSRQuery {
 #define MSR_DEBUGCTL_ENABLE_UNCORE_PMI     0x00002000
 #define MSR_DEBUGCTL_FREEZE_WHILE_SMM      0x00004000
 #define MSR_DEBUGCTL_RTM                   0x00008000
-#define MSR_DEBUGCTL_RSVD          0xffffffffffff003cULL
+#define MSR_DEBUGCTL_RSVD          0xffffffffffff0038ULL
 
 /* Feature control bits */
 #define MSR_FEATCTL_LOCK     0x00000001
@@ -574,10 +612,12 @@ typedef struct MSRQuery {
 #define MSR_EFER_LMSLE       0x0000000000002000ULL  /* LM seg lim enable:r/w */
 #define MSR_EFER_FFXSR       0x0000000000004000ULL  /* Fast FXSAVE:      r/w */
 #define MSR_EFER_TCE         0x0000000000008000ULL  /* Trans. cache ext. r/w */
+#define MSR_EFER_UAIE        0x0000000000100000ULL  /* UAI(AMD) enable:  r/w */
+#define MSR_EFER_AUTO_IBRS   0x0000000000200000ULL  /* Automatic IBRS:   r/w */
 /* Vendor specific EFER bits */
 #define MSR_EFER_INTEL_MBZ   0xffffffffffff02feULL  /* Must be zero (resrvd) */
 #define MSR_EFER_INTEL_RAZ   0x0000000000000000ULL  /* Read as zero          */
-#define MSR_EFER_AMD_MBZ     0xffffffffffff0200ULL  /* Must be zero (resrvd) */
+#define MSR_EFER_AMD_MBZ     0xffffffffffcf0200ULL  /* Must be zero (resrvd) */
 #define MSR_EFER_AMD_RAZ     0x00000000000000feULL  /* Read as zero          */
 
 #define MSR_AMD_PATCH_LOADER 0xc0010020
@@ -649,10 +689,16 @@ typedef struct MSRQuery {
 #define MSR_GHCB_PA_AP_JUMP_TABLE           0x3
 #define MSR_GHCB_PA_CPUID_REQ               0x4
 #define MSR_GHCB_PA_CPUID_RESP              0x5
+#define MSR_GHCB_PA_AP_RESET_HOLD_REQ       0x6
+#define MSR_GHCB_PA_AP_RESET_HOLD_RESP      0x7
 #define MSR_GHCB_PA_PREFERRED_GHCB_GPA_REQ  0x10
 #define MSR_GHCB_PA_PREFERRED_GHCB_GPA_RESP 0x11
 #define MSR_GHCB_PA_REGISTER_GHCB_GPA_REQ   0x12
 #define MSR_GHCB_PA_REGISTER_GHCB_GPA_RESP  0x13
+#define MSR_GHCB_PA_SNP_PSC_REQ             0x14
+#define MSR_GHCB_PA_SNP_PSC_RESP            0x15
+#define MSR_GHCB_PA_FEATURES_REQ            0x80
+#define MSR_GHCB_PA_FEATURES_RESP           0x81
 #define MSR_GHCB_PA_TERMINATE               0x100
 
 /* Field definitions for SEVInfo block returned by MSR_GHCB_PA_SEVINFO_REQ. */
@@ -668,6 +714,12 @@ typedef struct MSRQuery {
 #define SEVINFO_MINVER(_si) SEVINFO_GET(_si, MINVER)
 #define SEVINFO_MAXVER(_si) SEVINFO_GET(_si, MAXVER)
 
+/* Field definitions for MSR_GHCB_PA_AP_RESET_HOLD_REQ */
+#define MSR_GHCB_PA_AP_RESET_HOLD_SHIFT     12
+
+/* Field definitions for MSR_GHCB_PA_FEATURES_REQ */
+#define MSR_GHCB_PA_FEATURES_SHIFT          12
+
 /* Field definitions for MSR_GHCB_PA_TERMINATE request. */
 #define MSR_GHCB_PA_TERMINATE_ECS_MASK      0xfULL
 #define MSR_GHCB_PA_TERMINATE_ECS_SHIFT     12
@@ -678,6 +730,9 @@ typedef struct MSRQuery {
 #define SEV_TERM_ECS_AMD    0    /* AMD reserves ECS 0.         */
 #define SEV_TERM_ECS_EFI    1    /* Used for VMware EFI errors. */
 #define SEV_TERM_ECS_FROBOS 2    /* Used for FrobOS errors.     */
+
+#define SEV_TERM_FROBOS_REG_FAILED       1  /* GHCB PA registration failed. */
+#define SEV_TERM_FROBOS_PVALIDATE_FAILED 2  /* PVALIDATE failed unexpectedly. */
 
 /* SEV feature-enabled bits in MSR_SEV_STATUS. */
 #define MSR_SEV_STATUS_SEV_EN_BIT      0
@@ -925,18 +980,20 @@ typedef unsigned char MTRRType;
 
 
 // Platform Quality of Service (PQM) MSRs
-#define MSR_INTEL_PQM_EVTSEL    0xc8d
-#define MSR_INTEL_PQM_CTR       0xc8e
-#define MSR_INTEL_PQM_ASSOC     0xc8f
+#define MSR_INTEL_PQM_EVTSEL             0xc8d
+#define MSR_INTEL_PQM_CTR                0xc8e
+#define MSR_INTEL_PQM_ASSOC              0xc8f
+#define MSR_INTEL_PQM_ASSOC_RMID_SHIFT   0
+#define MSR_INTEL_PQM_ASSOC_RMID_MASK    CONST64U(0x3ff)
+#define MSR_INTEL_PQM_ASSOC_COS_SHIFT    32
+#define MSR_INTEL_PQM_ASSOC_COS_MASK     CONST64U(0xffffffff)
+#define MSR_INTEL_PQM_ASSOC_RSV_MASK     CONST64U(0xfffffc00)
 
  // Platform Quality Enforcement (PQE) MSRs
-#define MSR_INTEL_PQE_CLOS_MASK_BASE     0xc90
-#define MSR_INTEL_PQE_CLOS_MASK_MAX      0xd8f
-
-#define MSR_INTEL_PQE_CLOS_L3_MASK_BASE     0xc90
-#define MSR_INTEL_PQE_CLOS_L3_MASK_MAX      0xd0f
-#define MSR_INTEL_PQE_CLOS_L2_MASK_BASE     0xd10
-#define MSR_INTEL_PQE_CLOS_L2_MASK_MAX      0xd4f
+#define MSR_INTEL_PQE_CLOS_L3_MASK_BASE  0xc90
+#define MSR_INTEL_PQE_CLOS_L3_MASK_MAX   0xd0f
+#define MSR_INTEL_PQE_CLOS_L2_MASK_BASE  0xd10
+#define MSR_INTEL_PQE_CLOS_L2_MASK_MAX   0xd4f
 
 static INLINE uint32
 X86MSR_SysCallEIP(uint64 star)

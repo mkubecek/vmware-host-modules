@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2012,2017-2018,2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 2012,2017-2018,2020,2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -45,6 +45,13 @@ extern "C" {
 #define TSS_RSP0 0
 #define TSS_RSP1 1
 #define TSS_RSP2 2
+
+/*
+ * IDTR limit is set to the maximum because after a vmexit Intel's VT restores
+ * the IDTR but sets the limit to the maximum value. Please see details 27.5.2
+ * Loading Host Segment and Descriptor-Table Registers from the Intel manual.
+ */
+#define IDT_LIMIT                  0xFFFF
 
 #define IDT_NUM_GATES              0x100
 /*

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -120,7 +120,8 @@ extern PseudoTSC pseudoTSC;
 extern void Vmx86_CacheNXState(void);
 extern VMDriver *Vmx86_CreateVM(VA64 bsBlob,
                                 uint32 bsBlobSize,
-                                uint32 numVCPUs);
+                                uint32 numVCPUs,
+                                VMCreateStatus *status);
 extern Bool Vmx86_ProcessBootstrap(VMDriver *vm,
                                    VA64 bsBlobAddr,
                                    uint32 numBytes,
@@ -227,5 +228,6 @@ extern void Vmx86_CleanupVMMPages(VMDriver *vm);
 
 extern VPN Vmx86_MapPage(MPN mpn);
 extern void Vmx86_UnmapPage(VPN vpn);
+extern Bool Vmx86_KernelCETEnabled(void);
 
 #endif

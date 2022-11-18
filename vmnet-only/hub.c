@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2013 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -234,7 +234,7 @@ VNetHub_AllocVnet(int hubNum) // IN: the vnet number to alloc on
  */
 
 VNetJack *
-VNetHub_AllocPvn(uint8 id[]) // IN: the PVN ID to alloc on
+VNetHub_AllocPvn(uint8 id[VNET_PVN_ID_LEN]) // IN: the PVN ID to alloc on
 {
    return VNetHubAlloc(TRUE, -1, id);
 }
@@ -256,9 +256,9 @@ VNetHub_AllocPvn(uint8 id[]) // IN: the PVN ID to alloc on
  */
 
 VNetJack *
-VNetHubAlloc(Bool allocPvn, // IN: TRUE for PVN, FALSE for vnet
-	     int hubNum,    // IN: vnet # to use (-1 if allocPvn == TRUE)
-	     uint8 id[])    // IN: PVN ID to use (NULL if allocPvn == FALSE)
+VNetHubAlloc(Bool allocPvn,             // IN: TRUE for PVN, FALSE for vnet
+	     int hubNum,                // IN: vnet # to use (-1 if allocPvn == TRUE)
+	     uint8 id[VNET_PVN_ID_LEN]) // IN: PVN ID to use (NULL if allocPvn == FALSE)
 {
    VNetHub *hub;
    VNetJack *jack;

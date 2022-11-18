@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2002-2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 2002-2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -40,7 +40,9 @@
 #include "vcpuid.h"
 #include "vcpuset_types.h"
 
-#if defined VMX86_VMX || defined MONITOR_APP
+#if defined VMX86_VMX || defined COREQUERY || defined BINARY_CHECKER || \
+    defined ULM || defined TRAPAPI_APP || defined DECODER ||            \
+    defined VMSS2CORE || defined FROBOS || defined DIS16
 #   include <stdio.h>   /* libc snprintf */
 #   define VCS_SNPRINTF
 #elif defined VMM || defined VMKERNEL
@@ -466,42 +468,6 @@ VCPUSet_AtomicTestInclude(VCPUSet *vcs, Vcpuid v)
    return Atomic_TestSetBit64(Atomic_VolatileToAtomic64(subset),
                               v & VCS_SUBSET_MASK);
 }
-
-
-#if defined(VMM) && !defined(MONITOR_APP)
-/*
- *----------------------------------------------------------------------
- *
- * VCPUSet_PackCareful --
- *
- *      Pack a VCPUSet into the bytes at "ptr".
- *
- *----------------------------------------------------------------------
- */
-
-static INLINE void
-VCPUSet_PackCareful(unsigned numVCPUs, const VCPUSet *vcs, void *ptr)
-{
-   memcpy(ptr, vcs->subset, (numVCPUs + 7) / 8);
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * VCPUSet_UnpackCareful --
- *
- *      Unpack a VCPUSet from the bytes at "ptr".
- *
- *----------------------------------------------------------------------
- */
-
-static INLINE void
-VCPUSet_UnpackCareful(unsigned numVCPUs, VCPUSet *vcs, const void *ptr)
-{
-   memcpy(vcs->subset, ptr, (numVCPUs + 7) / 8);
-}
-#endif /* VMM && !MONITOR_APP */
 
 
 /*

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014,2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014,2017,2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -46,39 +46,32 @@ typedef struct VNet_Bind {
    uint8  id[VNET_PVN_ABI_ID_LEN]; // used for VNET_BIND_TO_PVN
 } VNet_Bind;
 
-/*
- * We define customized ioctl commands by adding 0x1000
- * to the standard Linux definitions.
- *
- * See comments in iocontrols.h
- */
-
-#define VNET_FIRST_CMD     0x99F2
+#define VNET_FIRST_CMD     0x99E0
 
 // #define SIOCSKEEP          0x99F0  // not used
 // #define SIOCGKEEP          0x99F1  // not used
 #define SIOCSLADRF         0x99F2
-#define SIOCPORT           0x99F3
-#define SIOCBRIDGE         0x99F4
+// #define SIOCPORT           0x99F3  // obsolete
+// #define SIOCBRIDGE         0x99F4  // obsolete
 #define SIOCNETIF          0x99F5
 
 #define SIOCSETMACADDR     0x99F6
 #define SIOCSSWITCHMAP     0x99F7
-#define SIOCSETNOTIFY      0x99F8
+// #define SIOCSETNOTIFY      0x99F8  // obsolete
 #define SIOCUNSETNOTIFY    0x99F9
 // #define SIOCSETCLUSTERSIZE 0x99FA  // obsolete
 #define SIOCSETNOTIFY2     0x99FB
-#define SIOCGETAPIVERSION  0x99FC
+// #define SIOCGETAPIVERSION  0x99FC  // obsolete
 #define SIOCINJECTLINKSTATE 0x99FD
 
 #define VNET_NOTIFY_VERSION     6
-#define VNET_LAST_CMD      0x99FD
+#define VNET_LAST_CMD      0x99FF
 
 #if defined __linux__ || defined __APPLE__
 #define SIOCGETAPIVERSION2 _IOWR(0x99, 0xE0, uint32)
-#define SIOCGBRSTATUS	    _IOR(0x99, 0xFD, uint32)
-#define SIOCSPEER	    _IOW(0x99, 0xFE, char[8])
-#define SIOCSPEER2          _IOW(0x99, 0xFE, char[32])
+#define SIOCGBRSTATUS       _IOR(0x99, 0xFD, uint32)
+// #define SIOCSPEER        _IOW(0x99, 0xFE, char[8])   // obsolete
+// #define SIOCSPEER2       _IOW(0x99, 0xFE, char[32])  // obsolete
 #define SIOCSBIND           _IOW(0x99, 0xFF, VNet_Bind)
 #define SIOCSFILTERRULES    _IOW(0x99, 0xE1, VNet_RuleHeader)
 #define SIOCSUSERLISTENER   _IOW(0x99, 0xE2, VNet_SetUserListener)
@@ -95,7 +88,9 @@ typedef struct VNet_BridgeParams {
 } VNet_BridgeParams;
 #pragma pack(pop)
 
-#define SIOCSPEER3         _IOW(0x99, 0xE4, VNet_BridgeParams)
+#define SIOCSPEER3          _IOW(0x99, 0xE4, VNet_BridgeParams)
+#define SIOCGETMACADDR      _IOR(0x99, 0xE5, char[6])
+#define SIOCSPORTFLAGS      _IOW(0x99, 0xE6, uint32)
 #endif
 
 #ifdef __APPLE__
@@ -160,7 +155,7 @@ typedef struct VNet_Read {
  */
 
 #ifdef __linux__
-#define VNET_API_VERSION                (3 << 16 | 0)
+#define VNET_API_VERSION                (4 << 16 | 0)
 #elif defined __APPLE__
 #define VNET_API_VERSION                (6 << 16 | 0)
 #else

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2021 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -38,8 +38,8 @@
 /*
  * Host-specific definitions.
  */
-#if !__linux__ && !defined(WINNT_DDK) && !defined __APPLE__
-#error "Only Linux or NT or Mac OS defined for now."
+#if !__linux__ && !defined(WINNT_DDK)
+#error "Only Linux or NT defined for now."
 #endif
 
 
@@ -81,7 +81,6 @@ EXTERN int   HostIF_LockPage(VMDriver *vm, VA64 uAddr,
                              Bool allowMultipleMPNsPerVA, MPN *mpn);
 EXTERN int   HostIF_UnlockPage(VMDriver *vm, VA64 uAddr);
 EXTERN int   HostIF_UnlockPageByMPN(VMDriver *vm, MPN mpn, VA64 uAddr);
-EXTERN Bool  HostIF_IsLockedByMPN(VMDriver *vm, MPN mpn);
 EXTERN void  HostIF_FreeAllResources(VMDriver *vm);
 EXTERN uint64 HostIF_ReadUptime(void);
 EXTERN uint64 HostIF_UptimeFrequency(void);
@@ -136,14 +135,8 @@ EXTERN int HostIF_ReadPhysical(VMDriver *vm, MA ma, VA64 addr,
 EXTERN int HostIF_WritePhysical(VMDriver *vm, MA ma, VA64 addr,
                                 Bool kernelBuffer, size_t len);
 EXTERN int HostIF_WriteMachinePage(MPN mpn, VA64 addr);
-#if defined __APPLE__
-// There is no need for a fast clock lock on Mac OS.
-#define HostIF_FastClockLock(_callerID) do {} while (0)
-#define HostIF_FastClockUnlock(_callerID) do {} while (0)
-#else
 EXTERN void HostIF_FastClockLock(int callerID);
 EXTERN void HostIF_FastClockUnlock(int callerID);
-#endif
 EXTERN int HostIF_SetFastClockRate(unsigned rate);
 
 EXTERN MPN HostIF_AllocMachinePage(void);
@@ -153,9 +146,5 @@ EXTERN int HostIF_SafeRDMSR(uint32 msr, uint64 *val);
 
 EXTERN int HostIF_CopyFromUser(void *dst, VA64 src, size_t len);
 EXTERN int HostIF_CopyToUser(VA64 dst, const void *src, size_t len);
-
-#if defined __APPLE__
-EXTERN void HostIF_PageUnitTest(void);
-#endif
 
 #endif // ifdef _HOSTIF_H_
