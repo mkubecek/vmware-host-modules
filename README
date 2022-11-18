@@ -10,10 +10,15 @@ respectively. Tags of the form "p${version}" (e.g.  "p12.5.5") and
 "w${version}" correspond to clean unpacked sources of modules from
 a particular version of Player or Workstation.
 
-From these tags, branches "player-${version}" and "workstation-${version}"
-are forked. These branches track changes needed to build these modules
-against recent kernel versions. In general, one should always use current
-branch head for the build.
+From these tags, branches "workstation-${version}" is forked. This branch
+tracks changes needed to build the modules against recent kernel versions.
+In general, one should always use current branch head for the build. For
+versions before 17.0, there are also branches "player-${version}" but as
+the module sources have been identical between Workstation and Player for
+quite long, there seems to be no need to duplicate the work. Therefore the
+"workstation-*" branches should be also used for Player >= 17.0 (and can be
+in fact used for older as well). If the situation changes in the future,
+Player related branches can be introduced again.
 
 In the past, tags in the form "w${ver}-k${ver}" and "p${ver}-k${kver}" were
 also provided to mark the snapshots deemed sufficient to build modules for
