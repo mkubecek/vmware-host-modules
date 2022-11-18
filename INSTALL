@@ -4,27 +4,33 @@ either build the modules from source and install them ourselves or replace
 VMware provided source tarballs with patched ones and let it use its own
 vmware-modconfig tool.
 
+In the text below, VMWare Workstation/Player 17.0.0 is used as an example.
+Replace the occurences of "17.0.0" with your product version. For versions
+before 17.0.0, there are also "player-*" branches and "p*" tags for VMware
+Player but as the module source is identical between Workstation and Player
+of the same version, one can use either.
+
 
 0. Quick guide for impatient
 ----------------------------
 
 First method (build and install):
 
-  wget https://github.com/mkubecek/vmware-host-modules/archive/workstation-14.1.1.tar.gz
-  tar -xzf workstation-14.1.1.tar.gz
-  cd vmware-host-modules-workstation-14.1.1
+  wget https://github.com/mkubecek/vmware-host-modules/archive/workstation-17.0.0.tar.gz
+  tar -xzf workstation-17.0.0.tar.gz
+  cd vmware-host-modules-workstation-17.0.0
   make
   make install
 
 Last command must be executed with root privileges (first four shouldn't).
-Based on your VMware product, replace "14.1.1" with your installed version
-and/or "workstation" with "player".
+Based on your VMware product, replace "17.0.0" with your installed version.
+
 
 Second method (replace original tarballs):
 
-  wget https://github.com/mkubecek/vmware-host-modules/archive/workstation-14.1.1.tar.gz
-  tar -xzf workstation-14.1.1.tar.gz
-  cd vmware-host-modules-workstation-14.1.1
+  wget https://github.com/mkubecek/vmware-host-modules/archive/workstation-17.0.0.tar.gz
+  tar -xzf workstation-17.0.0.tar.gz
+  cd vmware-host-modules-workstation-17.0.0
   tar -cf vmmon.tar vmmon-only
   tar -cf vmnet.tar vmnet-only
   cp -v vmmon.tar vmnet.tar /usr/lib/vmware/modules/source/
@@ -55,14 +61,14 @@ Branch "master" cannot be used to build modules, it contains only common
 files so that changes in them can be merged into all other branches easily.
 To get actual sources, checkout a "real" branch, e.g.
 
-  git checkout workstation-14.1.1
+  git checkout workstation-17.0.0
 
-Branch name consists of "workstation" (for Workstation) or "player" (for
-Player), a dash and version number ("14.1.1" here). Always use correct
-product and version, the modules check if internal source version matches
-installed product and refuse to load otherwise. Actually, in all recent
-versions, "workstation" and "player" sources have been identical but there
-is no guarantee it will always be the case.
+Branch name consists of "workstation" followed with a dash and version
+number ("17.0.0" here). Always use correct product version, the modules
+check if internal source version matches installed product and refuse to
+load otherwise. When unsure, the version of currently installed Workstation
+or Player can be found in /etc/vmware/config on line starting with
+"product.version".
 
 To pull out updated branch (if there are new commits), run "git pull", to
 switch to a new branch run "git fetch" and "git checkout ...".
@@ -74,9 +80,9 @@ switch to a new branch run "git fetch" and "git checkout ...".
 GitHub allows to download a particular snapshot (branch or tag) directly
 without git:
 
-  wget https://github.com/mkubecek/vmware-host-modules/archive/workstation-14.1.1.tar.gz
+  wget https://github.com/mkubecek/vmware-host-modules/archive/workstation-17.0.0.tar.gz
 
-where "workstation" and "14.1.1" have the same meaning as in section 1a.
+where "workstation" and "17.0.0" have the same meaning as in section 1a.
 Any other tool can be used to retrieve the URL, of course. It's also
 possible to download directly from the web interface, switch to the branch
 you are interested in, click the "Clone or download" button and then
@@ -84,11 +90,11 @@ you are interested in, click the "Clone or download" button and then
 
 Unpack the downloaded archive
 
-  tar -xzf workstation-14.1.1.tar.gz
+  tar -xzf workstation-17.0.0.tar.gz
 
 or
 
-  unzip vmware-host-modules-workstation-14.1.1.zip
+  unzip vmware-host-modules-workstation-17.0.0.zip
 
 depending on archive type. Then change to the resulting directory.
 
@@ -113,7 +119,7 @@ directory with kernel modules (under normal circumstances, this should be
 only root). The VM_UNAME variable can be used to install for a different
 kernel. Unless you know well what are you doing and why, the same value
 should be always used for "make" and "make install". That's why makefile
-checks if vermagic tag of the moudules match VM_UNAME (or current kernel if
+checks if vermagic tag of the modules match VM_UNAME (or current kernel if
 VM_UNAME isn't set).
 
 If DESTDIR is not set (or is empty), "make install" also runs depmod to
