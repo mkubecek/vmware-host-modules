@@ -41,6 +41,7 @@
 #include <linux/file.h>
 
 #include "vnetInt.h"
+#include "compat_autoconf.h"
 #include "compat_netdevice.h"
 #include "vmnetInt.h"
 
@@ -253,7 +254,7 @@ VNetNetIf_Create(char *devName,  // IN:
 
    memset(&netIf->stats, 0, sizeof netIf->stats);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0) && !defined(SLE15_SP5_BACKPORTS)
    memcpy(dev->dev_addr, netIf->port.paddr, sizeof netIf->port.paddr);
 #else
    eth_hw_addr_set(dev, netIf->port.paddr);
@@ -540,7 +541,7 @@ VNetNetifSetMAC(struct net_device *dev, // IN:
       return -EINVAL;
    }
    memcpy(netIf->port.paddr, addr->sa_data, dev->addr_len);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0) && !defined(SLE15_SP5_BACKPORTS)
    memcpy(dev->dev_addr, netIf->port.paddr, dev->addr_len);
 #else
    eth_hw_addr_set(dev, netIf->port.paddr);
