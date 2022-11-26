@@ -49,6 +49,7 @@
 #   include <linux/wireless.h>
 #endif
 #include "vmnetInt.h"
+#include "compat_version.h"
 #include "compat_netdevice.h"
 #include "vnetInt.h"
 #include "smac.h"
@@ -684,7 +685,7 @@ VNetBridgeReceiveFromVNet(VNetJack        *this, // IN: jack
 	 }
          spin_unlock_irqrestore(&bridge->historyLock, flags);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0) && !defined(RHEL91_BACKPORTS)
          netif_rx_ni(clone);
 #else
          netif_rx(clone);

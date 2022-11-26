@@ -41,6 +41,7 @@
 #include <linux/file.h>
 
 #include "vnetInt.h"
+#include "compat_version.h"
 #include "compat_autoconf.h"
 #include "compat_netdevice.h"
 #include "vmnetInt.h"
@@ -350,7 +351,7 @@ VNetNetIfReceive(VNetJack        *this, // IN: jack
    /* send to the host interface */
    skb->dev = netIf->dev;
    skb->protocol = eth_type_trans(skb, netIf->dev);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0) && !defined(RHEL91_BACKPORTS)
    netif_rx_ni(skb);
 #else
    netif_rx(skb);
