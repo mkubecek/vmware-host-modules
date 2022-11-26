@@ -172,6 +172,8 @@ compat_alloc_netdev(int priv_size,
 #   define compat_free_netdev(dev)                free_netdev(dev)
 #endif
 
+#include "compat_version.h"
+
 /* netdev_priv() appeared in 2.6.3 */
 #if  LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 3)
 #   define compat_netdev_priv(netdev)   (netdev)->priv
@@ -346,7 +348,7 @@ typedef u32 compat_netdev_features_t;
 
 static inline int compat_netif_rx_ni(struct sk_buff *skb)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 18, 0) || defined(RHEL91_BACKPORTS)
 	return netif_rx(skb);
 #else
 	return netif_rx_ni(skb);

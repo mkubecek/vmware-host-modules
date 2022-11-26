@@ -138,6 +138,9 @@
 #   if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 6)
 #      define RHEL86_BACKPORTS 1
 #   endif
+#   if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9, 1)
+#      define RHEL91_BACKPORTS 1
+#   endif
 #endif
 
 #endif /* __COMPAT_VERSION_H__ */
