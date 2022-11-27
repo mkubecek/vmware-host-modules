@@ -40,7 +40,8 @@
 
 // XXX not necessary except some places include vm_assert.h improperly
 #include "vm_basic_types.h"
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0)
+#include "compat_version.h"
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0) && !defined(RHEL91_BACKPORTS)
 #include <stdarg.h>
 #else
 #include <linux/stdarg.h>
