@@ -41,6 +41,7 @@
 
 #include "vnetInt.h"
 #include "compat_version.h"
+#include "compat_autoconf.h"
 #include "compat_netdevice.h"
 #include "vmnetInt.h"
 
@@ -66,7 +67,8 @@ static void VNetNetifSetMulticast(struct net_device *dev);
 static int  VNetNetIfProcRead(char *page, char **start, off_t off,
                               int count, int *eof, void *data);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0) && !defined(RHEL86_BACKPORTS)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0) && \
+    !defined(RHEL86_BACKPORTS) && !defined(SLE15_SP3_BACKPORTS)
 static void
 __dev_addr_set(struct net_device *dev, const void *addr, size_t len)
 {

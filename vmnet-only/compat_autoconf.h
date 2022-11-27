@@ -38,4 +38,10 @@
 #   include <generated/autoconf.h>
 #endif
 
+#if defined(CONFIG_SUSE_VERSION) && defined(CONFIG_SUSE_PATCHLEVEL)
+#   if CONFIG_SUSE_VERSION == 15 && CONFIG_SUSE_PATCHLEVEL >= 3
+#      define SLE15_SP3_BACKPORTS 1
+#   endif
+#endif
+
 #endif /* __COMPAT_AUTOCONF_H__ */
