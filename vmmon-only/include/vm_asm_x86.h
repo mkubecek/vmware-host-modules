@@ -65,11 +65,18 @@
  * https://gcc.gnu.org/bugzilla/show_bug.cgi?id=79482
  */
 #ifndef USE_UBSAN
+#if __GNUC__ >= 5
 #define ASSERT_ON_COMPILE_SELECTOR_SIZE(expr)                                \
    ASSERT_ON_COMPILE(sizeof(Selector) == 2 &&                                \
                      __builtin_choose_expr(__builtin_constant_p(expr),       \
                                            ((expr) >> 16) == 0,              \
                                            sizeof(expr) <= 2))
+#else /* __GNUC__ < 5 */
+#define ASSERT_ON_COMPILE_SELECTOR_SIZE(expr)                                \
+   ASSERT_ON_COMPILE(sizeof(Selector) == 2 &&                                \
+		     ((__builtin_constant_p(expr) && ((expr) >> 16) == 0) || \
+		      sizeof(expr) <= 2))
+#endif /* __GNUC__ >= 5 */
 #else
 #define ASSERT_ON_COMPILE_SELECTOR_SIZE(expr)
 #endif
