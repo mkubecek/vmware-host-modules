@@ -128,4 +128,16 @@
 #   define COMPAT_LINUX_VERSION_CHECK_LT(a, b, c) 1
 #endif
 
+#if defined(RHEL_RELEASE_CODE) && defined(RHEL_RELEASE_VERSION)
+#   if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 4)
+#      define RHEL84_BACKPORTS 1
+#   endif
+#   if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 5)
+#      define RHEL85_BACKPORTS 1
+#   endif
+#   if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 6)
+#      define RHEL86_BACKPORTS 1
+#   endif
+#endif
+
 #endif /* __COMPAT_VERSION_H__ */
