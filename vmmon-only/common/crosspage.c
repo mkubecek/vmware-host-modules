@@ -90,6 +90,9 @@
 
 #define EXPORTED_ASM_SYMBOL(fn) ".global " ASM_PREFIX #fn "\n"   \
                                 ASM_PREFIX #fn ":\n"
+#ifndef ASM_ENDBR
+#define ASM_ENDBR
+#endif
 
 /*
  * Tag the crosspage code C wrapper with the crosspage section and page
@@ -313,6 +316,7 @@ CrossPage_CodePage(void)
 
    ".p2align 4\n"
    EXPORTED_ASM_SYMBOL(SwitchDBHandler)
+   ASM_ENDBR
    "pushq        %%rax\n"
    "call         SwitchExcGetCrossPageData\n"
    "addq         %[wsExceptionDB], %%rax\n"
@@ -351,6 +355,7 @@ CrossPage_CodePage(void)
 
    ".p2align 4\n"
    EXPORTED_ASM_SYMBOL(SwitchUDHandler)
+   ASM_ENDBR
    "pushq        %%rax\n"
    "pushq        %%rbx\n"
    "pushq        %%rcx\n"
@@ -419,6 +424,7 @@ CrossPage_CodePage(void)
 
    ".p2align 4\n"
    EXPORTED_ASM_SYMBOL(SwitchNMIHandler)
+   ASM_ENDBR
    "pushq        %%rax\n"
    "call         SwitchExcGetCrossPageData\n"
    "addq         %[wsExceptionNMI], %%rax\n"
@@ -454,6 +460,7 @@ CrossPage_CodePage(void)
 
    ".p2align 4\n"
    EXPORTED_ASM_SYMBOL(SwitchMCEHandler)
+   ASM_ENDBR
    "pushq        %%rax\n"
    "call         SwitchExcGetCrossPageData\n"
    "addq         %[wsExceptionMC], %%rax\n"
@@ -574,6 +581,7 @@ CrossPage_CodePage(void)
 
    ".p2align 4\n"
    EXPORTED_ASM_SYMBOL(VmmToHost)
+   ASM_ENDBR
    "movq            %c[VMMCROSSPAGE] + %c[crosspageDataLA], %%rcx\n"
    /* Create an lret frame on the monitor stack. */
    "pushq           (%%rsp)\n"
