@@ -262,7 +262,7 @@ LinuxDriverInitTSCkHz(void)
 /*
  *----------------------------------------------------------------------
  *
- * init_module --
+ * LinuxDriverInit --
  *
  *      linux module entry point. Called by /sbin/insmod command
  *
@@ -275,7 +275,7 @@ LinuxDriverInitTSCkHz(void)
  */
 
 int
-init_module(void)
+LinuxDriverInit(void)
 {
    int retval;
 
@@ -354,16 +354,15 @@ init_module(void)
 /*
  *----------------------------------------------------------------------
  *
- * cleanup_module --
+ * LinuxDriverExit --
  *
  *      Called by /sbin/rmmod
- *
  *
  *----------------------------------------------------------------------
  */
 
 void
-cleanup_module(void)
+LinuxDriverExit(void)
 {
    /*
     * XXX smp race?
@@ -1754,3 +1753,5 @@ MODULE_LICENSE("GPL v2");
  * by default (i.e., neither mkinitrd nor modprobe will accept it).
  */
 MODULE_INFO(supported, "external");
+module_init(LinuxDriverInit);
+module_exit(LinuxDriverExit);
