@@ -207,11 +207,11 @@ struct MonLoaderEnvContext;
 typedef struct MonLoaderEnvContext MonLoaderEnvContext;
 
 /* Callout prototypes */
-MPN  MonLoaderCallout_AllocMPN(MonLoaderEnvContext *, Vcpuid);
+NORETURN MPN  MonLoaderCallout_AllocMPN(MonLoaderEnvContext *, Vcpuid);
 void MonLoaderCallout_CleanUp(MonLoaderEnvContext *);
-Bool MonLoaderCallout_CopyFromBlob(MonLoaderEnvContext *, uint64, size_t, MPN,
+NORETURN Bool MonLoaderCallout_CopyFromBlob(MonLoaderEnvContext *, uint64, size_t, MPN,
                                    Vcpuid);
-Bool MonLoaderCallout_FillPage(MonLoaderEnvContext *, uint8, MPN, Vcpuid);
+NORETURN Bool MonLoaderCallout_FillPage(MonLoaderEnvContext *, uint8, MPN, Vcpuid);
 MPN  MonLoaderCallout_GetPageRoot(MonLoaderEnvContext *, Vcpuid);
 Bool MonLoaderCallout_GetPTE(MonLoaderEnvContext *, MPN, unsigned, Vcpuid,
                              PT_L1E *);
@@ -221,10 +221,10 @@ Bool MonLoaderCallout_MapMPNInPTE(MonLoaderEnvContext *, MPN, unsigned, uint64,
                                   MPN, Vcpuid);
 MPN  MonLoaderCallout_GetSharedUserPage(MonLoaderEnvContext *, uint64, unsigned,
                                         Vcpuid);
-MPN  MonLoaderCallout_GetSharedHostPage(MonLoaderEnvContext *, uint64, unsigned,
-                                        Vcpuid);
+NORETURN MPN  MonLoaderCallout_GetSharedHostPage(MonLoaderEnvContext *, uint64,
+						 unsigned, Vcpuid);
 Bool MonLoaderCallout_IsPrivileged(MonLoaderEnvContext *);
-Bool MonLoaderCallout_SetEntrypoint(MonLoaderEnvContext *, uint16, VA64, uint16,
+NORETURN Bool MonLoaderCallout_SetEntrypoint(MonLoaderEnvContext *, uint16, VA64, uint16,
                                     VA64);
 MPN  MonLoaderCallout_GetBlobMpn(MonLoaderEnvContext *, uint64);
 
