@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2007 VMware, Inc. All rights reserved.
+ * Copyright (C) 2007, 2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -60,10 +60,12 @@ typedef struct VNetEvent_EventNode VNetEvent_EventNode;
 
 struct VNetEvent_EventNode {
    VNetEvent_EventNode *nextEvent;
-   VNet_EventHeader event;
+   union {
+       VNet_EventHeader header;
+       VNet_LinkStateEvent lse;
+   } event;
 };
 
-#define EVENT_NODE_HEADER_SIZE offsetof(struct VNetEvent_EventNode, event)
 
 struct VNetEvent_Mechanism {
    VNetKernel_SpinLock lock;          /* mechanism lock */
@@ -369,6 +371,10 @@ VNetEvent_Send(VNetEvent_Sender *s, // IN: a sender
       return VNetKernel_EINVAL;
    }
 
+   if (e->size > sizeof(p->event)) {
+      return VNetKernel_EINVAL;
+   }
+
    /* lock */
    VNetKernel_SpinLockAcquire(&m->lock);
    m->handlerTask = VNetKernel_ThreadCurrent();
@@ -378,22 +384,15 @@ VNetEvent_Send(VNetEvent_Sender *s, // IN: a sender
    while (TRUE) {
        p = *q;
        if (p == NULL ||
-           (p->event.eventId == e->eventId && p->event.type == e->type)) {
+           (p->event.header.eventId == e->eventId && p->event.header.type == e->type)) {
                break;
            }
       q = &p->nextEvent;
    }
 
-   /* remove previously sent event */
-   if (p != NULL && p->event.size != e->size) {
-      *q = p->nextEvent;
-      VNetKernel_MemoryFree(p);
-      p = NULL;
-   }
-
    /* insert new event into event list*/
    if (p == NULL) {
-      p = VNetKernel_MemoryAllocate(EVENT_NODE_HEADER_SIZE + e->size);
+      p = VNetKernel_MemoryAllocate(sizeof(*p));
       if (p == NULL) {
          m->handlerTask = NULL;
          VNetKernel_SpinLockRelease(&m->lock);
@@ -485,8 +484,8 @@ VNetEvent_CreateListener(VNetEvent_Mechanism *m, // IN: a mechanism
    while (s != NULL) {
       e = s->firstEvent;
       while (e != NULL) {
-         if ((e->event.classSet & classMask) != 0) {
-            h(data, &e->event);
+         if ((e->event.header.classSet & classMask) != 0) {
+            h(data, &e->event.header);
          }
          e = e->nextEvent;
       }

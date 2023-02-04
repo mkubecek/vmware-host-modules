@@ -3289,13 +3289,13 @@ ProcessOutgoingIPv4Packet(SMACPacket *packet,  // IN: cloned packet to process
 		*/
 
 	       dhcpFlags |= 0x8000;
-	       if (!SetPacketByte(packet, ethHeaderLen + ipHeaderLen + 
-                                  UDP_HEADER_LEN + 11, dhcpFlags & 0xff) || 
-		   !SetPacketByte(packet, ethHeaderLen + ipHeaderLen + 
-                                  UDP_HEADER_LEN + 10, dhcpFlags >> 8)) {
-		  VNETKdPrint((MODULE_NAME "ProcessOutgoing: couldn't set "
-		               "new UDP flags, non-checksum case\n"));
-		  return;
+	       if (!SetPacketByte(packet, ethHeaderLen + ipHeaderLen +
+                         UDP_HEADER_LEN + 11, dhcpFlags & 0xff) ||
+	           !SetPacketByte(packet, ethHeaderLen + ipHeaderLen +
+                         UDP_HEADER_LEN + 10, dhcpFlags >> 8)) {
+                     VNETKdPrint((MODULE_NAME "ProcessOutgoing: couldn't set "
+	                            "new UDP flags, non-checksum case\n"));
+	             return;
 	       }
 	    }
 	 }
@@ -3303,7 +3303,7 @@ ProcessOutgoingIPv4Packet(SMACPacket *packet,  // IN: cloned packet to process
 #ifdef DBG
 	 {
 	    uint32 IPDestAddr;
-	    if (!GetPacketData(packet, ethHeaderLen + IP_HEADER_DEST_ADDR_OFFSET, 
+	    if (!GetPacketData(packet, ethHeaderLen + IP_HEADER_DEST_ADDR_OFFSET,
 			       sizeof IPDestAddr, &IPDestAddr)) {
 	       VNETKdPrint((MODULE_NAME "ProcessOutgoing: couldn't get "
 			    "IP dest addr\n"));
@@ -4614,11 +4614,16 @@ GetSystemUptime(SMACState *state) // IN: smac state
  *----------------------------------------------------------------------
  */
 
-static INLINE uint32 
+static INLINE uint32
 GetPacketLength(SMACPacket *packet) // IN: packet
 {
    ASSERT(packet);
+
 #ifdef _WIN32
+   if (packet == NULL) {
+       return 0;
+   }
+
    return packet->buf1Len + packet->buf2Len;
 #elif defined __linux__
    ASSERT(packet->skb);
@@ -4682,12 +4687,14 @@ GetPacketData(SMACPacket *packet, // IN: packet to copy from
       data = ((uint8*)data) + copyLength;
       length -= copyLength;
    }
-   /* copy any remaining data from second buffer */   
+   /* copy any remaining data from second buffer */
    if (length) {
       copyOffset = offset - packet->buf1Len;
       copyLength = length;
-      MEMCPY(data, ((uint8*)packet->buf2) + copyOffset, copyLength);
-   }   
+      if (data && packet->buf2) {
+          MEMCPY(data, ((uint8*)packet->buf2) + copyOffset, copyLength);
+      }
+   }
 
 #elif __linux__
 
@@ -4740,8 +4747,8 @@ ClonePacket(SMACPackets *packets)   // IN: struct in which to clone packet
    if (packets->orig.buf1Len) {
       MEMCPY(packetClone->data, packets->orig.buf1, packets->orig.buf1Len);
    }
-   if (packets->orig.buf2Len) {
-      MEMCPY(packetClone->data + packets->orig.buf1Len, packets->orig.buf2, 
+   if (packets->orig.buf2Len && packets->orig.buf2) {
+      MEMCPY((uint8 *)packetClone->data + packets->orig.buf1Len, packets->orig.buf2,
 	     packets->orig.buf2Len);
    }
 
@@ -4859,15 +4866,19 @@ SetPacketByte(SMACPacket *packet, // IN: packet
 	      uint8 data)	  // IN: data to set
 {
    ASSERT(packet);
-
 #ifdef _WIN32
+
+   if (packet == NULL || packet->buf1 == NULL || packet->buf2 == NULL) {
+       return FALSE;
+   }
+
    /* check length, be sure to handle case where offset = -1, length > 0 */
    if (offset > GetPacketLength(packet)) {
       /* packet not long enough for data */
       return FALSE;
    }
 
-   /* if offset starts in the first buffer, then copy from first buffer */   
+   /* if offset starts in the first buffer, then copy from first buffer */
    if (offset < packet->buf1Len) {
       ((uint8*)packet->buf1)[offset] = data;
    } else {
