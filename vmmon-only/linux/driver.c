@@ -763,7 +763,11 @@ LinuxDriverMmap(struct file *filp,
       return err;
    }
    /* Clear VM_IO, otherwise SuSE's kernels refuse to do get_user_pages */
+#if COMPAT_LINUX_VERSION_CHECK_LT(6, 3, 0)
    vma->vm_flags &= ~VM_IO;
+#else
+   vm_flags_clear(vma, VM_IO);
+#endif
 
    return 0;
 }
