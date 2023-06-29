@@ -1421,6 +1421,10 @@ VNetBridgeComputeHeaderPos(struct sk_buff *skb) // IN: buffer to examine
 #if defined(NETIF_F_GSO) || LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 18)
 #define VNetBridgeIsGSO(skb) skb_shinfo(skb)->gso_size
 #define VNetBridgeGSOSegment(skb) skb_gso_segment(skb, 0)
+#if !COMPAT_LINUX_VERSION_CHECK_LT(6, 5, 0) || \
+    (!defined(SKB_GSO_CB) && !COMPAT_LINUX_VERSION_CHECK_LT(3, 9, 0))
+#include <net/gso.h>
+#endif
 #elif defined(NETIF_F_TSO)
 #define VNetBridgeIsGSO(skb) skb_shinfo(skb)->tso_size
 
