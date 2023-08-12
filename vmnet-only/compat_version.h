@@ -118,11 +118,11 @@
  */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 0, 0)
    /* Straight forward comparison if kernel version is 3.0.0 and beyond */
-#   define COMPAT_LINUX_VERSION_CHECK_LT(a, b, c) LINUX_VERSION_CODE < KERNEL_VERSION (a, b, c)
+#   define COMPAT_LINUX_VERSION_CHECK_LT(a, b, c) (LINUX_VERSION_CODE < KERNEL_VERSION (a, b, c))
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 40)
    /* Use b of the check to calculate corresponding c of kernel
     *  version to compare */
-#   define COMPAT_LINUX_VERSION_CHECK_LT(a, b, c) LINUX_VERSION_CODE < KERNEL_VERSION (2, 6, (b + 40))
+#   define COMPAT_LINUX_VERSION_CHECK_LT(a, b, c) (LINUX_VERSION_CODE < KERNEL_VERSION (2, 6, (b + 40)))
 #else
     /* This is anyways lesser than any 3.x versions */
 #   define COMPAT_LINUX_VERSION_CHECK_LT(a, b, c) 1
