@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2016-2018,2021 VMware, Inc. All rights reserved.
+ * Copyright (C) 2016-2018,2021-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -25,7 +25,16 @@
 
 #include "community_source.h"
 
-#define VT_EXITREASON_VMENTRYFAIL           (1U << 31)
+/*
+ * Definitions for fields in the exit reason. Bits 28 and 29 are only applicable
+ * for exits that end in SMM.  Bit 16 is MBZ while other bits are reserved for
+ * future use.
+ */
+#define VT_EXITREASON_BASIC_REASON_MASK      0xFFFF
+#define VT_EXITREASON_INSIDE_ENCLAVE         (1U << 27)
+#define VT_EXITREASON_PENDING_MTF            (1U << 28)
+#define VT_EXITREASON_EXIT_ROOT_OPERATION    (1U << 29)
+#define VT_EXITREASON_VMENTRYFAIL            (1U << 31)
 
 VT_EXIT(EXC_OR_NMI,            0)
 VT_EXIT(EXTINT,                1)
@@ -93,11 +102,17 @@ VT_EXIT(PML_LOGFULL,          62)
 VT_EXIT(XSAVES,               63)
 VT_EXIT(XRSTORS,              64)
 VT_EXIT(VMEXIT65,             65)
-VT_EXIT(VMEXIT66,             66)
+VT_EXIT(SPP_EVENT,            66)
 VT_EXIT(UMWAIT,               67)
 VT_EXIT(TPAUSE,               68)
-VT_EXIT(VMEXIT69,             69)
+VT_EXIT(LOADIWKEY,            69)
 VT_EXIT(ENCLV,                70)
 VT_EXIT(SGX_CONFLICT,         71)
+VT_EXIT(ENQCMD_PASID_FAIL,    72)
+VT_EXIT(ENQCMDS_PASID_FAIL,   73)
+VT_EXIT(BUS_LOCK,             74)
+VT_EXIT(NOTIFY_WINDOW,        75)
+VT_EXIT(VMEXIT76,             76)
+VT_EXIT(TDCALL,               77)
 /* Bump this up if you add an exit reason. */
-#define VT_NUM_EXIT_REASONS   72
+#define VT_NUM_EXIT_REASONS   78

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2019,2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -71,6 +71,19 @@
 #define LIMIT_HI(_dw)             ((uint32)(((_dw) >> 16) & 0xf))
 #define OFFSET_LO(_dw)            ((uint32)((_dw) & 0xffff)) /* CallGate */
 #define OFFSET_HI(_dw)            ((uint32)(((_dw) >> 16) & 0xffff))
+
+
+/* Reset values for descriptors. */
+#define RESET_DESC_BASE            0x00000000
+#define RESET_DESC_BASE_CS         0xffff0000
+#define RESET_DESC_LIMIT           0x0000ffff
+#define RESET_DESC_LIMIT_AP        0xffffffff
+#define RESET_DESC_LIMIT_TDX       0xffffffff
+#define RESET_SELECTOR_VALUE       0x00000000
+#define RESET_SELECTOR_VALUE_CS    0x0000f000
+#define RESET_GDT_LIMIT            0x0000ffff
+#define RESET_IDT_LIMIT            0x0000ffff
+
 
 /*
  * Accessor functions for descriptors.  

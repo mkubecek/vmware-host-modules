@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014,2016,2019,2022 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014,2016,2019,2022-2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -345,11 +345,11 @@ VNetNetIfReceive(VNetJack        *this, // IN: jack
                         netIf->dev->flags)) {
       goto drop_packet;
    }
-   
+
    /* send to the host interface */
    skb->dev = netIf->dev;
    skb->protocol = eth_type_trans(skb, netIf->dev);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0) && !defined(RHEL91_BACKPORTS)
    netif_rx_ni(skb);
 #else
    netif_rx(skb);
@@ -357,7 +357,7 @@ VNetNetIfReceive(VNetJack        *this, // IN: jack
    netIf->stats.rx_packets++;
 
    return;
-   
+
  drop_packet:
    dev_kfree_skb(skb);
 }

@@ -20,8 +20,8 @@
  * nonsense here.   This file is for _constants_.
  */
 
-#ifndef _VMM_CONSTANTS_H_
-#define _VMM_CONSTANTS_H_
+#ifndef _MON_CONSTANTS_H_
+#define _MON_CONSTANTS_H_
 
 #define INCLUDE_ALLOW_USERLEVEL
 
@@ -31,19 +31,19 @@
 #include "includeCheck.h"
 
 
-#define VMM_PANIC_NONE         0
-#define VMM_PANIC_MSG_COPYING  1
-#define VMM_PANIC_MSG_COPIED   2
-#define VMM_PANIC_COREDUMPING  3
-#define VMM_PANIC_VCPU         4
+#define MON_PANIC_NONE         0
+#define MON_PANIC_MSG_COPYING  1
+#define MON_PANIC_MSG_COPIED   2
+#define MON_PANIC_COREDUMPING  3
+#define MON_PANIC_VCPU         4
 
-#define VMM_PANIC_MSG_SIZE     256
+#define MON_PANIC_MSG_SIZE     256
 
 /* Ensure enough space for obj build with GCOV_VMM=1. */
 #if defined(VMX86_SERVER)
-#define VMMBLOB_SIZE_MAX (24 * 1024 * 1024)
+#define VMMBLOB_SIZE_MAX (25 * 1024 * 1024)
 #else
-#define VMMBLOB_SIZE_MAX (24 * 1024 * 1024)
+#define VMMBLOB_SIZE_MAX (25 * 1024 * 1024)
 #endif
 
 #endif

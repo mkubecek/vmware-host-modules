@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2003-2016, 2018 VMware, Inc. All rights reserved.
+ * Copyright (C) 2003-2016, 2018-2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -44,6 +44,10 @@
 #include "vm_assert.h"
 #include "vm_atomic.h"
 #include "versioned_atomic.h"
+
+#if defined(VM_ARM_ANY) && defined(_MSC_VER)
+#include "mul64.h"
+#endif
 
 #if defined __cplusplus
 extern "C" {

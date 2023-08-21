@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2012,2014-2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2012,2014-2019,2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -37,8 +37,8 @@
 
 #define PERF_EVENT_NAME_LEN                      64
 /*
- * nmiNo      -- vmm peer is not attempting to do nmi profiling this run
- * nmiYes     -- vmm peer is doing nmi profiling and nmis are currently enabled
+ * nmiNo      -- vmm peer is not attempting to do nmi profiling this run.
+ * nmiYes     -- vmm peer is doing nmi profiling and nmis are currently enabled.
  * nmiStopped -- vmm peer is doing nmi profiling, but nmis are temporarily
  *               disabled for safety reasons.
  */
@@ -47,6 +47,7 @@ typedef struct NMIShared { /* shared with vmx and vmkernel */
    NMIStatus vmmStatus;
    int32     nmiErrorCode;
    int64     nmiErrorData;
+   NMI_SHARED_ARCH_FIELDS
 } NMIShared;
 
 /*

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2020 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -62,11 +62,11 @@
 
 #define PTE_LARGE_PAT_2_PS(_pte) (((_pte) & PTE_LARGE_PAT) >> 5)
 
-#define PTE_PROT_FLAGS  (PTE_P|PTE_RW|PTE_US)
-#define PTE_FLAGS       (PTE_PROT_FLAGS|PTE_G)
+#define PTE_PROT_FLAGS      (PTE_P|PTE_RW|PTE_US)
+#define PTE_FLAGS           (PTE_PROT_FLAGS|PTE_G)
 
-#define PTE_KERNEL              (PTE_P|PTE_RW)
-#define PTE_KERNEL_NX           (PTE_P|PTE_RW|PTE_NX)
+#define PTE_KERNEL          (PTE_P|PTE_RW)
+#define PTE_KERNEL_NX       (PTE_P|PTE_RW|PTE_NX)
 
 #define PTE_PRESENT(_pte)   (((_pte) & PTE_P) != 0)
 #define PTE_WRITEABLE(_pte) (((_pte) & PTE_RW) != 0)
@@ -79,6 +79,8 @@
 #define PTE_NOEXECUTE(_pte) (((_pte) & PTE_NX) != 0)
 #define PTE_PK(_pte)        (((_pte) & PTE_PK_MASK) >> PTE_PK_SHIFT)
 
+#define PDPTR_MBZ_MASK      CONST64(0x1e6)
+
 #define PK_AD         1 /* Access disable bit */
 #define PK_WD         2 /* Write disable bit */
 #define PKR_WIDTH     2
@@ -86,15 +88,15 @@
 #define PK_RIGHTS(_pkru, _key) (((_pkru) >> ((_key) * PKR_WIDTH)) & PKR_MASK);
 
 /* Error code flags */
-#define PF_P            (1 << 0)
-#define PF_RW           (1 << 1)
-#define PF_US           (1 << 2)
-#define PF_RSVD         (1 << 3)
-#define PF_ID           (1 << 4)
-#define PF_PK           (1 << 5)
-#define PF_SS           (1 << 6)
-#define PF_SGX          (1 << 15)
-#define PF_RMP          (1 << 31)
+#define PF_P            (1u << 0)
+#define PF_RW           (1u << 1)
+#define PF_US           (1u << 2)
+#define PF_RSVD         (1u << 3)
+#define PF_ID           (1u << 4)
+#define PF_PK           (1u << 5)
+#define PF_SS           (1u << 6)
+#define PF_SGX          (1u << 15)
+#define PF_RMP          (1u << 31)
 
 /*
  * Operand definitions for the INVPCID instruction. See SDM Vol. 2A.

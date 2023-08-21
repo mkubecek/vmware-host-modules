@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2007-2020 VMware, Inc. All rights reserved.
+ * Copyright (c) 2007-2020,2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -29,7 +29,6 @@
 #include "vm_basic_defs.h"
 #include "vm_assert.h"
 #include "address_defs.h"
-#include "vmm_constants.h"
 
 #define DIRECT_EXEC_USER_RPL    3
 #define BINARY_TRANSLATION_RPL  1

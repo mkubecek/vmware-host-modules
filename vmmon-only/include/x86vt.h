@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2004-2022 VMware, Inc. All rights reserved.
+ * Copyright (C) 2004-2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -170,10 +170,10 @@
                                   VT_ENCODING_NUM_TYPES *   \
                                   VT_ENCODING_NUM_SIZES)
 /*
- * The highest index of any currently defined field is 27, for
- * ENCLV_EXITING_BITMAP.
+ * The highest index of any currently defined field is 30, for
+ * SHARED_EPTP.
  */
-#define VT_ENCODING_MAX_INDEX                  27
+#define VT_ENCODING_MAX_INDEX                  30
 
 /* VMCS ID's for various CPU models. */
 #define  VT_VMCS_ID_VMWARE       1
@@ -322,7 +322,7 @@ enum {
    VMX_CPU2(EPT_VIOL_VE,        18)                      \
    VMX_CPU2(PT_SUPPRESS_NR_BIT, 19)                      \
    VMX_CPU2(XSAVES,             20)                      \
-   VMX_CPU2(PASID,              21)                      \
+   VMX_CPU2(PASID_TRANS,        21)                      \
    VMX_CPU2(EPT_MBX,            22)                      \
    VMX_CPU2(EPT_SUB_PAGE,       23)                      \
    VMX_CPU2(PT_GUEST_PA,        24)                      \
@@ -348,6 +348,7 @@ enum {
    VMX_CPU3(PAGING_WRITE,        2)                      \
    VMX_CPU3(GUEST_PAGING_VERIF,  3)                      \
    VMX_CPU3(IPI_VIRTUALIZATION,  4)                      \
+   VMX_CPU3(VIRT_SPEC_CTRL,      7)                      \
 
 #define VMX_PROCBASED_CTLS3_CAP                          \
         VMX_PROCBASED_CTLS3_CAP_NDA                      \
@@ -587,17 +588,15 @@ enum {
  * exit reasons, because we shouldn't encounter any new exit reasons
  * unless we opt-in to the features that produce them.
  */
-#define VT_EXITREASON_SYNTH_BASE     77
-#define VT_EXITREASON_SYNTH_IRET     77
-#define VT_EXITREASON_SYNTH_NMI      78
-#define VT_EXITREASON_SYNTH_ICEBP    79
-#define VT_EXITREASON_SYNTH_EXC_BASE 80
-#define VT_EXITREASON_SYNTH_MAX      111
+#define VT_EXITREASON_SYNTH_BASE     78
+#define VT_EXITREASON_SYNTH_IRET     78
+#define VT_EXITREASON_SYNTH_NMI      79
+#define VT_EXITREASON_SYNTH_ICEBP    80
+#define VT_EXITREASON_SYNTH_EXC_BASE 81
+#define VT_EXITREASON_SYNTH_MAX      112
 
 #define VT_EXITREASON_SYNTH_EXC(gatenum) \
         (VT_EXITREASON_SYNTH_EXC_BASE + gatenum) /* 0-31 */
-
-#define VT_EXITREASON_INSIDE_ENCLAVE        (1U << 27)
 
 /* Instruction error codes. */
 #define VT_ERROR_VMCALL_VMX_ROOT            1
@@ -702,12 +701,6 @@ enum {
 #define VT_GUESTFAIL_QUAL_PDPTE        2
 #define VT_GUESTFAIL_QUAL_NMI          3
 #define VT_GUESTFAIL_QUAL_LINK         4
-
-/* SGX conflict VM-exit Qualification Codes */
-#define VT_SGX_TRACKING_RESOURCE_CONFLICT     0
-#define VT_SGX_TRACKING_REFERENCE_CONFLICT    1
-#define VT_SGX_EPC_PAGE_CONFLICT_EXCEPTION    2
-#define VT_SGX_EPC_PAGE_CONFLICT_ERROR        3
 
 /* VMX abort indicators. */
 
@@ -1022,14 +1015,17 @@ VTComputeMandatoryBits(uint64 msrVal, uint32 bits)
  * VT_EnabledFromFeatures --
  *
  *  Returns TRUE if VT is enabled in the given feature control bits.
+ *  If SMX is enabled, then only SMXE must be set, otherwise, only VMXE
+ *  must be set. The LOCK bit must always be set.
  *
  *----------------------------------------------------------------------
  */
 static INLINE Bool
-VT_EnabledFromFeatures(uint64 featCtl)
+VT_EnabledFromFeatures(uint64 featCtl, Bool smxEnabled)
 {
-   return ((featCtl & (MSR_FEATCTL_VMXE | MSR_FEATCTL_LOCK)) ==
-           (MSR_FEATCTL_VMXE | MSR_FEATCTL_LOCK));
+   uint64 req = MSR_FEATCTL_LOCK |
+                (smxEnabled ? MSR_FEATCTL_SMXE : MSR_FEATCTL_VMXE);
+   return (featCtl & req) == req;
 }
 
 /*
@@ -1150,6 +1146,25 @@ VT_ConvEPTViolSupportedFromFeatures(uint64 secondary)
    return (HIDWORD(secondary) & VT_VMCS_2ND_VMEXEC_CTL_EPT_VIOL_VE) != 0;
 }
 
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * VT_PasidTransSupportedFromFeatures --
+ *
+ *   Returns TRUE if the given VMX features provide support for
+ *   PASID translation
+ *
+ *   Assumes that VT is supported.
+ *
+ *----------------------------------------------------------------------
+ */
+static inline Bool
+VT_PasidTransSupportedFromFeatures(uint64 secondary)
+{
+   return (HIDWORD(secondary) & VT_VMCS_2ND_VMEXEC_CTL_PASID_TRANS) != 0;
+}
+
 #if !defined(VM_ARM_64) /* PR 2822467 */ &&                     \
     (defined(DECODER) || defined(FROBOS) || defined(ULM) ||     \
      defined(VMKBOOT) || defined(VMKERNEL) || defined(VMM) ||   \
@@ -1165,9 +1180,9 @@ VT_ConvEPTViolSupportedFromFeatures(uint64 secondary)
  *----------------------------------------------------------------------
  */
 static INLINE Bool
-VT_EnabledCPU(void)
+VT_EnabledCPU(Bool smxEnabled)
 {
-   return VT_EnabledFromFeatures(X86MSR_GetMSR(MSR_FEATCTL));
+   return VT_EnabledFromFeatures(X86MSR_GetMSR(MSR_FEATCTL), smxEnabled);
 }
 
 

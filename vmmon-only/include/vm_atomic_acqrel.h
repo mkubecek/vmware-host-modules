@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2018-2021 VMware, Inc. All rights reserved.
+ * Copyright (C) 2018-2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -165,7 +165,10 @@ Atomic_Read8Acquire(Atomic_uint8 const *var)  // IN:
 {
    uint8 val;
 
-#if defined __GNUC__
+#if defined VM_ATOMIC_USE_C11
+   val = atomic_load_explicit((_Atomic uint8 *)&var->value,
+                              memory_order_acquire);
+#elif defined __GNUC__
 #  if defined __i386__ || defined __x86_64__
    __asm__ __volatile__(
       "movb %1, %0"
@@ -224,7 +227,10 @@ Atomic_Read16Acquire(Atomic_uint16 const *var)  // IN:
 
    ASSERT((uintptr_t)var % 2 == 0);
 
-#if defined __GNUC__
+#if defined VM_ATOMIC_USE_C11
+   val = atomic_load_explicit((_Atomic uint16 *)&var->value,
+                              memory_order_acquire);
+#elif defined __GNUC__
 #  if defined __x86_64__ || defined __i386__
    __asm__ __volatile__(
       "movw %1, %0"
@@ -283,7 +289,10 @@ Atomic_Read32Acquire(Atomic_uint32 const *var)  // IN:
 
    ASSERT((uintptr_t)var % 4 == 0);
 
-#if defined __GNUC__
+#if defined VM_ATOMIC_USE_C11
+   val = atomic_load_explicit((_Atomic uint32 *)&var->value,
+                              memory_order_acquire);
+#elif defined __GNUC__
    /*
     * Use inline assembler to force using a single load instruction to
     * ensure that the compiler doesn't split a transfer operation into multiple
@@ -351,7 +360,10 @@ Atomic_Read64Acquire(Atomic_uint64 const *var)  // IN:
 
    ASSERT((uintptr_t)var % 8 == 0);
 
-#if defined __GNUC__
+#if defined VM_ATOMIC_USE_C11
+   val = atomic_load_explicit((_Atomic uint64 *)&var->value,
+                              memory_order_acquire);
+#elif defined __GNUC__
 #  if defined __x86_64__
    __asm__ __volatile__(
       "movq %1, %0"
@@ -445,7 +457,10 @@ static INLINE void
 Atomic_Write8Release(Atomic_uint8 *var,  // OUT:
                      uint8 val)          // IN:
 {
-#if defined __GNUC__
+#if defined VM_ATOMIC_USE_C11
+   atomic_store_explicit((_Atomic uint8 *)&var->value, val,
+                         memory_order_release);
+#elif defined __GNUC__
 #  if defined __i386__ || defined __x86_64__
    __asm__ __volatile__(
       "movb %1, %0"
@@ -501,7 +516,10 @@ Atomic_Write16Release(Atomic_uint16 *var,  // OUT:
 {
    ASSERT((uintptr_t)var % 2 == 0);
 
-#if defined __GNUC__
+#if defined VM_ATOMIC_USE_C11
+   atomic_store_explicit((_Atomic uint16 *)&var->value, val,
+                         memory_order_release);
+#elif defined __GNUC__
 #  if defined __x86_64__ || defined __i386__
    __asm__ __volatile__(
       "movw %1, %0"
@@ -557,7 +575,10 @@ Atomic_Write32Release(Atomic_uint32 *var,  // OUT:
 {
    ASSERT((uintptr_t)var % 4 == 0);
 
-#if defined __GNUC__
+#if defined VM_ATOMIC_USE_C11
+   atomic_store_explicit((_Atomic uint32 *)&var->value, val,
+                         memory_order_release);
+#elif defined __GNUC__
 #  if defined __x86_64__ || defined __i386__
    __asm__ __volatile__(
       "movl %1, %0"
@@ -618,7 +639,10 @@ Atomic_Write64Release(Atomic_uint64 *var,  // OUT:
 
    ASSERT((uintptr_t)var % 8 == 0);
 
-#if defined __GNUC__
+#if defined VM_ATOMIC_USE_C11
+   atomic_store_explicit((_Atomic uint64 *)&var->value, val,
+                         memory_order_release);
+#elif defined __GNUC__
 #  if defined __x86_64__
    __asm__ __volatile__(
       "movq %1, %0"
@@ -741,31 +765,43 @@ MAKE_ATOMIC_ACQREL_FUNCS(Bool, 8, Bool, Bool, Bool)
 static INLINE void
 Atomic_FenceAcquire(void)
 {
-   // C11 atomic_thread_fence(memory_order_acquire);
+#ifdef VM_ATOMIC_USE_C11
+   atomic_thread_fence(memory_order_acquire);
+#else
    SMP_R_BARRIER_RW();
+#endif
 }
 
 static INLINE void
 Atomic_FenceRelease(void)
 {
-   // C11 atomic_thread_fence(memory_order_release);
+#ifdef VM_ATOMIC_USE_C11
+   atomic_thread_fence(memory_order_release);
+#else
    SMP_RW_BARRIER_W();
+#endif
 }
 
 static INLINE void
 Atomic_FenceAcqRel(void)
 {
-   // C11 atomic_thread_fence(memory_order_acq_rel);
+#ifdef VM_ATOMIC_USE_C11
+   atomic_thread_fence(memory_order_acq_rel);
+#else
    /* R_RW + RW_W is generally cheaper than RW_RW (W_R is expensive) */
    SMP_R_BARRIER_RW();
    SMP_RW_BARRIER_W();
+#endif
 }
 
 static INLINE void
 Atomic_FenceSeqCst(void)
 {
-   // C11 atomic_thread_fence(memory_order_seq_cst);
+#ifdef VM_ATOMIC_USE_C11
+   atomic_thread_fence(memory_order_seq_cst);
+#else
    SMP_RW_BARRIER_RW();
+#endif
 }
 
 #ifdef VM_ARM_64

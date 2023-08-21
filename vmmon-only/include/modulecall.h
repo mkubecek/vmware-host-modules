@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2021 VMware, Inc. All rights reserved.
+ * Copyright (c) 1998-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -34,7 +34,6 @@
 #include "ptsc.h"
 #include "vcpuid.h"
 #include "vcpuset.h"
-#include "vmm_constants.h"
 #include "contextinfo.h"
 #include "rateconv.h"
 #include "mon_assert.h"
@@ -363,7 +362,7 @@ typedef struct VMCrossPageData {
 } VMCrossPageData;
 #pragma pack(pop)
 
-#define CROSSPAGE_VERSION_BASE 0xc14 /* increment by 1 */
+#define CROSSPAGE_VERSION_BASE 0xc15 /* increment by 1 */
 #define CROSSPAGE_VERSION    ((CROSSPAGE_VERSION_BASE << 1) + WS_INTR_STRESS)
 
 #if !defined(VMX86_SERVER) && defined(VMM)

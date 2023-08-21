@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2008-2022 VMware, Inc. All rights reserved.
+ * Copyright (C) 2008-2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -74,9 +74,7 @@
                                       VT_VMCS_2ND_VMEXEC_CTL_APIC |         \
                                       VT_VMCS_2ND_VMEXEC_CTL_PML |          \
                                       VT_VMCS_2ND_VMEXEC_CTL_ENCLS |        \
-                                      VT_VMCS_2ND_VMEXEC_CTL_ENCLV |        \
-                                      VT_VMCS_2ND_VMEXEC_CTL_UMWAIT |       \
-                                      VT_VMCS_2ND_VMEXEC_CTL_EPC_VIRT_EXT)
+                                      VT_VMCS_2ND_VMEXEC_CTL_UMWAIT)
 
 #define VVT_2ND_CTLS                 QWORD(VVT_2ND_CTLS1,                   \
                                            VVT_2ND_CTLS0)

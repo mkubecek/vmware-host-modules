@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2015-2021 VMware, Inc. All rights reserved.
+ * Copyright (C) 2015-2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -284,10 +284,10 @@ VMCS_FIELD(ENCLS_EXITING_BITMAP,    0x202E, _S64, _TC, 23, _NC,  _V, _NA,  _S)
 VMCS_UNUSED(                        0x2030, _S64, _TC, 24)
 VMCS_FIELD(TSC_MULTIPLIER,          0x2032, _S64, _TC, 25, _NC, _NV, _NA,  _S)
 VMCS_UNUSED(                        0x2034, _S64, _TC, 26)
-VMCS_FIELD(ENCLV_EXITING_BITMAP,    0x2036, _S64, _TC, 27, _NC,  _V, _NA,  _S)
-VMCS_UNUSED(                        0x2038, _S64, _TC, 28)
-VMCS_UNUSED(                        0x203A, _S64, _TC, 29)
-VMCS_UNUSED(                        0x203C, _S64, _TC, 30)
+VMCS_FIELD(ENCLV_EXITING_BITMAP,    0x2036, _S64, _TC, 27, _NC, _NV, _NA,  _S)
+VMCS_FIELD(LOW_PASID_DIR,           0x2038, _S64, _TC, 28, _NC, _NV, _NA,  _S)
+VMCS_FIELD(HIGH_PASID_DIR,          0x203A, _S64, _TC, 29, _NC, _NV, _NA,  _S)
+VMCS_FIELD(SHARED_EPTP,             0x203C, _S64, _TC, 30, _NC, _NV, _NA, _NS)
 VMCS_UNUSED(                        0x203E, _S64, _TC, 31)
 VMCS_GROUP_END(64, CTL)
 

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2022 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -134,6 +134,12 @@
 #   endif
 #   if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8, 5)
 #      define RHEL85_BACKPORTS 1
+#   endif
+#   if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9, 1)
+#      define RHEL91_BACKPORTS 1
+#   endif
+#   if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9, 2)
+#      define RHEL92_BACKPORTS 1
 #   endif
 #endif
 

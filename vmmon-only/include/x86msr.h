@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2022 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -101,12 +101,22 @@ typedef struct MSRQuery {
 #define MSR_DEBUGCTL          0x000001d9
 #define MSR_TSC_DEADLINE      0x000006e0
 #define MSR_PKRS              0x000006e1
+#define MSR_DEBUG_INTERFACE   0x00000c80
 #define MSR_EFER              0xc0000080
 #define MSR_FSBASE            0xc0000100
 #define MSR_GSBASE            0xc0000101
 #define MSR_KERNELGSBASE      0xc0000102
 #define MSR_TSC_AUX           0xc0000103
 #define MSR_BD_TSC_RATIO      0xc0000104
+
+#define MSR_TEMPERATURE_TARGET   0x000001a2
+#define MSR_PACKAGE_THERM_STATUS 0x000001b1
+#define MSR_RAPL_POWER_UNIT      0x00000606
+#define MSR_PKG_ENERGY_STATUS    0x00000611
+#define MSR_PKG_PERF_STATUS      0x00000613
+#define MSR_PKG_POWER_INFO       0x00000614
+#define MSR_DRAM_ENERGY_STATUS   0x00000619
+#define MSR_DRAM_PERF_STATUS     0x0000061b
 
 /* CET MSRs */
 #define MSR_U_CET                            0x6a0
@@ -142,6 +152,19 @@ typedef struct MSRQuery {
 #define MSR_ARCH_CAPABILITIES_IF_PSCHANGE_MC_NO   (1ULL << 6)
 #define MSR_ARCH_CAPABILITIES_TSX_CTRL            (1ULL << 7)
 #define MSR_ARCH_CAPABILITIES_TAA_NO              (1ULL << 8)
+#define MSR_ARCH_CAPABILITIES_MISC_PKG_CTRLS      (1ULL << 10)
+#define MSR_ARCH_CAPABILITIES_ENERGY_FILT_CTL     (1ULL << 11)
+#define MSR_ARCH_CAPABILITIES_DOITM               (1ULL << 12)
+#define MSR_ARCH_CAPABILITIES_SBDR_SSDP_NO        (1ULL << 13)
+#define MSR_ARCH_CAPABILITIES_FBSDP_NO            (1ULL << 14)
+#define MSR_ARCH_CAPABILITIES_PSDP_NO             (1ULL << 15)
+#define MSR_ARCH_CAPABILITIES_FB_CLEAR            (1ULL << 17)
+#define MSR_ARCH_CAPABILITIES_FB_CLEAR_CTRL       (1ULL << 18)
+#define MSR_ARCH_CAPABILITIES_RRSBA               (1ULL << 19)
+#define MSR_ARCH_CAPABILITIES_BHI_NO              (1ULL << 20)
+#define MSR_ARCH_CAPABILITIES_XAPIC_DIS_STATUS    (1ULL << 21)
+#define MSR_ARCH_CAPABILITIES_OVERCLOCKING_STATUS (1ULL << 23)
+#define MSR_ARCH_CAPABILITIES_PBRSB_NO            (1ULL << 24)
 
 #define MSR_FLUSH_CMD                        0x10b
 #define MSR_FLUSH_CMD_FLUSH_L1D                   (1ULL << 0)
@@ -149,13 +172,25 @@ typedef struct MSRQuery {
 #define MSR_SPEC_CTRL_IBRS                        (1UL << 0)
 #define MSR_SPEC_CTRL_STIBP                       (1UL << 1)
 #define MSR_SPEC_CTRL_SSBD                        (1UL << 2)
+#define MSR_SPEC_CTRL_IPRED_DIS_U                 (1UL << 3)
+#define MSR_SPEC_CTRL_IPRED_DIS_S                 (1UL << 4)
+#define MSR_SPEC_CTRL_RRSBA_DIS_U                 (1UL << 5)
+#define MSR_SPEC_CTRL_RRSBA_DIS_S                 (1UL << 6)
 #define MSR_SPEC_CTRL_PSFD                        (1UL << 7)
+#define MSR_SPEC_CTRL_DDPD_U                      (1UL << 8)
+#define MSR_SPEC_CTRL_BHI_DIS_S                   (1UL << 10)
 
 #define MSR_PRED_CMD_IBPB                         (1UL << 0)
 
 #define MSR_TSX_CTRL                         0x122
 #define MSR_TSX_CTRL_RTM_DISABLE                  (1ULL << 0)
 #define MSR_TSX_CTRL_CPUID_CLEAR                  (1ULL << 1)
+
+#define MSR_MCU_OPT_CTRL                     0x123
+#define MSR_MCU_OPT_CTRL_RNGDS_MITG_DIS           (1ULL << 0)
+#define MSR_MCU_OPT_CTRL_RTM_ALLOW                (1ULL << 1)
+#define MSR_MCU_OPT_CTRL_RTM_LOCKED               (1ULL << 2)
+#define MSR_MCU_OPT_CTRL_FB_CLEAR_DIS             (1ULL << 3)
 
 #ifndef MSR_MISC_FEATURES_ENABLES
 #define MSR_MISC_FEATURES_ENABLES            0x140
@@ -294,6 +329,13 @@ typedef struct MSRQuery {
 #define MSR_ARCH_LBR_CTL_CPL_MASK      0x000006
 #define MSR_ARCH_LBR_CTL_BRANCH_MASK   0x7f0000
 #define MSR_ARCH_LBR_CTL_ALL           0x7f000f
+
+/* AMD LBR stack MSRs. */
+#define MSR_DBG_EXTN_CTL      0xc000010f
+#define MSR_DBG_EXTN_CTL_LBRS (1 << 6)
+
+#define MSR_AMD_LBR_FROM_IP   0xc0010300
+#define MSR_AMD_LBR_TO_IP     0xc0010301
 
 /* Power Management MSRs */
 #define MSR_PERF_STATUS      0x00000198 // Current Performance State (ro)
@@ -620,6 +662,10 @@ typedef struct MSRQuery {
 #define MSR_EFER_AMD_MBZ     0xffffffffffcf0200ULL  /* Must be zero (resrvd) */
 #define MSR_EFER_AMD_RAZ     0x00000000000000feULL  /* Read as zero          */
 
+/* MSR_BD_TSC_RATIO bits */
+#define MSR_BD_TSC_RATIO_RSVD    CONST64U(0xffffff0000000000)
+#define MSR_BD_TSC_RATIO_DEFAULT 0x0100000000ULL
+
 #define MSR_AMD_PATCH_LOADER 0xc0010020
 
 /* This ifndef is necessary because this is defined by some kernel headers. */
@@ -634,12 +680,15 @@ typedef struct MSRQuery {
 #ifndef MSR_K8_SYSCFG
 #define MSR_K8_SYSCFG        0xc0010010
 #endif
+#define MSR_K8_SYSCFG_MFDM               (1ULL<<19)
 #define MSR_K8_SYSCFG_MTRRTOM2EN         (1ULL<<21)
 #define MSR_K8_SYSCFG_TOM2FORCEMEMTYPEWB (1ULL<<22)
 #define MSR_K8_SYSCFG_SMEE               (1ULL<<23)
 #define MSR_K8_SYSCFG_SNPE               (1ULL<<24)
 #define MSR_K8_SYSCFG_VMPLE              (1ULL<<25)
 
+#define MSR_K8_IORRBASE0     0xc0010016
+#define MSR_K8_TOPMEM        0xc001001a
 #define MSR_K8_TOPMEM2       0xc001001d
 
 /* AMD "Greyhound" MSRs */
@@ -717,6 +766,19 @@ typedef struct MSRQuery {
 /* Field definitions for MSR_GHCB_PA_AP_RESET_HOLD_REQ */
 #define MSR_GHCB_PA_AP_RESET_HOLD_SHIFT     12
 
+/* Field definitions for MSR_GHCB_PA_REGISTER_GHCB_GPA_RESP */
+#define MSR_GHCB_PA_REGISTER_GHCB_GPA_ERR   0xfffffffffffff
+
+/* Field definitions for MSR_GHCB_PA_SNP_PSC_REQ */
+#define MSR_GHCB_PA_SNP_PSC_OP_PRIVATE      (1ULL << 52)
+#define MSR_GHCB_PA_SNP_PSC_OP_SHARED       (2ULL << 52)
+/* These definitions are used in assembly code to set edx for a wrmsr. */
+#define MSR_GHCB_PA_SNP_PSC_OP_PRIVATE_HI32 (1ULL << 20)
+#define MSR_GHCB_PA_SNP_PSC_OP_SHARED_HI32  (2ULL << 20)
+
+/* Field definitions for MSR_GHCB_PA_SNP_PSC_RESP */
+#define MSR_GHCB_PA_SNP_PSC_ERRCODE_SHIFT   32
+
 /* Field definitions for MSR_GHCB_PA_FEATURES_REQ */
 #define MSR_GHCB_PA_FEATURES_SHIFT          12
 
@@ -733,6 +795,16 @@ typedef struct MSRQuery {
 
 #define SEV_TERM_FROBOS_REG_FAILED       1  /* GHCB PA registration failed. */
 #define SEV_TERM_FROBOS_PVALIDATE_FAILED 2  /* PVALIDATE failed unexpectedly. */
+#define SEV_TERM_FROBOS_MISSING_CC_BLOB  3  /* Required CC blob is missing. */
+#define SEV_TERM_FROBOS_BAD_CC_BLOB      4  /* Contents of CC blob are bad. */
+#define SEV_TERM_FROBOS_INVALID_MEM      5  /* Unexpected PVALIDATE #VC. */
+#define SEV_TERM_FROBOS_INVALID_FIELD    6  /* Required GHCB field not valid. */
+#define SEV_TERM_FROBOS_BAD_NAE_STATE    7  /* #VC called with invalid state. */
+#define SEV_TERM_FROBOS_UNHANDLED_NAE    8  /* NAE not handled by #VC. */
+#define SEV_TERM_FROBOS_BAD_VMGEXIT_RESP 9  /* Unrecognized VMGEXIT response. */
+#define SEV_TERM_FROBOS_DECODE_ERROR     10 /* Instruction decode error. */
+#define SEV_TERM_FROBOS_PSC_FAILED       11 /* Page state change req failed. */
+#define SEV_TERM_FROBOS_NESTED_VC_EXC    12 /* A nested #VC occurred. */
 
 /* SEV feature-enabled bits in MSR_SEV_STATUS. */
 #define MSR_SEV_STATUS_SEV_EN_BIT      0
@@ -945,6 +1017,9 @@ typedef unsigned char MTRRType;
 #define MTRR_TYPE_WT          4
 #define MTRR_TYPE_WP          5
 #define MTRR_TYPE_WB          6
+/* AMD-only extended type bits: to be OR'ed with the above standard types */
+#define MTRR_TYPE_EXT_WRMEM   (1 << 3)
+#define MTRR_TYPE_EXT_RDMEM   (1 << 4)
 /* PAT Memory Type Only */
 /* UC- is equivalent to UC, except that the MTRR values take precedence */
 #define MTRR_TYPE_UCM         7
@@ -954,7 +1029,7 @@ typedef unsigned char MTRRType;
  * specify that type is unknown as it is very unlikely that Intel will
  * use this value. Note that linux is taking the same liberty.
  */
-#define MTRR_TYPE_UNKNOW     0xff
+#define MTRR_TYPE_UNKNOWN     0xff
 
 /*
  * PERF_STATUS bits
@@ -994,6 +1069,12 @@ typedef unsigned char MTRRType;
 #define MSR_INTEL_PQE_CLOS_L3_MASK_MAX   0xd0f
 #define MSR_INTEL_PQE_CLOS_L2_MASK_BASE  0xd10
 #define MSR_INTEL_PQE_CLOS_L2_MASK_MAX   0xd4f
+
+/* PASID MSR */
+#define MSR_PASID                        0xd93
+#define MSR_PASID_RSVD_MASK              0xffffffff7ff00000ULL
+#define MSR_PASID_VALID_BIT              (1ULL << 31)
+#define MSR_PASID_PASID_MASK             0xfffff
 
 static INLINE uint32
 X86MSR_SysCallEIP(uint64 star)

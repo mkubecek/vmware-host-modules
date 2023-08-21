@@ -28,7 +28,7 @@
 #include "vm_assert.h"
 #include "hostif.h"
 #include "vmmblob.h"
-#include "vmm_constants.h"
+#include "mon_constants.h"
 #include "monLoader.h"
 
 /*
