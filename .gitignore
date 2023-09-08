@@ -8,3 +8,4 @@
 .cache.mk
 Module.symvers
 modules.order
+dkms.conf
