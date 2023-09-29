@@ -106,6 +106,7 @@
 #include "compat_poll.h"
 #include "compat_mmap_lock.h"
 #include "compat_sched.h"
+#include "compat_pgtable.h"
 
 /*
  * Ugly... but we cannot use RHEL_RELEASE_VERSION() in the condition if
@@ -1270,14 +1271,7 @@ HostIFGetUserPages(void *uvAddr,          // IN
    int retval;
 
    mmap_read_lock(current->mm);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
-   retval = get_user_pages((unsigned long)uvAddr, numPages, 0, ppages, NULL);
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
-   retval = get_user_pages((unsigned long)uvAddr, numPages, 0, 0, ppages, NULL);
-#else
-   retval = get_user_pages(current, current->mm, (unsigned long)uvAddr,
-                           numPages, 0, 0, ppages, NULL);
-#endif
+   retval = compat_get_user_pages((unsigned long)uvAddr, numPages, 0, ppages);
    mmap_read_unlock(current->mm);
 
    return retval != numPages;

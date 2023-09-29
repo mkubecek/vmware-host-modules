@@ -52,6 +52,7 @@
 #include "vm_atomic.h"
 #include "vm_assert.h"
 #include "monitorAction_exported.h"
+#include "compat_pgtable.h"
 
 typedef struct VNetUserIFStats {
    unsigned    read;
@@ -170,14 +171,7 @@ UserifLockPage(VA addr) // IN
    int retval;
 
    mmap_read_lock(current->mm);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
-   retval = get_user_pages(addr, 1, FOLL_WRITE, &page, NULL);
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
-   retval = get_user_pages(addr, 1, 1, 0, &page, NULL);
-#else
-   retval = get_user_pages(current, current->mm, addr,
-                           1, 1, 0, &page, NULL);
-#endif
+   retval = compat_get_user_pages(addr, 1, FOLL_WRITE, &page);
    mmap_read_unlock(current->mm);
 
    if (retval != 1) {
