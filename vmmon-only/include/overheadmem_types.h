@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2001-2013 VMware, Inc. All rights reserved.
+ * Copyright (C) 2001-2013, 2022-2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -19,7 +19,7 @@
 /*
  * overheadmem_types.h
  *
- *	Types for tracking memory overheads.
+ *      Types for tracking memory overheads.
  */
 
 #ifndef _OVERHEADMEM_TYPES_H
@@ -30,6 +30,7 @@
 #define INCLUDE_ALLOW_VMMON
 #define INCLUDE_ALLOW_VMCORE
 #define INCLUDE_ALLOW_MODULE
+#define INCLUDE_ALLOW_VMKERNEL
 #include "includeCheck.h"
 
 #include "vm_basic_types.h"
@@ -127,5 +128,13 @@ typedef struct OvhdMemNode {
    char name[OVHDMEM_MAX_NAME_LEN];  // name of overhead source
    OvhdMemType type;                 // how/where memory for source is managed
 } OvhdMemNode;
+
+typedef struct OvhdMemStats {
+   OvhdMemNode *anonNodes;
+   unsigned    *usedByCategory;
+   unsigned    *rsvdByCategory;
+   unsigned    *maxUsedByCategory;
+   unsigned    *maxRsvdByCategory;
+} OvhdMemStats;
 
 #endif

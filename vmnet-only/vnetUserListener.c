@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2008 VMware, Inc. All rights reserved.
+ * Copyright (C) 2008, 2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -42,10 +42,12 @@ typedef struct VNetUserListener_EventNode VNetUserListener_EventNode;
 
 struct VNetUserListener_EventNode {
    VNetUserListener_EventNode *nextEvent;
-   VNet_EventHeader event;
+   union {
+       VNet_EventHeader header;
+       VNet_LinkStateEvent lse;
+   } event;
 };
 
-#define EVENT_NODE_HEADER_SIZE offsetof(struct VNetUserListener_EventNode, event)
 
 typedef struct VNetUserListener {
    VNetPort port;                          /* base port/jack */
@@ -220,7 +222,7 @@ VNetUserListenerEventHandler(void *context,       // IN: the user listener
    VNetUserListener_EventNode *t;
 
    /* allocate and initialize event node */
-   t = kmalloc(EVENT_NODE_HEADER_SIZE + e->size, GFP_ATOMIC);
+   t = kmalloc(sizeof *t, GFP_ATOMIC);
    if (t == NULL) {
       LOG(0, (KERN_DEBUG "VNetUserListenerEventHandler, out of memory\n"));
       return;
@@ -299,7 +301,7 @@ VNetUserListenerRead(VNetPort    *port, // IN: the user listener
    spin_unlock(&userListener->lock);
 
    /* return data and free event */
-   n = t->event.size;
+   n = t->event.header.size;
    if (count < n) {
       n = count;
    }

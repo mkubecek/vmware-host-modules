@@ -139,10 +139,12 @@
 #define SVM_VMCB_APIC_VTPR_MASK            0x00000000000000ffULL
 #define SVM_VMCB_APIC_VTPR_SHIFT           0
 #define SVM_VMCB_APIC_VIRQ                 0x0000000000000100ULL
+#define SVM_VMCB_APIC_VGIF                 0x0000000000000200ULL
 #define SVM_VMCB_APIC_VINTR_PRIO_MASK      0x00000000000f0000ULL
 #define SVM_VMCB_APIC_VINTR_PRIO_SHIFT     16
 #define SVM_VMCB_APIC_VIGN_TPR             0x0000000000100000ULL
 #define SVM_VMCB_APIC_VINTR_MASKING        0x0000000001000000ULL
+#define SVM_VMCB_APIC_VGIF_ENABLE          0x0000000002000000ULL
 #define SVM_VMCB_APIC_AVIC_ENABLE          0x0000000080000000ULL
 #define SVM_VMCB_APIC_VINTR_VECTOR_MASK    0x000000ff00000000ULL
 #define SVM_VMCB_APIC_VINTR_VECTOR_SHIFT   32
@@ -301,6 +303,7 @@
 #define SVM_EXITCODE_AP_JUMP_TABLE       0x80000005   // SW only
 #define SVM_EXITCODE_SNP_PSC_REQ         0x80000010   // SW only
 #define SVM_EXITCODE_SNP_GUEST_REQ       0x80000011   // SW only
+#define SVM_EXITCODE_SNP_AP_CREATION     0x80000013   // SW only
 #define SVM_EXITCODE_HV_FEATURES         0x8000FFFD   // SW only
 #define SVM_EXITCODE_UNSUPPORTED         0x8000FFFF   // SW only
 #define SVM_EXITCODE_INVALID             (-1ULL)
@@ -375,6 +378,11 @@
 #define SVM_APEXIT_SET            0x0
 #define SVM_APEXIT_GET            0x1
 
+/* ExitInfo1 for SNP AP creation exits */
+#define SVM_SNPAPCREATE_WAIT_INIT 0x0
+#define SVM_SNPAPCREATE_VMRUN     0x1
+#define SVM_SNPAPCREATE_DESTROY   0x2
+
 /* Event Injection */
 #define SVM_INTINFO_VECTOR_MASK   0x000000ff
 #define SVM_INTINFO_TYPE_SHIFT    8
@@ -388,6 +396,27 @@
 #define SVM_INTINFO_RSVD          0x7ffff000
 #define SVM_INTINFO_VALID         0x80000000
 
+/* AVIC related definitions. */
+#define SVM_AVIC_PHYS_TBL_MAX_VCPUS  512
+
+#define SVM_AVIC_PHYS_ID_TBL_VALID (1ULL << 63)
+
+#define SVM_AVIC_TRAP_BITMASK     \
+      ((1ULL << APICR_ID)       | \
+       (1ULL << APICR_EOI)      | \
+       (1ULL << APICR_RMTREAD)  | \
+       (1ULL << APICR_LDR)      | \
+       (1ULL << APICR_DFR)      | \
+       (1ULL << APICR_SVR)      | \
+       (1ULL << APICR_ESR)      | \
+       (1ULL << APICR_TIMERLVT) | \
+       (1ULL << APICR_THERMLVT) | \
+       (1ULL << APICR_PCLVT)    | \
+       (1ULL << APICR_LVT0)     | \
+       (1ULL << APICR_LVT1)     | \
+       (1ULL << APICR_ERRLVT)   | \
+       (1ULL << APICR_INITCNT)  | \
+       (1ULL << APICR_DIVIDER))
 
 #define SVM_EXEC_CTL_BIT(exitCode) (1ULL << (exitCode - SVM_EXITCODE_INTR))
 

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2022 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -2332,7 +2332,9 @@ isVAReadable(VA r)  // IN:
    int ret;
 
    r = APICR_TO_ADDR(r, APICR_VERSION);
-#if defined(HAVE_GET_KERNEL_NOFAULT) || LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
+#if defined(HAVE_GET_KERNEL_NOFAULT) || \
+    defined(RHEL92_BACKPORTS)        || \
+    LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
    /*
     * Exists from 5.10, first indicated by HAVE_GET_KERNEL_NOFAULT,
     * and from post-5.17 just existing everywhere.

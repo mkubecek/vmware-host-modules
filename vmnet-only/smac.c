@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2002-2018,2020,2022 VMware, Inc. All rights reserved.
+ * Copyright (C) 2002-2018,2020,2022,2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -4868,8 +4868,8 @@ SetPacketByte(SMACPacket *packet, // IN: packet
    ASSERT(packet);
 #ifdef _WIN32
 
-   if (packet == NULL || packet->buf1 == NULL || packet->buf2 == NULL) {
-       return FALSE;
+   if (packet == NULL) {
+      return FALSE;
    }
 
    /* check length, be sure to handle case where offset = -1, length > 0 */
@@ -4880,8 +4880,14 @@ SetPacketByte(SMACPacket *packet, // IN: packet
 
    /* if offset starts in the first buffer, then copy from first buffer */
    if (offset < packet->buf1Len) {
+      if (packet->buf1 == NULL) {
+         return FALSE;
+      }
       ((uint8*)packet->buf1)[offset] = data;
    } else {
+      if (packet->buf2 == NULL) {
+         return FALSE;
+      }
       offset -= packet->buf1Len;
       ((uint8*)packet->buf2)[offset] = data;
    }

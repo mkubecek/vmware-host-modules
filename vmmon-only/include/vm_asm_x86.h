@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014,2016-2022 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014,2016-2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -705,4 +705,62 @@ RDTSCP(void)
 #endif
 }
 
+
+static INLINE void
+MONITOR(void *addr, uint32 extensions, uint32 hints)
+{
+   /*
+    * Flush the monitored cache line to work around hardware bug
+    * on Dunnington CPUs which can cause false wakeups.
+    * (cf. PowerSetCState in the vmkernel.)
+    */
+#ifdef __GNUC__
+   __asm__ __volatile__(
+      "clflush (%0);"
+      "monitor" : : "a" (addr), "c" (extensions), "d" (hints)
+   );
+#elif defined _MSC_VER
+   _mm_clflush(addr);
+   _mm_monitor(addr, extensions, hints);
+#endif
+}
+
+
+static INLINE void
+MWAIT(uint32 extensions, uint32 hints)
+{
+#ifdef __GNUC__
+   __asm__ __volatile__(
+      "mwait" : : "a" (hints), "c" (extensions)
+   );
+#elif defined _MSC_VER
+   _mm_mwait(extensions, hints);
+#endif
+}
+
+
+static INLINE void
+MONITORX(void *addr, uint32 extensions, uint32 hints)
+{
+#ifdef __GNUC__
+   __asm__ __volatile__(
+      "monitorx" : : "a" (addr), "c" (extensions), "d" (hints)
+   );
+#elif defined _MSC_VER
+   _mm_monitorx(addr, extensions, hints);
+#endif
+}
+
+
+static INLINE void
+MWAITX(uint32 extensions, uint32 hints, uint32 timeout)
+{
+#ifdef __GNUC__
+   __asm__ __volatile__(
+      "mwaitx" : : "a" (hints), "b" (timeout), "c" (extensions)
+   );
+#elif defined _MSC_VER
+   _mm_mwaitx(extensions, hints, timeout);
+#endif
+}
 #endif

@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2002,2014-2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 2002,2014-2017,2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -50,11 +50,10 @@ PgtblVa2MPNLocked(struct mm_struct *mm, // IN: Mm structure of a process
                   VA addr)              // IN: Address in the virtual address
                                         //     space of that process
 {
-   pgd_t *pgd;
    compat_p4d_t *p4d;
    MPN mpn;
+   pgd_t *pgd = pgd_offset(mm, addr);
 
-   pgd = pgd_offset(mm, addr);
    if (pgd_present(*pgd) == 0) {
       return INVALID_MPN;
    }
@@ -71,27 +70,28 @@ PgtblVa2MPNLocked(struct mm_struct *mm, // IN: Mm structure of a process
    if (compat_p4d_large(*p4d)) {
       mpn = compat_p4d_pfn(*p4d) + ((addr & ~COMPAT_P4D_MASK) >> PAGE_SHIFT);
    } else {
-      pud_t *pud;
+      pud_t *pud = pud_offset(p4d, addr);
 
-      pud = pud_offset(p4d, addr);
       if (pud_present(*pud) == 0) {
          return INVALID_MPN;
       }
       if (pud_large(*pud)) {
          mpn = pud_pfn(*pud) + ((addr & ~PUD_MASK) >> PAGE_SHIFT);
       } else {
-         pmd_t *pmd;
+         pmd_t *pmd = pmd_offset(pud, addr);
 
-         pmd = pmd_offset(pud, addr);
          if (pmd_present(*pmd) == 0) {
             return INVALID_MPN;
          }
          if (pmd_large(*pmd)) {
             mpn = pmd_pfn(*pmd) + ((addr & ~PMD_MASK) >> PAGE_SHIFT);
          } else {
-            pte_t *pte;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,5,0)
+            pte_t *pte = pte_offset_kernel(pmd, addr);
+#else
+            pte_t *pte = pte_offset_map(pmd, addr);
+#endif
 
-            pte = pte_offset_map(pmd, addr);
             if (pte_present(*pte) == 0) {
                pte_unmap(pte);
                return INVALID_MPN;

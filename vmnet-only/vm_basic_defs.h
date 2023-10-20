@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2003-2022 VMware, Inc. All rights reserved.
+ * Copyright (C) 2003-2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -19,7 +19,7 @@
 /*
  * vm_basic_defs.h --
  *
- *	Standard macros for VMware source code.
+ *      Standard macros for VMware source code.
  */
 
 #ifndef _VM_BASIC_DEFS_H_
@@ -35,14 +35,6 @@
 #define INCLUDE_ALLOW_VMCORE
 #include "includeCheck.h"
 #include "vm_basic_types.h" // For INLINE.
-
-/* Checks for FreeBSD, filtering out VMKERNEL. */
-#if !defined(VMKERNEL) && defined(__FreeBSD__)
-#define __IS_FREEBSD__ 1
-#else
-#define __IS_FREEBSD__ 0
-#endif
-#define __IS_FREEBSD_VER__(ver) (__IS_FREEBSD__ && __FreeBSD_version >= (ver))
 
 /*
  * <stddef.h> provides definitions for:
@@ -128,11 +120,11 @@ Max(int a, int b)
 #define VMW_CLAMP(x, min, max) \
    ((x) < (min) ? (min) : ((x) > (max) ? (max) : (x)))
 
-#define ROUNDUP(x,y)		(((x) + (y) - 1) / (y) * (y))
-#define ROUNDDOWN(x,y)		((x) / (y) * (y))
-#define ROUNDUPBITS(x, bits)	(((uintptr_t) (x) + MASK(bits)) & ~MASK(bits))
-#define ROUNDDOWNBITS(x, bits)	((uintptr_t) (x) & ~MASK(bits))
-#define CEILING(x, y)		(((x) + (y) - 1) / (y))
+#define ROUNDUP(x,y)           (((x) + (y) - 1) / (y) * (y))
+#define ROUNDDOWN(x,y)         ((x) / (y) * (y))
+#define ROUNDUPBITS(x, bits)   (((uintptr_t)(x) + MASK(bits)) & ~MASK(bits))
+#define ROUNDDOWNBITS(x, bits) ((uintptr_t)(x) & ~MASK(bits))
+#define CEILING(x, y)          (((x) + (y) - 1) / (y))
 
 #if defined VMKERNEL || defined VMKBOOT
 # define CEIL(_a, _b)        CEILING(_a, _b)
@@ -157,8 +149,9 @@ Max(int a, int b)
  * argument. The range 0..31 is safe.
  */
 
-#define MASK(n)		((1 << (n)) - 1)	    /* make an n-bit mask */
-#define MASK64(n)	((CONST64U(1) << (n)) - 1)  /* make an n-bit mask */
+#define MASK(n)      ((1 << (n)) - 1)            /* make an n-bit mask */
+#define MASK64(n)    ((CONST64U(1) << (n)) - 1)  /* make an n-bit mask */
+#define MASK128(n)   (((uint128)1 << (n)) - 1)   /* make an n-bit mask */
 /*
  * MASKRANGE64 makes a bit vector starting at bit lo and ending at bit hi.  No
  * checking for lo < hi is done.
@@ -187,7 +180,9 @@ Max(int a, int b)
 #define XCONC(x, y)             CONC(x, y)
 #define XXCONC(x, y)            XCONC(x, y)
 #define MAKESTR(x)              #x
+#ifndef XSTR
 #define XSTR(x)                 MAKESTR(x)
+#endif
 
 
 /*
@@ -227,6 +222,8 @@ Max(int a, int b)
    #define PAGE_SHIFT    PAGE_SHIFT_4KB
 #elif defined __arm__
    #define PAGE_SHIFT    PAGE_SHIFT_4KB
+#elif defined __wasm__
+   #define PAGE_SHIFT    PAGE_SHIFT_4KB
 #else
    #error
 #endif
@@ -260,15 +257,6 @@ Max(int a, int b)
 #define PAGE_NUMBER(_addr)  ((uintptr_t)(_addr) / PAGE_SIZE)
 #endif
 
-#ifndef VM_PAGE_BASE
-#define VM_PAGE_BASE(_addr)  ((_addr) & ~(PAGE_SIZE - 1))
-#endif
-
-#ifndef VM_PAGES_SPANNED
-#define VM_PAGES_SPANNED(_addr, _size) \
-   ((((_addr) & (PAGE_SIZE - 1)) + (_size) + (PAGE_SIZE - 1)) >> PAGE_SHIFT)
-#endif
-
 #ifndef BYTES_2_PAGES
 #define BYTES_2_PAGES(_nbytes)  ((_nbytes) >> PAGE_SHIFT)
 #endif
@@ -279,6 +267,16 @@ Max(int a, int b)
 
 #ifndef PAGES_2_BYTES
 #define PAGES_2_BYTES(_npages)  (((uint64)(_npages)) << PAGE_SHIFT)
+#endif
+
+#ifndef VM_PAGE_BASE
+#define VM_PAGE_BASE(_addr)  ((_addr) & ~(PAGE_SIZE - 1))
+#endif
+
+#ifndef VM_PAGES_SPANNED
+#define VM_PAGES_SPANNED(_addr, _size) \
+   (BYTES_2_PAGES(PAGE_OFFSET(_addr) + PAGE_OFFSET(_size) + (PAGE_SIZE - 1)) + \
+    BYTES_2_PAGES(_size))
 #endif
 
 #ifndef KBYTES_SHIFT
@@ -428,9 +426,9 @@ Max(int a, int b)
  */
 
 #define DEPOSIT_BITS(_src,_pos,_len,_target) { \
-	unsigned mask = ((1 << _len) - 1); \
-	unsigned shiftedmask = ((1 << _len) - 1) << _pos; \
-	_target = (_target & ~shiftedmask) | ((_src & mask) << _pos); \
+   unsigned mask = ((1 << _len) - 1); \
+   unsigned shiftedmask = ((1 << _len) - 1) << _pos; \
+   _target = (_target & ~shiftedmask) | ((_src & mask) << _pos); \
 }
 
 
@@ -647,6 +645,12 @@ typedef int pid_t;
 #define VMKERNEL_ONLY(x)
 #endif
 
+#ifdef COMP_TEST
+#define vmx86_test   1
+#else
+#define vmx86_test   0
+#endif
+
 /*
  * In MSVC, _WIN32 is defined as 1 when the compilation target is
  * 32-bit ARM, 64-bit ARM, x86, or x64 (which implies _WIN64). This
@@ -698,6 +702,18 @@ typedef int pid_t;
 #else
 #define vmx86_vmm 0
 #define VMM_ONLY(x)
+#endif
+
+#ifdef VMX86_VMX
+#define vmx86_vmx 1
+#else
+#define vmx86_vmx 0
+#endif
+
+#ifdef VMM_BOOTSTRAP
+#define vmm_bootstrap 1
+#else
+#define vmm_bootstrap 0
 #endif
 
 #ifdef ULM
@@ -776,6 +792,7 @@ typedef int pid_t;
                                                      lfMessageFont)
 
 /* This is not intended to be thread-safe. */
+#ifndef KBUILD_MODNAME
 #define DO_ONCE(code)                                                   \
    do {                                                                 \
       static MONITOR_ONLY(PERVCPU) Bool _doOnceDone = FALSE;            \
@@ -784,6 +801,7 @@ typedef int pid_t;
          code;                                                          \
       }                                                                 \
    } while (0)
+#endif
 
 /*
  * Bug 827422 and 838523.

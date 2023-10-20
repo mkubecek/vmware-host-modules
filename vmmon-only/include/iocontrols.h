@@ -168,6 +168,7 @@ PtrToVA64(void const *ptr) // IN
 #endif
 
 
+#if !defined __APPLE__
 #if !__linux__
 /*
  * On platforms other than Linux, IOCTLCMD_foo values are just numbers, and
@@ -198,13 +199,7 @@ enum IOCTLCmd {
     * handling 32 bit ioctl syscalls.  Hence FIRST and LAST.  FIRST must be
     * 2001 so that VERSION is 2001 for backwards compatibility.
     */
-#if defined __linux__ || defined _WIN32
-   /* Start at 2001 because legacy code did. */
    IOCTLCMD(FIRST) = 2001,
-#else
-   /* Start at 0. */
-   IOCTLCMD(FIRST),
-#endif
    IOCTLCMD(VERSION) = IOCTLCMD(FIRST),
    IOCTLCMD(CREATE_VM),
    IOCTLCMD(PROCESS_BOOTSTRAP),
@@ -268,18 +263,13 @@ enum IOCTLCmd {
    IOCTLCMD(UNMAP_SCATTER_LIST),
 #endif
 
-#if defined __APPLE__
-   IOCTLCMD(GET_NUM_RESPONDING_CPUS),
-   IOCTLCMD(INIT_DRIVER),
-   IOCTLCMD(BLUEPILL),
-#endif
-
    IOCTLCMD(GET_UNAVAIL_PERF_CTRS),
    IOCTLCMD(GET_MONITOR_CONTEXT),
    IOCTLCMD(KERNEL_CET_ENABLED),
    // Must be last.
    IOCTLCMD(LAST)
 };
+#endif // !defined __APPLE__
 
 
 #if defined _WIN32
@@ -293,7 +283,7 @@ enum IOCTLCmd {
 #define FILE_DEVICE_VMX86        0x8101
 #define VMX86_IOCTL_BASE_INDEX   0x801
 #define VMIOCTL_BUFFERED(name) \
-     CTL_CODE(FILE_DEVICE_VMX86, \
+      CTL_CODE(FILE_DEVICE_VMX86, \
 	       VMX86_IOCTL_BASE_INDEX + IOCTLCMD_ ## name, \
 	       METHOD_BUFFERED, \
 	       FILE_ANY_ACCESS)
@@ -352,7 +342,7 @@ enum IOCTLCmd {
 #define IOCTL_VMX86_REMAP_SCATTER_LIST_RO VMIOCTL_BUFFERED(REMAP_SCATTER_LIST_RO)
 #define IOCTL_VMX86_UNMAP_SCATTER_LIST    VMIOCTL_BUFFERED(UNMAP_SCATTER_LIST)
 #define IOCTL_VMX86_KERNEL_CET_ENABLED    VMIOCTL_BUFFERED(KERNEL_CET_ENABLED)
-#endif
+#endif // defined _WIN32
 
 
 #define INIT_BLOCK_MAGIC     (0x1789 + 14)
@@ -588,10 +578,6 @@ typedef union {
    Vcpuid vcpuid;     // IN
    Context64 context; // OUT
 } VMMonContext;
-
-#if defined __APPLE__
-#   include "iocontrolsMacos.h"
-#endif
 
 /* Clean up helper macros */
 #undef IOCTLCMD

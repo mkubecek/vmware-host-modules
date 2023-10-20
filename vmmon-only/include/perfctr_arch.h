@@ -40,6 +40,9 @@
 #include "vm_asm.h"
 #include "x86cpuid_asm.h"
 
+#define NMI_SHARED_ARCH_FIELDS \
+   uint64 nmiMaskedTSC;
+
 #define PERFCTR_AMD_NUM_COUNTERS                 4
 #define PERFCTR_AMD_EXT_NUM_COUNTERS             6
 #define PERFCTR_P6_NUM_COUNTERS                  2

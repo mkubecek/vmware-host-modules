@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014,2016,2018-2020,2022 VMware, Inc. All rights reserved.
+ * Copyright (c) 1998-2014,2016,2018-2020,2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -122,6 +122,61 @@ LMPTEIsSafe(VM_PAE_PTE pte, PT_Level level, uint64 physMask)
 }
 #endif /* VMX86_DEBUG */
 
+/*
+ *----------------------------------------------------------------------
+ *
+ * NPTValidLargePage --
+ *
+ *     Returns TRUE iff the provided large page NPT entry is valid
+ *     (i.e. no reserved bits set).
+ *
+ *----------------------------------------------------------------------
+ */
+static INLINE Bool
+NPTValidLargePage(VM_PAE_PTE npte, PT_Level level, unsigned depth)
+{
+   const PPN lpRsvd = MASK((level - 1) * PT_LEVEL_SHIFT) &
+                      ~(PTE_LARGE_PAT >> PAGE_SHIFT);
+   return (level == PT_LEVEL_2 ||
+           (level == PT_LEVEL_3 && depth == PT_LEVEL_4)) &&
+          (LM_PTE_2_PFN(npte) & lpRsvd) == 0;
+}
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * NPTEIsValid --
+ *
+ *     Check an NPT entry for validity at the indicated page table level
+ *     and depth.  Use the provided physMask as the mask of reserved PA bits.
+ *
+ *----------------------------------------------------------------------
+ */
+static INLINE Bool
+NPTEIsValid(VM_PAE_PTE npte, PT_Level level, Bool nxOn, unsigned depth,
+            uint64 physMask)
+{
+   VM_PAE_PTE rsvd;
+   if (depth == PT_LEVEL_3) {
+      rsvd = physMask & ~PTE_NX;
+      if (level == PT_LEVEL_3) {
+         rsvd |= PTE_NX | PDPTR_MBZ_MASK;
+      }
+   } else {
+      rsvd = physMask & MASK64(52);
+      if (level == PT_LEVEL_4) {
+         rsvd |= PTE_PS | PTE_G;
+      }
+   }
+   if (UNLIKELY(!nxOn)) {
+      /* When NX is disabled, PTE_NX is treated as reserved. */
+      rsvd |= PTE_NX;
+   }
+   return !PTE_PRESENT(npte) ||
+          ((npte & rsvd) == 0 &&
+           (level == PT_LEVEL_1 ||
+            (!PTE_LARGEPAGE(npte) || NPTValidLargePage(npte, level, depth))));
+}
 
 /*
  * x86-64 architecture requires implementations supporting less than

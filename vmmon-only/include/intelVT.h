@@ -391,9 +391,10 @@ IntelVT_FindCommon3rd(const MSRCache *data,     // IN
  *----------------------------------------------------------------------
  */
 static INLINE Bool
-IntelVT_Enabled(const MSRCache *cache, uint32 pcpu)
+IntelVT_Enabled(const MSRCache *cache, uint32 pcpu, Bool smxEnabled)
 {
-   return VT_EnabledFromFeatures(MSRCache_Get(cache, MSR_FEATCTL, pcpu));
+   return VT_EnabledFromFeatures(MSRCache_Get(cache, MSR_FEATCTL, pcpu),
+                                 smxEnabled);
 }
 
 

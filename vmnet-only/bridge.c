@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2013, 2017, 2022 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2013, 2017, 2022-2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -26,6 +26,9 @@
 #include <linux/slab.h>
 #include <linux/poll.h>
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 10)
+#include <net/gso.h>
+#endif
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/mm.h>
@@ -684,7 +687,7 @@ VNetBridgeReceiveFromVNet(VNetJack        *this, // IN: jack
 	 }
          spin_unlock_irqrestore(&bridge->historyLock, flags);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0) && !defined(RHEL91_BACKPORTS)
          netif_rx_ni(clone);
 #else
          netif_rx(clone);

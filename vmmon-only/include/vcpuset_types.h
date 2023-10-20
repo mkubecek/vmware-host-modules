@@ -47,10 +47,6 @@
 #define VCS_VCPUID_SUBSET_IDX(v)                    ((v) >> VCS_SUBSET_SHIFT)
 #define VCS_VCPUID_SUBSET_BIT(v)     (CONST64U(1) << ((v) & VCS_SUBSET_MASK))
 
-/*
- * If you update this type, you also need to update the SEND_IPI line in
- * bora/public/iocontrolsMacosTable.h.
- */
 typedef struct VCPUSet {
    uint64 subset[VCS_SUBSET_COUNT];
 } VCPUSet;
@@ -58,14 +54,9 @@ typedef struct VCPUSet {
 MY_ASSERTS(VCPUSET_ASSERTS,
            ASSERT_ON_COMPILE(VCS_SUBSET_WIDTH * VCS_SUBSET_COUNT >= MAX_VCPUS);
            /*
-            * Catch changes in VCPUSet which need to be reflected in
-            * bora/public/iocontrolsMacosTable.h.
-            */
-           ASSERT_ON_COMPILE(VCS_SUBSET_COUNT == 32);
-           /*
             * There is code that depends on sizeof(VCPUSet) being a power of
             * 2 in at least vcpuHotPlug.c and possible other places.
             */
-            ASSERT_ON_COMPILE((sizeof(VCPUSet) & (sizeof(VCPUSet) - 1)) == 0);
+           ASSERT_ON_COMPILE((sizeof(VCPUSet) & (sizeof(VCPUSet) - 1)) == 0);
 )
 #endif

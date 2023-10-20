@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2004-2015 VMware, Inc. All rights reserved.
+ * Copyright (C) 2004-2015, 2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -229,6 +229,7 @@ VMWRITE(size_t encoding, size_t val)
       VMXStatus status;
       status = VMWRITE_2_STATUS(encoding, val);
       ASSERT(status == VMX_Success);
+      UNUSED_VARIABLE(status);
    } else {
       VMWRITE_UNCHECKED(encoding, val);
    }
@@ -262,6 +263,7 @@ VMLAUNCH(void)
       VMXStatus status;
       status = VMLAUNCH_2_STATUS();
       ASSERT(status == VMX_Success);
+      UNUSED_VARIABLE(status);
    } else {
       VMLAUNCH_UNCHECKED();
    }
@@ -295,6 +297,7 @@ VMRESUME(void)
       VMXStatus status;
       status = VMRESUME_2_STATUS();
       ASSERT(status == VMX_Success);
+      UNUSED_VARIABLE(status);
    } else {
       VMRESUME_UNCHECKED();
    }
@@ -328,6 +331,7 @@ VMCALL(void)
       VMXStatus status;
       status = VMCALL_2_STATUS();
       ASSERT(status == VMX_Success);
+      UNUSED_VARIABLE(status);
    } else {
       VMCALL_UNCHECKED();
    }
@@ -374,6 +378,7 @@ INVVPID(InvvpidArg *v, size_t extent)
       VMXStatus status;
       status = INVVPID_2_STATUS(v, extent);
       ASSERT(status == VMX_Success);
+      UNUSED_VARIABLE(status);
    } else {
       INVVPID_UNCHECKED(v, extent);
    }
@@ -446,6 +451,7 @@ INVEPT(InveptArg *e, size_t extent)
       VMXStatus status;
       status = INVEPT_2_STATUS(e, extent);
       ASSERT(status == VMX_Success);
+      UNUSED_VARIABLE(status);
    } else {
       INVEPT_UNCHECKED(e, extent);
    }
@@ -541,14 +547,14 @@ VMCLEAR_2_STATUS(MA *vmcs)
    ASSERT(mscStatus < ARRAYSIZE(MscToStatus));
    return MscToStatus[mscStatus];
 }
- 
+
 static INLINE VMXStatus
 VMREAD_2_STATUS(size_t encoding, size_t *retval)
 {
    unsigned char mscStatus;
    static const VMXStatus MscToStatus[] =
       {VMX_Success, VMX_FailValid, VMX_FailInvalid};
- 
+
    mscStatus = __vmx_vmread(encoding, retval);
    ASSERT(mscStatus < ARRAYSIZE(MscToStatus));
    return MscToStatus[mscStatus];
@@ -597,8 +603,9 @@ VMXON(MA *vmxonRegion)
       VMXStatus status;
       status = VMXON_2_STATUS(vmxonRegion);
       ASSERT(status == VMX_Success);
+      UNUSED_VARIABLE(status);
    } else {
-      VMXON_UNCHECKED(vmxonRegion); 
+      VMXON_UNCHECKED(vmxonRegion);
    }
 }
 
@@ -609,6 +616,7 @@ VMXOFF(void)
       VMXStatus status;
       status = VMXOFF_2_STATUS();
       ASSERT(status == VMX_Success);
+      UNUSED_VARIABLE(status);
    } else {
       VMXOFF_UNCHECKED();
    }
@@ -621,6 +629,7 @@ VMPTRLD(MA *vmcs)
       VMXStatus status;
       status = VMPTRLD_2_STATUS(vmcs);
       ASSERT(status == VMX_Success);
+      UNUSED_VARIABLE(status);
    } else {
       VMPTRLD_UNCHECKED(vmcs);
    }
@@ -633,6 +642,7 @@ VMPTRST(MA *vmcs)
       VMXStatus status;
       status = VMPTRST_2_STATUS(vmcs);
       ASSERT(status == VMX_Success);
+      UNUSED_VARIABLE(status);
    } else {
       VMPTRST_UNCHECKED(vmcs);
    }
@@ -646,6 +656,7 @@ VMCLEAR(MA* vmcs)
       VMXStatus status;
       status = VMCLEAR_2_STATUS(vmcs);
       ASSERT(status == VMX_Success);
+      UNUSED_VARIABLE(status);
    } else {
       VMCLEAR_UNCHECKED(vmcs);
    }
@@ -659,6 +670,7 @@ VMREAD(size_t encoding)
       VMXStatus status;
       status = VMREAD_2_STATUS(encoding, &retval);
       ASSERT(status == VMX_Success);
+      UNUSED_VARIABLE(status);
    } else {
       retval = VMREAD_UNCHECKED(encoding);
    }

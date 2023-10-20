@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014,2017,2019-2021 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014,2017,2019-2022 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -125,8 +125,6 @@ PTSC_MHz(void)
    return ptscInfo.mHz;
 }
 
-#if defined(VM_X86_64) || defined(VM_ARM_64)
-
 /*
  * Conversions to/from cycles.  Note that the conversions operate on
  * signed values, so be careful when taking the difference of two
@@ -158,16 +156,6 @@ PTSC_CyclesToUS(VmRelativeTS ts)
    return Muls64x32s64(ts, ptscInfo.cyclesToUs.mult, ptscInfo.cyclesToUs.shift);
 }
 
-#else
-
-/* 32-bit Muls64x32s64 too big to justify inlining. */
-VmRelativeTS PTSC_USToCycles(int64 us);
-VmRelativeTS PTSC_MSToCycles(int64 ms);
-int64 PTSC_CyclesToNS(VmRelativeTS ts);
-int64 PTSC_CyclesToUS(VmRelativeTS ts);
-
-#endif
-
 #if defined(VMX86_SERVER) && (defined(VMX86_VMX) || defined (ULM_ESX))
 
 /*
@@ -184,7 +172,7 @@ PTSC_Get(void)
    if (vmkUserTdata.magic != USER_THREADDATA_MAGIC) {
       return 0;
    }
-   ptsc = vmkUserTdata.u.pseudoTSCGet(&vmkUserTdata);
+   ptsc = vmkUserTdata.pseudoTSCGet(&vmkUserTdata);
    ASSERT((int64)ptsc >= 0);
    return ptsc;
 }
