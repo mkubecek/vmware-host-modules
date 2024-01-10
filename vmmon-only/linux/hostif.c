@@ -2778,7 +2778,11 @@ HostIF_SemaphoreSignal(uint64 *args)  // IN:
     */
    eventfd = eventfd_ctx_fileget(file);
    if (!IS_ERR(eventfd)) {
+#if COMPAT_LINUX_VERSION_CHECK_LT(6, 8, 0)
       eventfd_signal(eventfd, 1);
+#else
+      eventfd_signal(eventfd);
+#endif
       fput(file);
       return MX_WAITNORMAL;
    }
