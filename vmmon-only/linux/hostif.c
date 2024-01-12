@@ -2799,7 +2799,7 @@ HostIF_CallOnEachCPU(void (*func)(void*), // IN: function to call
  *-----------------------------------------------------------------------------
  */
 
-Bool
+static Bool
 HostIFCheckTrackedMPN(VMDriver *vm, // IN: The VM instance
                       MPN mpn)      // IN: The MPN
 {
@@ -2915,7 +2915,7 @@ HostIF_ReadPage(VMDriver *vm,        // IN: The VM instance
  *----------------------------------------------------------------------
  */
 
-int
+static int
 HostIFWritePageWork(MPN mpn,              // MPN of the page
                     VA64 addr,            // data to write to the page
                     Bool kernelBuffer)    // is the buffer in kernel space?
@@ -3221,7 +3221,7 @@ HostIFDoIoctl(struct file *filp,
  *----------------------------------------------------------------------
  */
 
-int
+static int
 HostIFStartTimer(Bool rateChanged,  //IN: Did rate change? 
 		 unsigned int rate, //IN: current clock rate
                  struct file *filp) //IN: /dev/rtc descriptor

@@ -1584,7 +1584,7 @@ VNetBridgeGSOSegment(struct sk_buff *skb)        // IN: packet to split
  *----------------------------------------------------------------------
  */
 
-void
+static void
 VNetBridgeSendLargePacket(struct sk_buff *skb,        // IN: packet to split
                           VNetBridge *bridge)         // IN: bridge
 {
