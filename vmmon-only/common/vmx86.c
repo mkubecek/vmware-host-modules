@@ -53,7 +53,7 @@
 #include "x86svm.h"
 #include "x86cpuid_asm.h"
 #if defined(__linux__)
-#include <asm/timex.h>
+#include <linux/timex.h>
 #endif
 #include "perfctr.h"
 #include "x86vtinstr.h"
@@ -699,7 +699,7 @@ Vmx86FreeCrossPages(VMDriver *vm)
  *-----------------------------------------------------------------------------
  */
 
-void
+static void
 Vmx86FreeVMDriver(VMDriver *vm)
 {
    Vmx86_Free(vm->ptRootMpns);
@@ -732,7 +732,7 @@ Vmx86FreeVMDriver(VMDriver *vm)
  *-----------------------------------------------------------------------------
  */
 
-VMDriver *
+static VMDriver *
 Vmx86AllocVMDriver(uint32 numVCPUs)
 {
    VMDriver *vm = Vmx86_Calloc(1, sizeof *vm, TRUE);
