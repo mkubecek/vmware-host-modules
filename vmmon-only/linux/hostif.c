@@ -3021,7 +3021,7 @@ HostIF_CallOnEachCPU(void (*func)(void*), // IN: function to call
  *-----------------------------------------------------------------------------
  */
 
-Bool
+static Bool
 HostIFCheckTrackedMPN(VMDriver *vm, // IN: The VM instance
                       MPN mpn)      // IN: The MPN
 {
@@ -3141,7 +3141,7 @@ HostIF_ReadPhysical(VMDriver *vm,      // IN: The VM instance
  *----------------------------------------------------------------------
  */
 
-int
+static int
 HostIFWritePhysicalWork(MA ma,             // MA to be written to
                         VA64 addr,         // src data to write
                         Bool kernelBuffer, // is the buffer in kernel space?
@@ -3300,7 +3300,7 @@ HostIF_GetCurrentPCPU(void)
  *----------------------------------------------------------------------
  */
 
-int
+static int
 HostIFStartTimer(Bool rateChanged,  //IN: Did rate change?
                  unsigned int rate) //IN: current clock rate
 {
