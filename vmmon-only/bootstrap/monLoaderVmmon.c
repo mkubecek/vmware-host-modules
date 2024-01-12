@@ -37,6 +37,7 @@
 #include "x86paging_common.h"
 #include "x86paging_64.h"
 #include "vmx86.h"
+#include "monLoader.h"
 #include "monLoaderLog.h"
 
 typedef struct MonLoaderEnvContext {
