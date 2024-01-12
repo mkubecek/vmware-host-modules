@@ -58,7 +58,7 @@
 #include "x86svm.h"
 #include "x86cpuid_asm.h"
 #if defined(linux)
-#include <asm/timex.h>
+#include <linux/timex.h>
 #endif
 #include "x86perfctr.h"
 #include "x86vtinstr.h"
@@ -3065,52 +3065,4 @@ Vmx86_GetPageRoot(VMDriver *vm,  // IN:
    }
    *mpn = vm->ptRootMpns[vcpuid];
    return TRUE;
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Vmx86_MapPage --
- *
- *      Maps the specified MPN into the host kernel address space.
- *      returns the VPN of the mapping.
- *
- * Results:
- *      The VPN in the kernel address space of the new mapping, or 0 if
- *      the mapping failed.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-VPN
-Vmx86_MapPage(MPN mpn) // IN:
-{
-   return HostIF_MapPage(mpn);
-}
-
-
-/*
- *----------------------------------------------------------------------
- *
- * Vmx86_UnmapPage --
- *
- *      Unmaps the specified VPN from the host kernel address space.
- *
- * Results:
- *      None.
- *
- * Side effects:
- *      None.
- *
- *----------------------------------------------------------------------
- */
-
-void
-Vmx86_UnmapPage(VPN vpn) // IN:
-{
-   HostIF_UnmapPage(vpn);
 }

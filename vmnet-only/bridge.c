@@ -1413,7 +1413,7 @@ VNetBridgeComputeHeaderPos(struct sk_buff *skb) // IN: buffer to examine
  *----------------------------------------------------------------------
  */
 
-void
+static void
 VNetBridgeSendLargePacket(struct sk_buff *skb,        // IN: packet to split
                           VNetBridge *bridge)         // IN: bridge
 {

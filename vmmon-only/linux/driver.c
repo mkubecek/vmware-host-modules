@@ -274,7 +274,7 @@ LinuxDriverInitTSCkHz(void)
  *----------------------------------------------------------------------
  */
 
-int
+static int
 LinuxDriverInit(void)
 {
    int retval;
@@ -361,7 +361,7 @@ LinuxDriverInit(void)
  *----------------------------------------------------------------------
  */
 
-void
+static void
 LinuxDriverExit(void)
 {
    /*

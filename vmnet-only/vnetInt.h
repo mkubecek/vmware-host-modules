@@ -225,6 +225,13 @@ extern int VNetProc_Init(void);
 
 extern void VNetProc_Cleanup(void);
 
+int VNetNetIf_Create(char *devName, VNetPort **ret, int hubNum);
+int VNetUserIf_Create(VNetPort **ret);
+int VNetBridge_Create(const char *devName, uint32 flags, VNetJack *hubJack,
+		      VNetPort **ret);
+int VNetUserListener_Create(uint32 classMask, VNetJack *hubJack,
+			    VNetPort **port);
+
 
 /*
  *----------------------------------------------------------------------
