@@ -58,7 +58,7 @@
 #include "x86svm.h"
 #include "x86cpuid_asm.h"
 #if defined(linux)
-#include <asm/timex.h>
+#include <linux/timex.h>
 #endif
 #include "x86perfctr.h"
 
