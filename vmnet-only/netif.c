@@ -68,6 +68,9 @@ static int  VNetNetIfProcRead(char *page, char **start, off_t off,
                               int count, int *eof, void *data);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0) && \
+    (LINUX_VERSION_CODE > KERNEL_VERSION(4, 19, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 291)) && \
+    (LINUX_VERSION_CODE > KERNEL_VERSION(5, 4, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 251)) && \
+    (LINUX_VERSION_CODE > KERNEL_VERSION(5, 10, 0) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 188)) && \
     !defined(RHEL86_BACKPORTS) && !defined(SLE15_SP3_BACKPORTS)
 static void
 __dev_addr_set(struct net_device *dev, const void *addr, size_t len)
