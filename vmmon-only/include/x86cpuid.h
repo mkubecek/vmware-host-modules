@@ -92,7 +92,7 @@ typedef struct CPUIDQuery {
    uint32 eax;                // IN
    uint32 ecx;                // IN
    uint32 numLogicalCPUs;     // IN/OUT
-   CPUIDReply logicalCPUs[0]; // OUT
+   CPUIDReply logicalCPUs[]; // OUT
 } CPUIDQuery;
 #pragma pack(pop)
 #endif
