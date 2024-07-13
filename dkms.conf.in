@@ -1,0 +1,16 @@
+PACKAGE_NAME="@PKG_NAME@"
+PACKAGE_VERSION="@PKG_VER@"
+CLEAN="make clean"
+MAKE="make VM_UNAME=$kernelver"
+AUTOINSTALL="yes"
+STRIP[0]="yes"
+
+BUILT_MODULE_NAME[0]="vmmon"
+BUILT_MODULE_NAME[1]="vmnet"
+
+BUILT_MODULE_LOCATION[0]="vmmon-only"
+BUILT_MODULE_LOCATION[1]="vmnet-only"
+
+# NOTE: this is ignored on some distros, but still required by DKMS scripts
+DEST_MODULE_LOCATION[0]="/kernel/misc/vmware"
+DEST_MODULE_LOCATION[1]="/kernel/misc/vmware"
