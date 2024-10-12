@@ -2,7 +2,7 @@ MODULES = vmmon vmnet
 SUBDIRS = $(MODULES:%=%-only)
 TARBALLS = $(MODULES:%=%.tar)
 MODFILES = $(foreach mod,$(MODULES),$(mod)-only/$(mod).ko)
-VM_UNAME = $(shell uname -r)
+VM_UNAME ?= $(shell uname -r)
 MODDIR = /lib/modules/$(VM_UNAME)/misc
 
 MODINFO = /sbin/modinfo
