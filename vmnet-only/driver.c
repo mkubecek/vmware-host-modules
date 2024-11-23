@@ -51,18 +51,6 @@
 #include "vmnetInt.h"
 
 /*
- * Initialization and creation routines from other files.
- * Putting them here reduces the need for so many header files.
- */
-
-extern int VNetUserIf_Create(VNetPort **ret);
-extern int VNetNetIf_Create(char *devName, VNetPort **ret, int hubNum);
-extern int VNetBridge_Create(char *devName, uint32 flags, VNetJack *hubJack,
-                             VNetPort **ret);
-extern int VNetUserListener_Create(uint32 classMask, VNetJack *hubJack, VNetPort **ret);
-
-
-/*
  *  Structure for cycle detection of host interfaces.  This
  *  struct is only used by VNetCycleDetectIf().
  */
@@ -295,7 +283,7 @@ VNetRemovePortFromList(const VNetPort *port) // IN: port to remove from list
  *----------------------------------------------------------------------
  */
 
-int
+static int
 vmnet_init_module(void)
 {
    int retval;
@@ -374,7 +362,7 @@ err_proto:
  *----------------------------------------------------------------------
  */
 
-void
+static void
 vmnet_cleanup_module(void)
 {
    unregister_chrdev(VNET_MAJOR_NUMBER, "vmnet");

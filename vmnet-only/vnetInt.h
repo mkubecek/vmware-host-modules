@@ -220,6 +220,18 @@ extern void VNetProc_Cleanup(void);
 
 
 /*
+ * Initialization and creation routines from other files.
+ * Putting them here reduces the need for so many header files.
+ */
+
+extern int VNetUserIf_Create(VNetPort **ret);
+extern int VNetNetIf_Create(char *devName, VNetPort **ret, int hubNum);
+extern int VNetBridge_Create(const char *devName, uint32 flags, VNetJack *hubJack,
+                             VNetPort **ret);
+extern int VNetUserListener_Create(uint32 classMask, VNetJack *hubJack, VNetPort **ret);
+
+
+/*
  *----------------------------------------------------------------------
  *
  * VNetCycleDetect --

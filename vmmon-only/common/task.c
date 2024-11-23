@@ -544,7 +544,7 @@ Task_Terminate(void)
  *-----------------------------------------------------------------------------
  */
 
-Selector
+static Selector
 TaskGetFlatWriteableDataSegment(void)
 {
    DTR hostGDTR;
