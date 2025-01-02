@@ -88,7 +88,7 @@ PgtblVa2MPNLocked(struct mm_struct *mm, // IN: Mm structure of a process
          if (pmd_large(*pmd)) {
             mpn = pmd_pfn(*pmd) + ((addr & ~PMD_MASK) >> PAGE_SHIFT);
          } else {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,5,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,5,0) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9, 4)
             pte_t *pte = pte_offset_kernel(pmd, addr);
 #else
             pte_t *pte = pte_offset_map(pmd, addr);

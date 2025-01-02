@@ -26,7 +26,7 @@
 #include <linux/slab.h>
 #include <linux/poll.h>
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 10)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 10) || RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9, 4)
 #include <net/gso.h>
 #endif
 #include <linux/netdevice.h>
