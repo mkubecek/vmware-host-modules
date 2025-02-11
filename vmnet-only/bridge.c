@@ -584,10 +584,10 @@ VNetBridgeReceiveFromVNet(VNetJack        *this, // IN: jack
     * and the packet size is not too big.
     */
 
-   dev_lock_list();
+   read_lock_list();
    if (MAC_EQ(dest, dev->dev_addr) ||
        skb->len > dev->mtu + dev->hard_header_len) {
-      dev_unlock_list();
+      read_unlock_list();
    } else {
 #     if 0 // XXX we should do header translation
       if ((dev->flags & IFF_SOFTHEADERS) != 0) {
@@ -607,15 +607,15 @@ VNetBridgeReceiveFromVNet(VNetJack        *this, // IN: jack
 #     endif
       clone = skb_clone(skb, GFP_ATOMIC);
       if (clone == NULL) {
-	 dev_unlock_list();
+	 read_unlock_list();
       } else {
          skb_set_owner_w(clone, bridge->sk);
 	 clone->protocol = ((struct ethhdr *)skb->data)->h_proto; // XXX
 	 if ((dev->flags & IFF_UP) != 0) {
-	    dev_unlock_list();
+	    read_unlock_list();
 	    DEV_QUEUE_XMIT(clone, dev, 0);
 	 } else {
-	    dev_unlock_list();
+	    read_unlock_list();
 	    dev_kfree_skb(clone);
 	 }
       }
@@ -899,19 +899,19 @@ VNetBridgeUp(VNetBridge *bridge, // IN: bridge struct
     * Get peer device structure
     */
 
-   dev_lock_list();
+   read_lock_list();
    bridge->dev = __dev_get_by_name(&init_net, bridge->name);
    LOG(2, (KERN_DEBUG "bridge-%s: got dev %p\n",
 	   bridge->name, bridge->dev));
    if (bridge->dev == NULL) {
-      dev_unlock_list();
+      read_unlock_list();
       retval = -ENODEV;
       goto out;
    }
    if (!(bridge->dev->flags & IFF_UP)) {
       LOG(2, (KERN_DEBUG "bridge-%s: interface %s is not up\n",
               bridge->name, bridge->dev->name));
-      dev_unlock_list();
+      read_unlock_list();
       retval = -ENODEV;
       goto out;
    }
@@ -919,7 +919,7 @@ VNetBridgeUp(VNetBridge *bridge, // IN: bridge struct
       LOG(1, (KERN_DEBUG "bridge-%s: can't bridge with %s (header length %d, "
               "type %d).\n", bridge->name, bridge->dev->name,
               bridge->dev->hard_header_len, bridge->dev->type));
-      dev_unlock_list();
+      read_unlock_list();
       retval = -EINVAL;
       goto out;
    }
@@ -933,7 +933,7 @@ VNetBridgeUp(VNetBridge *bridge, // IN: bridge struct
 
    bridge->sk = compat_sk_alloc(bridge, GFP_ATOMIC);
    if (bridge->sk == NULL) {
-      dev_unlock_list();
+      read_unlock_list();
       retval = -ENOMEM;
       goto out;
    }
@@ -973,7 +973,7 @@ VNetBridgeUp(VNetBridge *bridge, // IN: bridge struct
    bridge->pt.af_packet_priv = bridge->sk;
    bridge->enabledPromisc = FALSE;
    dev_add_pack(&bridge->pt);
-   dev_unlock_list();
+   read_unlock_list();
 
    /*
     * Put in promiscuous mode if need be.
