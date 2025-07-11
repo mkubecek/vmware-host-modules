@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2016-2018,2021-2022 VMware, Inc. All rights reserved.
+ * Copyright (C) 2016-2018,2021-2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -31,6 +31,8 @@
  * future use.
  */
 #define VT_EXITREASON_BASIC_REASON_MASK      0xFFFF
+#define VT_EXITREASON_FRACT_SHSTK            (1U << 25)
+#define VT_EXITREASON_BUSLOCK_ASSERTED       (1U << 26)
 #define VT_EXITREASON_INSIDE_ENCLAVE         (1U << 27)
 #define VT_EXITREASON_PENDING_MTF            (1U << 28)
 #define VT_EXITREASON_EXIT_ROOT_OPERATION    (1U << 29)
@@ -112,7 +114,7 @@ VT_EXIT(ENQCMD_PASID_FAIL,    72)
 VT_EXIT(ENQCMDS_PASID_FAIL,   73)
 VT_EXIT(BUS_LOCK,             74)
 VT_EXIT(NOTIFY_WINDOW,        75)
-VT_EXIT(VMEXIT76,             76)
+VT_EXIT(SEAMCALL,             76)
 VT_EXIT(TDCALL,               77)
 /* Bump this up if you add an exit reason. */
 #define VT_NUM_EXIT_REASONS   78

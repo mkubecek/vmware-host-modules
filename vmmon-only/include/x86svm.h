@@ -1,5 +1,6 @@
 /*********************************************************
- * Copyright (C) 2005-2022 VMware, Inc. All rights reserved.
+ * Copyright (c) 2005-2024 Broadcom. All Rights Reserved.
+ * The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -145,6 +146,7 @@
 #define SVM_VMCB_APIC_VIGN_TPR             0x0000000000100000ULL
 #define SVM_VMCB_APIC_VINTR_MASKING        0x0000000001000000ULL
 #define SVM_VMCB_APIC_VGIF_ENABLE          0x0000000002000000ULL
+#define SVM_VMCB_APIC_X2AVIC_ENABLE        0x0000000040000000ULL
 #define SVM_VMCB_APIC_AVIC_ENABLE          0x0000000080000000ULL
 #define SVM_VMCB_APIC_VINTR_VECTOR_MASK    0x000000ff00000000ULL
 #define SVM_VMCB_APIC_VINTR_VECTOR_SHIFT   32
@@ -210,15 +212,21 @@
 #define SVM_VMCB_AR_GRAN_SHIFT      (AR_GRAN_SHIFT     - 4)
 
 /* VMSA.sevFeatures */
-#define SVM_VMSA_SEV_FEAT_SNP_ACTIVE   0x0000000000000001ULL
-#define SVM_VMSA_SEV_FEAT_VTOM         0x0000000000000002ULL
-#define SVM_VMSA_SEV_FEAT_REFLECT_VC   0x0000000000000004ULL
-#define SVM_VMSA_SEV_FEAT_RESTR_INJ    0x0000000000000008ULL
-#define SVM_VMSA_SEV_FEAT_ALT_INJ      0x0000000000000010ULL
-#define SVM_VMSA_SEV_FEAT_DBG_SWAP     0x0000000000000020ULL
-#define SVM_VMSA_SEV_FEAT_NO_HOST_IBS  0x0000000000000040ULL
-#define SVM_VMSA_SEV_FEAT_BTB_ISOLATE  0x0000000000000080ULL
-#define SVM_VMSA_SEV_FEAT_RSVD         0xffffffffffffff00ULL
+#define SVM_VMSA_SEV_FEAT_SNP_ACTIVE    0x0000000000000001ULL
+#define SVM_VMSA_SEV_FEAT_VTOM          0x0000000000000002ULL
+#define SVM_VMSA_SEV_FEAT_REFLECT_VC    0x0000000000000004ULL
+#define SVM_VMSA_SEV_FEAT_RESTR_INJ     0x0000000000000008ULL
+#define SVM_VMSA_SEV_FEAT_ALT_INJ       0x0000000000000010ULL
+#define SVM_VMSA_SEV_FEAT_DBG_SWAP      0x0000000000000020ULL
+#define SVM_VMSA_SEV_FEAT_NO_HOST_IBS   0x0000000000000040ULL
+#define SVM_VMSA_SEV_FEAT_BTB_ISOLATE   0x0000000000000080ULL
+#define SVM_VMSA_SEV_FEAT_VMPL_SSS      0x0000000000000100ULL
+#define SVM_VMSA_SEV_FEAT_SECURE_TSC    0x0000000000000200ULL
+#define SVM_VMSA_SEV_FEAT_VMGEXIT_PARAM 0x0000000000000400ULL
+#define SVM_VMSA_SEV_FEAT_IBS_VIRT      0x0000000000001000ULL
+#define SVM_VMSA_SEV_FEAT_VMSA_REG_PROT 0x0000000000004000ULL
+#define SVM_VMSA_SEV_FEAT_SMT_PROT      0x0000000000008000ULL
+#define SVM_VMSA_SEV_FEAT_RSVD          0xffffffffffff2800ULL
 
 /*
  * Unique Exit Codes
@@ -296,16 +304,21 @@
 #define SVM_NUM_HI_EXIT_REASONS  (SVM_LAST_HI_EXIT_REASON + 1 - \
                                   SVM_FIRST_HI_EXIT_REASON)
 
-#define SVM_EXITCODE_MMIO_READ           0x80000001   // SW only
-#define SVM_EXITCODE_MMIO_WRITE          0x80000002   // SW only
-#define SVM_EXITCODE_NMI_COMPLETE        0x80000003   // SW only
-#define SVM_EXITCODE_AP_RESET_HOLD       0x80000004   // SW only
-#define SVM_EXITCODE_AP_JUMP_TABLE       0x80000005   // SW only
-#define SVM_EXITCODE_SNP_PSC_REQ         0x80000010   // SW only
-#define SVM_EXITCODE_SNP_GUEST_REQ       0x80000011   // SW only
-#define SVM_EXITCODE_SNP_AP_CREATION     0x80000013   // SW only
-#define SVM_EXITCODE_HV_FEATURES         0x8000FFFD   // SW only
-#define SVM_EXITCODE_UNSUPPORTED         0x8000FFFF   // SW only
+/* These exit codes are SW only, and issued by the guest when SEV is enabled. */
+#define SVM_EXITCODE_MMIO_READ           0x80000001
+#define SVM_EXITCODE_MMIO_WRITE          0x80000002
+#define SVM_EXITCODE_NMI_COMPLETE        0x80000003
+#define SVM_EXITCODE_AP_RESET_HOLD       0x80000004
+#define SVM_EXITCODE_AP_JUMP_TABLE       0x80000005
+#define SVM_EXITCODE_SNP_PSC_REQ         0x80000010
+#define SVM_EXITCODE_SNP_GUEST_REQ       0x80000011
+#define SVM_EXITCODE_SNP_EXT_GUEST_REQ   0x80000012
+#define SVM_EXITCODE_SNP_AP_CREATION     0x80000013
+#define SVM_EXITCODE_SNP_APIC_ID_LIST    0x80000017
+#define SVM_EXITCODE_SNP_RUN_VMPL        0x80000018
+#define SVM_EXITCODE_HV_FEATURES         0x8000FFFD
+#define SVM_EXITCODE_TERMINATE           0x8000FFFE
+#define SVM_EXITCODE_UNSUPPORTED         0x8000FFFF
 #define SVM_EXITCODE_INVALID             (-1ULL)
 
 /* ExitInfo1 for I/O exits */
@@ -379,9 +392,15 @@
 #define SVM_APEXIT_GET            0x1
 
 /* ExitInfo1 for SNP AP creation exits */
-#define SVM_SNPAPCREATE_WAIT_INIT 0x0
-#define SVM_SNPAPCREATE_VMRUN     0x1
-#define SVM_SNPAPCREATE_DESTROY   0x2
+#define SVM_SNPAPCREATE_EI1_APIC_ID  0xffffffff00000000ULL
+#define SVM_SNPAPCREATE_EI1_VMPL     0x00000000000f0000ULL
+#define SVM_SNPAPCREATE_EI1_REQTYPE  0x000000000000ffffULL
+#define    SVM_SNPAPCREATE_EI1_REQTYPE_WAIT_INIT 0x0
+#define    SVM_SNPAPCREATE_EI1_REQTYPE_VMRUN     0x1
+#define    SVM_SNPAPCREATE_EI1_REQTYPE_DESTROY   0x2
+
+/* ExitInfo1 for SNP Run VMPL exits */
+#define SVM_SNPRUNVMPL_EI1_VMPL      0x00000000ffffffffULL
 
 /* Event Injection */
 #define SVM_INTINFO_VECTOR_MASK   0x000000ff
@@ -397,7 +416,7 @@
 #define SVM_INTINFO_VALID         0x80000000
 
 /* AVIC related definitions. */
-#define SVM_AVIC_PHYS_TBL_MAX_VCPUS  512
+#define SVM_AVIC_PHYS_TBL_MAX_APICID  255
 
 #define SVM_AVIC_PHYS_ID_TBL_VALID (1ULL << 63)
 
@@ -441,7 +460,7 @@ enum {
 #undef CLEANBIT
 };
 
-static INLINE uint64
+static inline uint64
 SVM_ExecCtlBit(uint32 exitCode)
 {
    VERIFY_EXEC_CTL(INTR);
@@ -513,7 +532,7 @@ SVM_ExecCtlBit(uint32 exitCode)
  *----------------------------------------------------------------------
  */
 
-static INLINE int
+static inline int
 SVM_MSRNumToIndex(uint32 msrNum, AccessMode accessMode)
 {
    ASSERT(accessMode == ACCESS_MODE_READ || accessMode == ACCESS_MODE_WRITE);
@@ -541,7 +560,7 @@ SVM_MSRNumToIndex(uint32 msrNum, AccessMode accessMode)
  *
  *----------------------------------------------------------------------
  */
-static INLINE Bool
+static inline Bool
 SVM_EnabledFromFeatures(uint64 vmCR)
 {
    return (vmCR & MSR_VM_CR_SVME_DISABLE) == 0;
@@ -557,7 +576,7 @@ SVM_EnabledFromFeatures(uint64 vmCR)
  *
  *----------------------------------------------------------------------
  */
-static INLINE Bool
+static inline Bool
 SVM_LockedFromFeatures(uint64 vmCR)
 {
    return (vmCR & MSR_VM_CR_SVM_LOCK) != 0;
@@ -573,7 +592,7 @@ SVM_LockedFromFeatures(uint64 vmCR)
  *   that the processor is SVM_Capable().
  *----------------------------------------------------------------------
  */
-static INLINE Bool
+static inline Bool
 SVM_EnabledCPU(void)
 {
    return SVM_EnabledFromFeatures(X86MSR_GetMSR(MSR_VM_CR));
@@ -590,7 +609,7 @@ SVM_EnabledCPU(void)
  *   Verify that this CPU is SVM-capable.
  *----------------------------------------------------------------------
  */
-static INLINE Bool
+static inline Bool
 SVM_CapableCPU(void)
 {
    return ((__GET_EAX_FROM_CPUID(0x80000000) >= 0x8000000a) &&
@@ -616,7 +635,7 @@ SVM_CapableCPU(void)
  *   (Family 17H), SVM is always supported.
  *----------------------------------------------------------------------
  */
-static INLINE Bool
+static inline Bool
 SVM_SupportedRev(const CpuidInfo *cpuid)
 {
    CpuidVendor vendor = CpuidInfo_Vendor(cpuid);
@@ -635,7 +654,7 @@ SVM_SupportedRev(const CpuidInfo *cpuid)
  *   must support NPT, NRIP and flush by ASID.
  *----------------------------------------------------------------------
  */
-static INLINE Bool
+static inline Bool
 SVM_SupportedCPU(const CpuidInfo *cpuid)
 {
    return SVM_SupportedRev(cpuid) &&

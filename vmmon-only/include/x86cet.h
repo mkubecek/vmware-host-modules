@@ -71,7 +71,7 @@ typedef ALIGNED(8) struct {
  *   LA [63  ...  48][47 .... 15][14 13 12][11  ...  0]
  *         unused       byteNum    bitNum
  */
-static INLINE void
+static inline void
 CET_IBTComputeLegacyByte(LA la, uint64 *byteNum, uint8 *byteMask)
 {
    const unsigned bitsPerByte = 8;

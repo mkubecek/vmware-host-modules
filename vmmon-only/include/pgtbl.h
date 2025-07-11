@@ -1,5 +1,6 @@
 /*********************************************************
- * Copyright (C) 2002,2014-2017,2023 VMware, Inc. All rights reserved.
+ * Copyright (c) 2002-2024 Broadcom. All Rights Reserved.
+ * The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -88,7 +89,7 @@ PgtblVa2MPNLocked(struct mm_struct *mm, // IN: Mm structure of a process
          if (pmd_large(*pmd)) {
             mpn = pmd_pfn(*pmd) + ((addr & ~PMD_MASK) >> PAGE_SHIFT);
          } else {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,5,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,5,0) || defined(RHEL94_BACKPORTS)
             pte_t *pte = pte_offset_kernel(pmd, addr);
 #else
             pte_t *pte = pte_offset_map(pmd, addr);

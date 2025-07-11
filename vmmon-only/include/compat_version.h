@@ -1,5 +1,6 @@
 /*********************************************************
- * Copyright (C) 1998-2023 VMware, Inc. All rights reserved.
+ * Copyright (c) 1998-2024 Broadcom. All Rights Reserved.
+ * The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -140,6 +141,9 @@
 #   endif
 #   if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9, 2)
 #      define RHEL92_BACKPORTS 1
+#   endif
+#   if RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(9, 4)
+#      define RHEL94_BACKPORTS 1
 #   endif
 #endif
 

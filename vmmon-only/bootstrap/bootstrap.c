@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2015 VMware, Inc. All rights reserved.
+ * Copyright (C) 2015,2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -19,10 +19,11 @@
 /*
  * bootstrap.c --
  *
- *    Implements the early VMM bootstraping code that is executed
- *    by the host (vmmon/VMKernel) to create the VMM context.
+ *      Implements the early VMM bootstraping code that is executed
+ *      by the host (vmmon/VMKernel) to create the VMM context.
  */
 
+#if !defined VMKERNEL || defined VMK_HAS_VMM
 #include "vm_basic_types.h"
 #include "vm_basic_defs.h"
 #include "bootstrap_vmm.h"
@@ -51,3 +52,4 @@ BSVMM_Validate(void *buf, uint32 nbytes)
    }
    return bsParams;
 }
+#endif

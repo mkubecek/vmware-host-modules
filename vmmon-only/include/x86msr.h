@@ -1,5 +1,6 @@
 /*********************************************************
- * Copyright (C) 1998-2023 VMware, Inc. All rights reserved.
+ * Copyright (c) 1998-2024 Broadcom. All Rights Reserved.
+ * The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -67,13 +68,14 @@ typedef struct MSRReply {
 typedef struct MSRQuery {
    uint32 msrNum;           // IN
    uint32 numLogicalCPUs;   // IN/OUT
-   MSRReply logicalCPUs[0]; // OUT
+   MSRReply logicalCPUs[]; // OUT
 } MSRQuery;
 #pragma pack(pop)
 
 #define MSR_TSC               0x00000010
 #define MSR_PLATFORM_ID       0x00000017
 #define MSR_APIC_BASE         0x0000001b
+#define MSR_MSRLIST_BARRIER   0x0000002f
 #define MSR_SMI_COUNT         0x00000034 // Intel Nehalem Family
 #define MSR_CORE_THREAD_COUNT 0x00000035 // Intel Nehalem Family +
 #define MSR_FEATCTL           0x0000003a
@@ -143,6 +145,12 @@ typedef struct MSRQuery {
 #define MSR_TEST_CTRL_SPLIT_LOCK_DETECT           (1ULL << 29)
 #endif
 
+#define MSR_XAPIC_DISABLE_STATUS             0xbd
+#define MSR_XAPIC_DISABLE_STATUS_LEGACY_XAPIC_DIS (1ULL << 0)
+
+#define MSR_CORE_CAPABILITIES                0xcf
+#define MSR_CORE_CAPABILITIES_EXTSVC_ENTITLED     (1ULL << 14) // Intel email
+
 #define IA32_MSR_ARCH_CAPABILITIES           0x10a
 #define MSR_ARCH_CAPABILITIES_RDCL_NO             (1ULL << 0)
 #define MSR_ARCH_CAPABILITIES_IBRS_ALL            (1ULL << 1)
@@ -153,6 +161,7 @@ typedef struct MSRQuery {
 #define MSR_ARCH_CAPABILITIES_IF_PSCHANGE_MC_NO   (1ULL << 6)
 #define MSR_ARCH_CAPABILITIES_TSX_CTRL            (1ULL << 7)
 #define MSR_ARCH_CAPABILITIES_TAA_NO              (1ULL << 8)
+#define MSR_ARCH_CAPABILITIES_MCU_CONTROL         (1ULL << 9)
 #define MSR_ARCH_CAPABILITIES_MISC_PKG_CTRLS      (1ULL << 10)
 #define MSR_ARCH_CAPABILITIES_ENERGY_FILT_CTL     (1ULL << 11)
 #define MSR_ARCH_CAPABILITIES_DOITM               (1ULL << 12)
@@ -164,6 +173,7 @@ typedef struct MSRQuery {
 #define MSR_ARCH_CAPABILITIES_RRSBA               (1ULL << 19)
 #define MSR_ARCH_CAPABILITIES_BHI_NO              (1ULL << 20)
 #define MSR_ARCH_CAPABILITIES_XAPIC_DIS_STATUS    (1ULL << 21)
+#define MSR_ARCH_CAPABILITIES_EXTSVC_ENTITLED     (1ULL << 22)
 #define MSR_ARCH_CAPABILITIES_OVERCLOCKING_STATUS (1ULL << 23)
 #define MSR_ARCH_CAPABILITIES_PBRSB_NO            (1ULL << 24)
 
@@ -196,6 +206,9 @@ typedef struct MSRQuery {
 #ifndef MSR_MISC_FEATURES_ENABLES
 #define MSR_MISC_FEATURES_ENABLES            0x140
 #endif
+
+#define MSR_UARCH_MISC_CTL                   0x1b01
+#define MSR_UARCH_MISC_CTL_DOITM                   (1ULL << 0)
 
 #define MSR_XFD                              0x1c4
 #define MSR_XFD_ERR                          0x1c5
@@ -314,6 +327,8 @@ typedef struct MSRQuery {
 #define MSR_ARCH_LBR_FROM_IP 0x00001500
 #define MSR_ARCH_LBR_TO_IP   0x00001600
 #define MSR_ARCH_LBR_INFO    0x00001200
+#define MSR_LER_FROM_IP      0x000001dd
+#define MSR_LER_TO_IP        0x000001de
 
 /* MSR_ARCH_LBR_CTL bits */
 #define MSR_ARCH_LBR_CTL_LBREN         0x000001
@@ -727,13 +742,32 @@ typedef struct MSRQuery {
 #define MSR_VM_CR_SVME_DISABLE     0x0000000000000010ULL
 #define MSR_VM_CR_RESERVED         0xffffffffffffffe0ULL
 
+/* AMD RAPL related MSRs. */
+#define MSR_AMD_RAPL_POWER_UNIT    0xc0010299
+#define MSR_AMD_PKG_ENERGY_STATUS  0xc001029b
+
 /* SEV related MSRs. */
 #define MSR_VMPAGE_FLUSH           0xc001011e
 #define MSR_GHCB_PA                0xc0010130
 #define MSR_SEV_STATUS             0xc0010131
 
+/* SEV feature-enabled bits in MSR_SEV_STATUS. */
+#define MSR_SEV_STATUS_SEV_EN           (1ULL << 0)
+#define MSR_SEV_STATUS_SEV_ES_EN_BIT    1
+#define MSR_SEV_STATUS_SEV_ES_EN        (1ULL << MSR_SEV_STATUS_SEV_ES_EN_BIT)
+#define MSR_SEV_STATUS_SEV_SNP_EN_BIT   2
+#define MSR_SEV_STATUS_SEV_SNP_EN       (1ULL << MSR_SEV_STATUS_SEV_SNP_EN_BIT)
+#define MSR_SEV_STATUS_DBG_SWAP         (1ULL << 7)
+#define MSR_SEV_STATUS_NO_HOST_IBS_EN   (1ULL << 8)
+#define MSR_SEV_STATUS_BTB_ISOLATE_EN   (1ULL << 9)
+#define MSR_SEV_STATUS_VMSA_REG_PROT_EN (1ULL << 16)
+
+/* Fields in MSR_GHCB_PA for the MSR protocol. */
+#define MSR_GHCB_PA_FUNCTION_MASK           0x0000000000000fffULL
+#define MSR_GHCB_PA_DATA_MASK               0xfffffffffffff000ULL
+
 /* Commands identifiers used in the MSR_GHCB_PA MSR protocol. */
-#define MSR_GHCB_PA_FUNCTION_MASK           0xfffULL
+#define MSR_GHCB_PA_VMGEXIT                 0x0
 #define MSR_GHCB_PA_SEVINFO_HV              0x1
 #define MSR_GHCB_PA_SEVINFO_REQ             0x2
 #define MSR_GHCB_PA_AP_JUMP_TABLE           0x3
@@ -747,6 +781,8 @@ typedef struct MSRQuery {
 #define MSR_GHCB_PA_REGISTER_GHCB_GPA_RESP  0x13
 #define MSR_GHCB_PA_SNP_PSC_REQ             0x14
 #define MSR_GHCB_PA_SNP_PSC_RESP            0x15
+#define MSR_GHCB_PA_RUN_VMPL_REQ            0x16
+#define MSR_GHCB_PA_RUN_VMPL_RESP           0x17
 #define MSR_GHCB_PA_FEATURES_REQ            0x80
 #define MSR_GHCB_PA_FEATURES_RESP           0x81
 #define MSR_GHCB_PA_TERMINATE               0x100
@@ -780,8 +816,14 @@ typedef struct MSRQuery {
 /* Field definitions for MSR_GHCB_PA_SNP_PSC_RESP */
 #define MSR_GHCB_PA_SNP_PSC_ERRCODE_SHIFT   32
 
+/* Field definitions for MSR_GHCB_PA_RUN_VMPL_REQ. */
+#define MSR_GHCB_PA_RUN_VMPL_REQ_VMPL       0x000000ff00000000ULL
+
+/* Field definitions for MSR_GHCB_PA_RUN_VMPL_RESP. */
+#define MSR_GHCB_PA_RUN_VMPL_RESP_ERROR     0xffffffff00000000ULL
+
 /* Field definitions for MSR_GHCB_PA_FEATURES_REQ */
-#define MSR_GHCB_PA_FEATURES_SHIFT          12
+#define MSR_GHCB_PA_FEATURES_RESP_FEATURES  0xfffffffffffff000ULL
 
 /* Field definitions for MSR_GHCB_PA_TERMINATE request. */
 #define MSR_GHCB_PA_TERMINATE_ECS_MASK      0xfULL
@@ -806,14 +848,6 @@ typedef struct MSRQuery {
 #define SEV_TERM_FROBOS_DECODE_ERROR     10 /* Instruction decode error. */
 #define SEV_TERM_FROBOS_PSC_FAILED       11 /* Page state change req failed. */
 #define SEV_TERM_FROBOS_NESTED_VC_EXC    12 /* A nested #VC occurred. */
-
-/* SEV feature-enabled bits in MSR_SEV_STATUS. */
-#define MSR_SEV_STATUS_SEV_EN_BIT      0
-#define MSR_SEV_STATUS_SEV_EN          (1ULL << MSR_SEV_STATUS_SEV_EN_BIT)
-#define MSR_SEV_STATUS_SEV_ES_EN_BIT   1
-#define MSR_SEV_STATUS_SEV_ES_EN       (1ULL << MSR_SEV_STATUS_SEV_ES_EN_BIT)
-#define MSR_SEV_STATUS_SEV_SNP_EN_BIT  2
-#define MSR_SEV_STATUS_SEV_SNP_EN      (1ULL << MSR_SEV_STATUS_SEV_SNP_EN_BIT)
 
 /* SEV-SNP (Secure Nested Paging) MSRs. */
 #define MSR_RMP_BASE              0xc0010132 // Address of first byte of RMP
@@ -925,8 +959,10 @@ typedef struct MSRQuery {
 #ifndef MSR_TSX_FORCE_ABORT
 /* MSR for forcing RTM abort to recover PMC3 (see PR 2333817) */
 /* See SKZ87 in intel 335901-009 6th-gen-x-series-spec-update.pdf */
-#define MSR_TSX_FORCE_ABORT                      0x0000010f
-#define MSR_TSX_FORCE_ABORT_RTM_BIT_INDEX        0
+#define MSR_TSX_FORCE_ABORT                      0x10f
+#define MSR_TSX_FORCE_ABORT_RTM                       (1ULL << 0)
+#define MSR_TSX_FROCE_ABORT_TSX_CPUID_CLEAR           (1ULL << 1)
+#define MSR_TSX_FORCE_ABORT_SDV_ENABLE_RTM            (1ULL << 2)
 #endif
 
 /*

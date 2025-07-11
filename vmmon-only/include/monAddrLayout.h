@@ -61,13 +61,13 @@ typedef struct VMM64_AddrLayout {
 #define VMM_MONAS_5LP_FIRST_L5OFF   1
 #define VMM_MONAS_5LP_LAST_L5OFF   34
 
-static INLINE PT_Level
+static inline PT_Level
 MonAS_GetPagingLevel(void)
 {
    return PT_LEVEL_4;
 }
 
-static INLINE Bool
+static inline Bool
 MonAS_Uses5LevelPaging(void)
 {
    return MonAS_GetPagingLevel() == PT_LEVEL_5;

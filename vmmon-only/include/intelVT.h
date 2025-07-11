@@ -1,5 +1,6 @@
 /*********************************************************
- * Copyright (C) 2008-2022 VMware, Inc. All rights reserved.
+ * Copyright (c) 2008-2024 Broadcom. All Rights Reserved.
+ * The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -64,7 +65,8 @@ extern "C" {
    MSRNUM(MSR_VMX_TRUE_EXIT_CTLS)      \
    MSRNUM(MSR_VMX_TRUE_ENTRY_CTLS)     \
    MSRNUM(MSR_VMX_VMFUNC)              \
-   MSRNUM(MSR_VMX_3RD_CTLS)
+   MSRNUM(MSR_VMX_3RD_CTLS)            \
+   MSRNUM(MSR_VMX_EXIT_CTLS2)
 
 
 #define EXTRACT_FIELD(msr, basename) \
@@ -132,7 +134,8 @@ IntelVT_FindCommonBasic(const MSRCache *data,    // IN
    unsigned cpu;
    const uint64 orFields = MSR_VMX_BASIC_32BITPA;
    const uint64 andFields = MSR_VMX_BASIC_TRUE_CTLS | MSR_VMX_BASIC_DUALVMM |
-                            MSR_VMX_BASIC_ADVANCED_IOINFO;
+                            MSR_VMX_BASIC_ADVANCED_IOINFO |
+                            MSR_VMX_BASIC_VMENTRY_IGNS_ERR_CODE;
    uint64 commonVal = getMSR(data, MSR_VMX_BASIC, 0);
    for (cpu = 1; cpu < numCPUs; cpu++) {
       uint64 thisCpu = getMSR(data, MSR_VMX_BASIC, cpu);
@@ -376,6 +379,24 @@ IntelVT_FindCommon3rd(const MSRCache *data,     // IN
 }
 
 
+/*
+ *----------------------------------------------------------------------
+ *
+ * IntelVT_FindCommonExit2 --
+ *
+ *      Computes and returns a common MSR_VMX_EXIT_CTLS2 feature MSR across
+ *      all logical processors on the host.
+ *
+ *----------------------------------------------------------------------
+ */
+
+static INLINE uint64
+IntelVT_FindCommonExit2(const MSRCache *data,     // IN
+                        IntelVTMSRGet_Fn getMSR,  // IN
+                        unsigned numCPUs)         // IN
+{
+   return IntelVTFindCommon(MSR_VMX_EXIT_CTLS2, data, getMSR, numCPUs, TRUE);
+}
 #undef EXTRACT_FIELD
 #undef INSERT_FIELD
 #undef INVALID_VMX_BASIC

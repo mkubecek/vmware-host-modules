@@ -1,5 +1,6 @@
 /*********************************************************
- * Copyright (C) 1998-2023 VMware, Inc. All rights reserved.
+ * Copyright (c) 1998-2024 Broadcom. All Rights Reserved.
+ * The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -120,5 +121,49 @@ typedef enum {
    PM_4_LEVEL,     /* long mode style paging mode (including compat mode). */
    PM_NUM     = 4, /* number of different paging modes.                    */
 } PagingMode;
+
+/*
+ *----------------------------------------------------------------------
+ *
+ * TLB_INVPCID
+ *
+ *      Invalidate mappings in the TLB(s) and paging structure cache(s)
+ *      according to the given descriptor and type. The Intel SDM
+ *      defines four possible INVPCID types:
+ *
+ *      INVPCID_EXTENT_ADDR - individual-address invalidation:
+ *         Invalidate mappings (except global translations) for the
+ *         linear address and PCID specified in invalDesc.
+ *
+ *      INVPCID_EXTENT_PCID_CTX - single-context invalidation:
+ *          Invalidate all mappings (except global translations) for
+ *          the PCID specified in invalDesc.
+ *
+ *      INVPCID_EXTENT_ALL_CTX - all-context invalidation: Invalidate
+ *          all mappings, including global translations, for any PCID.
+ *
+ *      INVPCID_EXTENT_ALL_CTX_LOCAL - all-context invalidation:
+ *          Invalidate all mappings (except global translations, for
+ *          any PCID. May invalidate global translations as well.
+ *
+ * Results:
+ *      None.
+ *
+ * Side effects:
+ *      TLB(s), paging structure cache(s), and global translations may
+ *      be flushed.
+ *
+ *----------------------------------------------------------------------
+ */
+#ifdef __GNUC__
+static inline void
+TLB_INVPCID(InvpcidArg *invalDesc, uint64 invalType)
+{
+   __asm__ __volatile__("invpcid (%0), %1"
+                        : /* no outputs */
+                        : "r"(invalDesc), "r"(invalType)
+                        : "memory");
+}
+#endif
 
 #endif /* _X86PAGING_COMMON_H_ */

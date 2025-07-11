@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014,2017,2019-2022 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014,2017,2019-2022,2024 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -104,21 +104,21 @@ VmAbsoluteTS PTSC_InitialCount(const char *module,
 Bool PTSC_HasPerfectlySynchronizedTSCs(void);
 VmRelativeTS PTSC_RefClockOffset(void);
 
-static INLINE int64
+static inline int64
 PTSC_Hz(void)
 {
    ASSERT(ptscInfo.hz);
    return ptscInfo.hz;
 }
 
-static INLINE uint32
+static inline uint32
 PTSC_KHz(void)
 {
    ASSERT(ptscInfo.kHz);
    return ptscInfo.kHz;
 }
 
-static INLINE uint32
+static inline uint32
 PTSC_MHz(void)
 {
    ASSERT(ptscInfo.mHz);
@@ -132,25 +132,25 @@ PTSC_MHz(void)
  * of the signed type.
  */
 
-static INLINE VmRelativeTS
+static inline VmRelativeTS
 PTSC_USToCycles(int64 us)
 {
    return Muls64x32s64(us, ptscInfo.usToCycles.mult, ptscInfo.usToCycles.shift);
 }
 
-static INLINE VmRelativeTS
+static inline VmRelativeTS
 PTSC_MSToCycles(int64 ms)
 {
    return Muls64x32s64(ms, ptscInfo.msToCycles.mult, ptscInfo.msToCycles.shift);
 }
 
-static INLINE int64
+static inline int64
 PTSC_CyclesToNS(VmRelativeTS ts)
 {
    return Muls64x32s64(ts, ptscInfo.cyclesToNs.mult, ptscInfo.cyclesToNs.shift);
 }
 
-static INLINE int64
+static inline int64
 PTSC_CyclesToUS(VmRelativeTS ts)
 {
    return Muls64x32s64(ts, ptscInfo.cyclesToUs.mult, ptscInfo.cyclesToUs.shift);
@@ -163,7 +163,7 @@ PTSC_CyclesToUS(VmRelativeTS ts)
  */
 #include "user_layout.h"
 
-static INLINE VmAbsoluteTS
+static inline VmAbsoluteTS
 PTSC_Get(void)
 {
    extern __thread User_ThreadData vmkUserTdata;
@@ -197,7 +197,7 @@ VmAbsoluteTS PTSC_Get(void);
  *-----------------------------------------------------------------------------
  */
 
-static INLINE Bool
+static inline Bool
 PTSC_HasSynchronizedTSCs(void)
 {
    return ptscInfo.hwTSCsSynced;
@@ -215,7 +215,7 @@ PTSC_HasSynchronizedTSCs(void)
  *-----------------------------------------------------------------------------
  */
 
-static INLINE Bool
+static inline Bool
 PTSC_HostAdjustedTSCs(void)
 {
    return ptscInfo.hwTSCsAdjusted;
@@ -233,7 +233,7 @@ PTSC_HostAdjustedTSCs(void)
  *----------------------------------------------------------------------
  */
 
-static INLINE uint64
+static inline uint64
 PTSC_AdvanceTimer(VmAbsoluteTS now,
                   VmIntervalTS period,
                   VmAbsoluteTS *deadline)

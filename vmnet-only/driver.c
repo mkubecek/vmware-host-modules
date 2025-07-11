@@ -1,5 +1,6 @@
 /*********************************************************
- * Copyright (C) 1998,2021 VMware, Inc. All rights reserved.
+ * Copyright (c) 1998-2024 Broadcom. All Rights Reserved.
+ * The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -283,8 +284,8 @@ VNetRemovePortFromList(const VNetPort *port) // IN: port to remove from list
  *----------------------------------------------------------------------
  */
 
-static int
-vmnet_init_module(void)
+int
+LinuxDriverInit(void)
 {
    int retval;
 
@@ -346,7 +347,7 @@ err_proto:
 /*
  *----------------------------------------------------------------------
  *
- * vmnet_cleanup_module --
+ * LinuxDriverExit --
  *
  *      Called by /sbin/rmmod.  Unregisters this driver for a
  *      vnet major #, and deinitializes the modules.  The 64-bit
@@ -362,8 +363,8 @@ err_proto:
  *----------------------------------------------------------------------
  */
 
-static void
-vmnet_cleanup_module(void)
+void
+LinuxDriverExit(void)
 {
    unregister_chrdev(VNET_MAJOR_NUMBER, "vmnet");
    VNetProtoUnregister();
@@ -1658,5 +1659,5 @@ MODULE_LICENSE("GPL v2");
  * by default (i.e., neither mkinitrd nor modprobe will accept it).
  */
 MODULE_INFO(supported, "external");
-module_init(vmnet_init_module);
-module_exit(vmnet_cleanup_module);
+module_init(LinuxDriverInit);
+module_exit(LinuxDriverExit);

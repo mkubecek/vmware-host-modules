@@ -1,5 +1,6 @@
 /*********************************************************
- * Copyright (C) 2016-2022 VMware, Inc. All rights reserved.
+ * Copyright (c) 2016-2024 Broadcom. All Rights Reserved.
+ * The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -59,7 +60,7 @@
 #include "segs.h"
 #include "x86_basic_defs.h"
 #include "vm_basic_defs.h"
-#include "vm_idt_x86.h"
+#include "vm_idt.h"
 #include "crosspage.h"
 
 /*
@@ -92,10 +93,6 @@
 #define VMMDATALA(off) (LPN_2_LA(CROSS_PAGE_DATA_START) + (off))
 
 #define NOT_REACHED_MINIMAL __builtin_unreachable
-
-#ifndef ASM_RET
-#define ASM_RET "ret\n"
-#endif
 
 void VmmToHost(void);
 void SwitchDBHandler(void);
@@ -240,6 +237,38 @@ CrossPageInitSwitchIDTs(struct VMCrossPageData *cpData)
                           CrossPageVmmCodeVA(SwitchMCEHandler));
 }
 
+/*
+ *---------------------------------------------------------------------------
+ *
+ * SwitchExcGetCrossPageData --
+ *
+ *      Common code for the exception handlers to locate the data
+ *      crosspage so they can record their respective events.  In order to
+ *      reach this code an exception had to vector through the IDT.  The IDT
+ *      is known to be in the data page.  Therefore, the data page can be
+ *      found by accessing IDTR and rounding down to page alignment.
+ *
+ * Input:
+ *     None
+ *
+ * Output:
+ *     %rax = Page aligned address of the current crosspage data area.
+ *
+ * Note:
+ *     %rax (return value) and %rflags are destroyed, all other registers
+ *     are preserved.  Since this is only called by exception handlers, the
+ *     CPU has already saved %rflags so no additional handling is required.
+ *
+ *---------------------------------------------------------------------------
+ */
+
+#define SwitchExcGetCrossPageData              \
+   "subq            $0x10,            %%rsp\n" \
+   "sidt            0(%%rsp)\n"                \
+   "movq            2(%%rsp),         %%rax\n" /* DTR.offset */ \
+   "addq            $0x10,            %%rsp\n" \
+   "andq            %[PageAlignMask], %%rax\n"
+
 
 /*
  *-----------------------------------------------------------------------------
@@ -303,7 +332,9 @@ CrossPage_CodePage(void)
    EXPORTED_ASM_SYMBOL(SwitchDBHandler)
    ASM_ENDBR
    "pushq        %%rax\n"
-   "call         SwitchExcGetCrossPageData\n"
+
+   SwitchExcGetCrossPageData
+
    "addq         %[wsExceptionDB], %%rax\n"
    "movb         $1,               (%%rax)\n" /* log EXC_DB */
    "popq         %%rax\n"
@@ -344,7 +375,9 @@ CrossPage_CodePage(void)
    "pushq        %%rax\n"
    "pushq        %%rbx\n"
    "pushq        %%rcx\n"
-   "call         SwitchExcGetCrossPageData\n"
+
+   SwitchExcGetCrossPageData
+
    "movl         %[wsExceptionUD],      %%ecx\n"    /* log EXC_UD */
    "movb         $1,                    (%%rax, %%rcx)\n"
    /* Check if the exception came from a monitor RIP. */
@@ -411,7 +444,9 @@ CrossPage_CodePage(void)
    EXPORTED_ASM_SYMBOL(SwitchNMIHandler)
    ASM_ENDBR
    "pushq        %%rax\n"
-   "call         SwitchExcGetCrossPageData\n"
+
+   SwitchExcGetCrossPageData
+
    "addq         %[wsExceptionNMI], %%rax\n"
    "movb         $1,                (%%rax)\n" /* log EXC_NMI */
    "popq         %%rax\n"
@@ -447,7 +482,9 @@ CrossPage_CodePage(void)
    EXPORTED_ASM_SYMBOL(SwitchMCEHandler)
    ASM_ENDBR
    "pushq        %%rax\n"
-   "call         SwitchExcGetCrossPageData\n"
+
+   SwitchExcGetCrossPageData
+
    "addq         %[wsExceptionMC], %%rax\n"
    "movb         $1,              (%%rax)\n" /* log EXC_MC */
    "popq         %%rax\n"
@@ -616,40 +653,6 @@ CrossPage_CodePage(void)
    /* Microsoft RTL/codegen assumes EFLAGS<DF> = 0. */
    "cld\n"
    "lretq\n"
-
-   /*
-    *---------------------------------------------------------------------------
-    *
-    * SwitchExcGetCrossPageData --
-    *
-    *      Common function for the exception handlers to locate the data
-    *      crosspage so they can record their respective events.  In order to
-    *      reach this code an exception had to vector through the IDT.  The IDT
-    *      is known to be in the data page.  Therefore, the data page can be
-    *      found by accessing IDTR and rounding down to page alignment.
-    *
-    * Input:
-    *     None
-    *
-    * Output:
-    *     %rax = Page aligned address of the current crosspage data area.
-    *
-    * Note:
-    *     %rax (return value) and %rflags are destroyed, all other registers
-    *     are preserved.  Since this is only called by exception handlers, the
-    *     CPU has already saved %rflags so no additional handling is required.
-    *
-    *---------------------------------------------------------------------------
-    */
-
-   ".p2align 4\n"
-   "SwitchExcGetCrossPageData:\n"
-   "subq            $0x10,            %%rsp\n"
-   "sidt            0(%%rsp)\n"
-   "movq            2(%%rsp),         %%rax\n" /* DTR.offset */
-   "addq            $0x10,            %%rsp\n"
-   "andq            %[PageAlignMask], %%rax\n"
-   ASM_RET
 
    EXPORTED_ASM_SYMBOL(CrossPage_CodeEnd)
 

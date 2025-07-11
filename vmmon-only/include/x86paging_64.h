@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (c) 1998-2014,2016,2018-2020,2022 VMware, Inc. All rights reserved.
+ * Copyright (c) 1998-2014,2016,2018-2020,2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -71,6 +71,7 @@
 #define LM_MAKE_L2E(_pfn, _avail, _flags) LM_MAKE_PTE(_pfn, _avail, _flags)
 #define LM_MAKE_L1E(_pfn, _avail, _flags) LM_MAKE_PTE(_pfn, _avail, _flags)
 
+#define NPT_PTE_SSS_LEAF(npte)     (PTE_NOEXECUTE(npte) && !PTE_USER(npte))
 
 /*
  *----------------------------------------------------------------------

@@ -101,90 +101,90 @@
  * consistency.  
  */
 
-static INLINE uint32 Desc_Type(const Descriptor *d)     { return d->type; }
-static INLINE uint32 Desc_S(const Descriptor *d)        { return d->S; }
-static INLINE uint32 Desc_DPL(const Descriptor *d)      { return d->DPL; }
-static INLINE uint32 Desc_Present(const Descriptor *d)  { return d->present; }
-static INLINE uint32 Desc_AVL(const Descriptor *d)      { return d->AVL; }
-static INLINE uint32 Desc_LongMode(const Descriptor *d) { return d->longmode; }
-static INLINE uint32 Desc_DB(const Descriptor *d)       { return d->DB; }
-static INLINE uint32 Desc_Gran(const Descriptor *d)     { return d->gran; }
+static inline uint32 Desc_Type(const Descriptor *d)     { return d->type; }
+static inline uint32 Desc_S(const Descriptor *d)        { return d->S; }
+static inline uint32 Desc_DPL(const Descriptor *d)      { return d->DPL; }
+static inline uint32 Desc_Present(const Descriptor *d)  { return d->present; }
+static inline uint32 Desc_AVL(const Descriptor *d)      { return d->AVL; }
+static inline uint32 Desc_LongMode(const Descriptor *d) { return d->longmode; }
+static inline uint32 Desc_DB(const Descriptor *d)       { return d->DB; }
+static inline uint32 Desc_Gran(const Descriptor *d)     { return d->gran; }
 
-static INLINE uint32
+static inline uint32
 Desc64_Type(const Descriptor64 *d)
 {
    return (uint32)d->type;
 }
 
-static INLINE uint32
+static inline uint32
 Desc64_S(const Descriptor64 *d)
 {
    return (uint32)d->S;
 }
 
-static INLINE uint32
+static inline uint32
 Desc64_DPL(const Descriptor64 *d)
 {
    return (uint32)d->DPL;
 }
 
-static INLINE uint32
+static inline uint32
 Desc64_Present(const Descriptor64 *d)
 {
    return (uint32)d->present;
 }
 
-static INLINE uint32
+static inline uint32
 Desc64_AVL(const Descriptor64 *d)
 {
    return (uint32)d->AVL;
 }
 
-static INLINE uint32
+static inline uint32
 Desc64_Gran(const Descriptor64 *d)
 {
    return (uint32)d->gran;
 }
 
-static INLINE uint32
+static inline uint32
 Desc64_ExtAttrs(const Descriptor64 *d)
 {
    return (uint32)d->ext_attrs;
 }
 
-static INLINE LA32
+static inline LA32
 Desc_GetBase(const Descriptor *d)
 {
    return ((unsigned)d->base_hi  << 24) |
           ((unsigned)d->base_mid << 16) | d->base_lo;
 }
 
-static INLINE LA64
+static inline LA64
 Desc64_GetBase(const Descriptor64 *d)
 {
    return ((uint64)d->base_hi << 32)  |
           ((uint64)d->base_mid << 24) | (uint64)d->base_lo;
 }
 
-static INLINE LA32
+static inline LA32
 Desc64_GetBaseHi(const Descriptor64 *d)
 {
    return (LA32)d->base_hi;
 }
 
-static INLINE VA32
+static inline VA32
 Desc_GetLimit(const Descriptor *d)
 {
    return ((unsigned)d->limit_hi << 16) | d->limit_lo;
 }
 
-static INLINE VA32
+static inline VA32
 Desc64_GetLimit(const Descriptor64 *d)
 {
    return (VA32)(((unsigned)d->limit_hi << 16) | d->limit_lo);
 }
 
-static INLINE Bool
+static inline Bool
 Desc_EqualIgnoreAccessed(const Descriptor *d1, const Descriptor *d2)
 {
    const DescriptorUnion *du1 = (const DescriptorUnion*) d1;
@@ -197,7 +197,7 @@ Desc_EqualIgnoreAccessed(const Descriptor *d1, const Descriptor *d2)
       (du1->word[1] & mask) == (du2->word[1] & mask);
 }
 
-static INLINE Bool
+static inline Bool
 Desc64_EqualIgnoreAccessed(const Descriptor64 *d1, const Descriptor64 *d2)
 {
    const Descriptor64Union *du1 = (const Descriptor64Union*) d1;
@@ -211,21 +211,21 @@ Desc64_EqualIgnoreAccessed(const Descriptor64 *d1, const Descriptor64 *d2)
           du1->qword[1] == du2->qword[1];
 }
 
-static INLINE void Desc_SetType(Descriptor *d, uint32 val)     { d->type     = val; }
-static INLINE void Desc_SetS(Descriptor *d, uint32 val)        { d->S        = val; }
-static INLINE void Desc_SetDPL(Descriptor *d, uint32 val)      { d->DPL      = val; }
-static INLINE void Desc_SetPresent(Descriptor *d, uint32 val)  { d->present  = val; }
-static INLINE void Desc_SetDB(Descriptor *d, uint32 val)       { d->DB       = val; }
-static INLINE void Desc_SetLongmode(Descriptor *d, uint32 val) { d->longmode = val; }
-static INLINE void Desc_SetGran(Descriptor *d, uint32 val)     { d->gran     = val; }
+static inline void Desc_SetType(Descriptor *d, uint32 val)     { d->type     = val; }
+static inline void Desc_SetS(Descriptor *d, uint32 val)        { d->S        = val; }
+static inline void Desc_SetDPL(Descriptor *d, uint32 val)      { d->DPL      = val; }
+static inline void Desc_SetPresent(Descriptor *d, uint32 val)  { d->present  = val; }
+static inline void Desc_SetDB(Descriptor *d, uint32 val)       { d->DB       = val; }
+static inline void Desc_SetLongmode(Descriptor *d, uint32 val) { d->longmode = val; }
+static inline void Desc_SetGran(Descriptor *d, uint32 val)     { d->gran     = val; }
 
-static INLINE void Desc64_SetType(Descriptor64 *d, uint32 val)    { d->type     = val; }
-static INLINE void Desc64_SetS(Descriptor64 *d, uint32 val)       { d->S        = val; }
-static INLINE void Desc64_SetDPL(Descriptor64 *d, uint32 val)     { d->DPL      = val; }
-static INLINE void Desc64_SetPresent(Descriptor64 *d, uint32 val) { d->present  = val; }
-static INLINE void Desc64_SetGran(Descriptor64 *d, uint32 val)    { d->gran     = val; }
+static inline void Desc64_SetType(Descriptor64 *d, uint32 val)    { d->type     = val; }
+static inline void Desc64_SetS(Descriptor64 *d, uint32 val)       { d->S        = val; }
+static inline void Desc64_SetDPL(Descriptor64 *d, uint32 val)     { d->DPL      = val; }
+static inline void Desc64_SetPresent(Descriptor64 *d, uint32 val) { d->present  = val; }
+static inline void Desc64_SetGran(Descriptor64 *d, uint32 val)    { d->gran     = val; }
 
-static INLINE void
+static inline void
 Desc_SetBase(Descriptor *d, LA32 newBase)
 {
    d->base_hi  = BASE_HI(newBase);
@@ -234,7 +234,7 @@ Desc_SetBase(Descriptor *d, LA32 newBase)
    ASSERT(Desc_GetBase(d) == newBase);
 }
 
-static INLINE void
+static inline void
 Desc64_SetBase(Descriptor64 *d, LA64 newBase)
 {
    d->base_hi  = (uint32)BASE64_HI(newBase);
@@ -243,7 +243,7 @@ Desc64_SetBase(Descriptor64 *d, LA64 newBase)
    ASSERT(Desc64_GetBase(d) == newBase);
 }
 
-static INLINE void
+static inline void
 Desc_SetLimit(Descriptor *d, VA32 newLimit)
 {
    d->limit_lo = LIMIT_LO(newLimit);
@@ -251,7 +251,7 @@ Desc_SetLimit(Descriptor *d, VA32 newLimit)
    ASSERT(Desc_GetLimit(d) == newLimit);
 }
 
-static INLINE void
+static inline void
 Desc64_SetLimit(Descriptor64 *d, VA32 newLimit)
 {
    d->limit_lo = LIMIT_LO(newLimit);
@@ -270,7 +270,7 @@ Desc64_SetLimit(Descriptor64 *d, VA32 newLimit)
  *
  *-----------------------------------------------------------------------------
  */
-static INLINE void 
+static inline void 
 Desc_SetDescriptor(Descriptor *d, LA32 base, VA32 limit, uint32 type, 
                    uint32 S, uint32 DPL, uint32 present, uint32 DB, 
                    uint32 gran)
@@ -312,10 +312,10 @@ Desc_SetDescriptor(Descriptor *d, LA32 base, VA32 limit, uint32 type,
  * are included only for backwards compatibility with existing macros.  
  */
 
-static INLINE uint32 DESC_TYPE(Descriptor d)       { return d.type; }
-static INLINE uint32 DESC_S(Descriptor d)          { return d.S; }
-static INLINE uint32 DESC_DPL(Descriptor d)        { return d.DPL; }
-static INLINE uint32 DESC_PRESENT(Descriptor d)    { return d.present; }
+static inline uint32 DESC_TYPE(Descriptor d)       { return d.type; }
+static inline uint32 DESC_S(Descriptor d)          { return d.S; }
+static inline uint32 DESC_DPL(Descriptor d)        { return d.DPL; }
+static inline uint32 DESC_PRESENT(Descriptor d)    { return d.present; }
 
 #define DT_CODE(_d)               ( DESC_S(_d) && (DESC_TYPE(_d) & 0x8) == 0x8)
 #define DT_CONFORMING_CODE(_d)    ( DESC_S(_d) && (DESC_TYPE(_d) & 0xc) == 0xc)
@@ -358,7 +358,7 @@ static INLINE uint32 DESC_PRESENT(Descriptor d)    { return d.present; }
  *-----------------------------------------------------------------------------
  */
 
-static INLINE void
+static inline void
 Desc_SetSystemDescriptor64(Descriptor *d, uint64 base, uint32 limit,
                            uint32 type, uint32 DPL, uint32 present,
                            uint32 DB, uint32 gran)
@@ -385,7 +385,7 @@ Desc_SetSystemDescriptor64(Descriptor *d, uint64 base, uint32 limit,
  *   Given descriptor, return the code/stack size that it specifies.
  *----------------------------------------------------------------------
  */
-static INLINE unsigned
+static inline unsigned
 Desc_DBSize(const Descriptor *desc)
 {
    /*
@@ -420,7 +420,7 @@ Desc_DBSize(const Descriptor *desc)
  *----------------------------------------------------------------------
  */
 
-static INLINE VA32
+static inline VA32
 Desc_ExpandedLimit(const Descriptor *d)
 {
    VA32 limit = Desc_GetLimit(d);
@@ -431,7 +431,7 @@ Desc_ExpandedLimit(const Descriptor *d)
    return limit;
 }
 
-static INLINE VA32
+static inline VA32
 Desc64_ExpandedLimit(const Descriptor64 *d)
 {
    VA32 limit = Desc64_GetLimit(d);
@@ -458,7 +458,7 @@ Desc64_ExpandedLimit(const Descriptor64 *d)
  *----------------------------------------------------------------------
  */
 
-static INLINE uint32
+static inline uint32
 Desc_PackLimit(VA32 limit)
 {
    if (limit < (1 << 20)) {
@@ -485,7 +485,7 @@ Desc_PackLimit(VA32 limit)
  *----------------------------------------------------------------------
  */
 
-static INLINE VA
+static inline VA
 Desc_UnpackLimit(uint32 limit)
 {
    ASSERT(limit < (1 << 21));
@@ -500,7 +500,7 @@ Desc_UnpackLimit(uint32 limit)
  * For expand-down segments, valid offsets range from limit+1 to 
  * 0xffff or 0xffffffff, depending on the D/B bit in the descriptor.  
  */
-static INLINE Bool
+static inline Bool
 Desc_InBoundsExpandDown(VA vaddr, VA limit, uint32 size, VA supremum)
 {
    ASSERT(supremum == 0xffff || supremum == 0xffffffff);
@@ -509,7 +509,7 @@ Desc_InBoundsExpandDown(VA vaddr, VA limit, uint32 size, VA supremum)
 
 
 /* For expand-up segments, valid offsets range from 0 to limit. */
-static INLINE Bool
+static inline Bool
 Desc_InBoundsExpandUp(VA vaddr, VA limit, uint32 size)
 {
    return vaddr <= limit && size - 1 <= limit - vaddr;
@@ -574,13 +574,13 @@ typedef struct Gate {
 #define GT64_CALL(_gate)         ((_gate).type == GT_64BIT_CALL)
 
 
-static INLINE VA
+static inline VA
 CallGate_GetOffset(const Gate *cg)
 {
    return ((unsigned)cg->offset_hi << 16) | cg->offset_lo;
 }
 
-static INLINE void
+static inline void
 CallGate_SetOffset(Gate *cg, VA32 offset)
 {
    cg->offset_lo = GATE_OFFSET_LO(offset);

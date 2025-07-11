@@ -1,5 +1,6 @@
 /*********************************************************
- * Copyright (C) 1998-2022 VMware, Inc. All rights reserved.
+ * Copyright (c) 1998-2024 Broadcom. All Rights Reserved.
+ * The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -49,7 +50,11 @@
 #include "x86svm.h"
 #include "x86cpuid_asm.h"
 #if defined(__linux__)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
+#include <asm/timex.h>
+#else
 #include <linux/timex.h>
+#endif
 #endif
 #include "perfctr.h"
 #include "x86vtinstr.h"
@@ -152,6 +157,7 @@ static Vmx86GetMSRData msrCacheQueryData;
    MSRNUMVT(MSR_VMX_EPT_VPID,             EPT)                                 \
    MSRNUMVT(MSR_VMX_VMFUNC,               VMFunc)                              \
    MSRNUMVT(MSR_VMX_3RD_CTLS,             3rd)                                 \
+   MSRNUMVT(MSR_VMX_EXIT_CTLS2,           Exit2)                               \
    MSRNUMVT2(MSR_VMX_PINBASED_CTLS,       Ctls)                                \
    MSRNUMVT2(MSR_VMX_PROCBASED_CTLS,      Ctls)                                \
    MSRNUMVT2(MSR_VMX_EXIT_CTLS,           Ctls)                                \

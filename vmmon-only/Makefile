@@ -43,7 +43,7 @@ INCLUDE      += -I$(SRCROOT)/shared
 endif
 
 
-VM_UNAME = $(shell uname -r)
+VM_UNAME ?= $(shell uname -r)
 
 # Header directory for the running kernel
 ifdef LINUXINCLUDE
@@ -122,7 +122,7 @@ endif
 
 vm_check_build = $(shell if $(CC) $(KBUILD_CPPFLAGS) $(KBUILD_CFLAGS) \
 	$(CPPFLAGS) $(CFLAGS) $(CFLAGS_KERNEL) $(LINUXINCLUDE) \
-	$(EXTRA_CFLAGS) -Iinclude2/asm/mach-default \
+	$(ccflags-y) -Iinclude2/asm/mach-default \
 	-DKBUILD_BASENAME=\"$(DRIVER)\" \
 	-Werror -S -o /dev/null -xc $(1) \
 	> /dev/null 2>&1; then echo "$(2)"; else echo "$(3)"; fi)

@@ -1,5 +1,6 @@
 /*********************************************************
- * Copyright (C) 2014, 2019-2020, 2022 VMware, Inc. All rights reserved.
+ * Copyright (c) 2014-2024 Broadcom. All Rights Reserved.
+ * The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -40,8 +41,19 @@
 #include "vm_asm.h"
 #include "x86cpuid_asm.h"
 
-#define NMI_SHARED_ARCH_FIELDS \
-   uint64 nmiMaskedTSC;
+/*
+ * nmiNo      -- vmm peer is not attempting to do nmi profiling this run.
+ * nmiYes     -- vmm peer is doing nmi profiling and nmis are currently enabled.
+ * nmiStopped -- vmm peer is doing nmi profiling, but nmis are temporarily
+ *               disabled for safety reasons.
+ */
+typedef enum {nmiNo = 0, nmiYes, nmiStopped} NMIStatus;
+typedef struct NMIShared { /* shared with vmx and vmkernel */
+   NMIStatus vmmStatus;
+   int32     nmiErrorCode;
+   int64     nmiErrorData;
+   uint64    nmiMaskedTSC;
+} NMIShared;
 
 #define PERFCTR_AMD_NUM_COUNTERS                 4
 #define PERFCTR_AMD_EXT_NUM_COUNTERS             6
@@ -580,7 +592,7 @@
 /*
  * Program/reprogram event reg(s) associated w/perfctrs & start or stop perfctrs
  */
-static INLINE void
+static inline void
 PerfCtr_WriteEvtSel(uint32 addr,       // IN: Event register to write
                     uint32 escrVal)    // IN: event register value
 {
@@ -591,7 +603,7 @@ PerfCtr_WriteEvtSel(uint32 addr,       // IN: Event register to write
 /*
  * Set/reset performance counters to engender desired period before overflow
  */
-static INLINE void
+static inline void
 PerfCtr_WriteCounter(uint32 addr,   // IN: counter to write
                      uint64 value)  // IN: value to write
 {
@@ -599,7 +611,7 @@ PerfCtr_WriteCounter(uint32 addr,   // IN: counter to write
 }
 
 
-static INLINE uint64
+static inline uint64
 PerfCtr_SelValidBits(Bool amd)
 {
    /*
@@ -621,25 +633,25 @@ PerfCtr_SelValidBits(Bool amd)
    return bits;
 }
 
-static INLINE uint64
+static inline uint64
 PerfCtr_PgcValidBits(unsigned numGenCtrs, unsigned numFixCtrs)
 {
    return MASK64(numGenCtrs) | (MASK64(numFixCtrs) << 32);
 }
 
-static INLINE uint64
+static inline uint64
 PerfCtr_FccValidBits(unsigned numFixCtrs)
 {
    return MASK64(numFixCtrs * 4);
 }
 
-static INLINE uint64
+static inline uint64
 PerfCtr_PgcToOvfValidBits(uint64 pgcValBits)
 {
    return pgcValBits | MASKRANGE64(63, 61);
 }
 
-static INLINE uint64
+static inline uint64
 PerfCtr_PgcToStsRstValidBits(uint64 pgcValBits)
 {
    return pgcValBits |
@@ -647,7 +659,7 @@ PerfCtr_PgcToStsRstValidBits(uint64 pgcValBits)
           MASKRANGE64(63, 58);
 }
 
-static INLINE uint64
+static inline uint64
 PerfCtr_PgcToGssValidBits(uint64 pgcValBits)
 {
    return pgcValBits |
@@ -673,7 +685,7 @@ PerfCtr_PgcToGssValidBits(uint64 pgcValBits)
  *----------------------------------------------------------------------
  */
 
-static INLINE Bool
+static inline Bool
 PerfCtr_HypervisorCPUIDSig(CPUIDRegs *name)
 {
    CPUIDRegs regs;
@@ -708,7 +720,7 @@ PerfCtr_HypervisorCPUIDSig(CPUIDRegs *name)
  *----------------------------------------------------------------------
  */
 
-static INLINE Bool
+static inline Bool
 PerfCtr_PEBSAvailable(void)
 {
    CPUIDRegs regs;
@@ -747,7 +759,7 @@ PerfCtr_PEBSAvailable(void)
  *----------------------------------------------------------------------
  */
 
-static INLINE Bool
+static inline Bool
 PerfCtr_PTAvailable(void)
 {
    CPUIDRegs regs;

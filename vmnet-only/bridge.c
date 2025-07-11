@@ -1,5 +1,6 @@
 /*********************************************************
- * Copyright (C) 1998-2013, 2017, 2022-2023 VMware, Inc. All rights reserved.
+ * Copyright (c) 1998-2024 Broadcom. All Rights Reserved.
+ * The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -26,13 +27,14 @@
 #include <linux/slab.h>
 #include <linux/poll.h>
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 10)
-#include <net/gso.h>
-#endif
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/mm.h>
 #include "compat_skbuff.h"
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 10) || \
+    (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 9, 0) && !defined(SKB_GSO_CB))
+#include <net/gso.h>
+#endif
 #include <linux/sockios.h>
 #include <linux/spinlock.h>
 #include "compat_sock.h"

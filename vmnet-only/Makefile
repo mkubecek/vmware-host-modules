@@ -41,9 +41,12 @@ else
 AUTOCONF_DIR := $(SRCROOT)/shared/autoconf
 INCLUDE      += -I$(SRCROOT)/shared
 endif
-
-
-VM_UNAME = $(shell uname -r)
+ifdef KVERSION
+VM_UNAME = $(KVERSION)
+else
+ VM_UNAME = $(shell uname -r)
+endif
+VM_UNAME ?= $(shell uname -r)
 
 # Header directory for the running kernel
 ifdef LINUXINCLUDE

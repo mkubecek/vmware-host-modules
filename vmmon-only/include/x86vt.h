@@ -1,5 +1,6 @@
 /*********************************************************
- * Copyright (C) 2004-2023 VMware, Inc. All rights reserved.
+ * Copyright (c) 2004-2024 Broadcom. All Rights Reserved.
+ * The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -58,7 +59,8 @@
 #define MSR_VMX_TRUE_ENTRY_CTLS        0x00000490
 #define MSR_VMX_VMFUNC                 0x00000491
 #define MSR_VMX_3RD_CTLS               0x00000492
-#define NUM_VMX_MSRS                   (MSR_VMX_3RD_CTLS - MSR_VMX_BASIC + 1)
+#define MSR_VMX_EXIT_CTLS2             0x00000493
+#define NUM_VMX_MSRS                   (MSR_VMX_EXIT_CTLS2 - MSR_VMX_BASIC + 1)
 
 /*
  * An alias to accommodate Intel's naming convention in feature masks.
@@ -139,6 +141,9 @@
 #define MSR_VMX_EPT_VPID_SUP_SHADOW_STK         \
    (CONST64U(1) << MSR_VMX_EPT_VPID_SUP_SHADOW_STK_SHIFT)
 
+#define MSR_VMX_EXIT_CTLS2_REPORT_FRACT_SHSTK \
+   (CONST64U(1) << MSR_VMX_EXIT_CTLS2_REPORT_FRACT_SHSTK_SHIFT)
+
 #define VT_VMCS_STANDARD_TAG           0x00000000
 #define VT_VMCS_SHADOW_TAG             0x80000000
 
@@ -170,10 +175,10 @@
                                   VT_ENCODING_NUM_TYPES *   \
                                   VT_ENCODING_NUM_SIZES)
 /*
- * The highest index of any currently defined field is 30, for
- * SHARED_EPTP.
+ * The highest index of any currently defined field is 34, for
+ * 2ND_VMEXIT_CTL.
  */
-#define VT_ENCODING_MAX_INDEX                  30
+#define VT_ENCODING_MAX_INDEX                  34
 
 /* VMCS ID's for various CPU models. */
 #define  VT_VMCS_ID_VMWARE       1
@@ -227,6 +232,10 @@ enum {
 #define VMX_BASIC(_field, _pos, _len)                    \
    VMXCAP(_BASIC, _field, _pos, _len)
 #define VMX_BASIC_CAP_NDA
+/*
+ * Adding a new field may require an update to IntelVT_FindCommonBasic and/or
+ * fields.
+ */
 #define VMX_BASIC_CAP_PUB                                \
    VMX_BASIC(VMCS_ID,                0, 32)              \
    VMX_BASIC(VMCS_SIZE,             32, 13)              \
@@ -340,7 +349,7 @@ enum {
  * Tertiary Processor-Based VM-Execution Controls
  */
 #define VMX_CPU3(_field, _pos)                           \
-   VMXCTL(_PROCBASED_CTLS3, _field, _pos)
+   VMXCAP(_PROCBASED_CTLS3, _field, _pos, 1)
 #define VMX_PROCBASED_CTLS3_CAP_NDA
 #define VMX_PROCBASED_CTLS3_CAP_PUB                      \
    VMX_CPU3(LOADIWKEY,           0)                      \
@@ -377,11 +386,26 @@ enum {
    VMX_EXIT(CLEAR_LBR,           26)                     \
    VMX_EXIT(CLEAR_UINV,          27)                     \
    VMX_EXIT(LOAD_CET,            28)                     \
-   VMX_EXIT(LOAD_PKRS,           29)
+   VMX_EXIT(LOAD_PKRS,           29)                     \
+   VMX_EXIT(SAVE_PGC,            30)                     \
+   VMX_EXIT(USE_2ND,             31)
 
 #define VMX_EXIT_CTLS_CAP                                \
         VMX_EXIT_CTLS_CAP_NDA                            \
         VMX_EXIT_CTLS_CAP_PUB
+
+/*
+ * Secondary VM-Exit Controls
+ */
+#define VMX_EXIT2(_field, _pos)                          \
+   VMXCAP(_EXIT_CTLS2, _field, _pos, 1)
+#define VMX_EXIT_CTLS2_CAP_NDA
+#define VMX_EXIT_CTLS2_CAP_PUB                           \
+   VMX_EXIT2(REPORT_FRACT_SHSTK,  3)
+
+#define VMX_EXIT_CTLS2_CAP                               \
+        VMX_EXIT_CTLS2_CAP_NDA                           \
+        VMX_EXIT_CTLS2_CAP_PUB
 
 /*
  * VM-Entry Controls
@@ -494,12 +518,13 @@ enum {
 enum {
 #define VMXCAP(_msrName, _field, _pos, _len)                              \
    MSR_VMX ## _msrName ## _ ## _field ## _SHIFT = (_pos),                 \
-   MSR_VMX ## _msrName ## _ ## _field ## _MASK  = (int)MASK64(_len),      \
+   MSR_VMX ## _msrName ## _ ## _field ## _MASK  = (unsigned)MASK64(_len), \
 
    VMX_BASIC_CAP
    VMX_MISC_CAP
    VMX_VMCS_ENUM_CAP
    VMX_EPT_VPID_CAP
+   VMX_EXIT_CTLS2_CAP
 
 #undef VMXCAP
 };
@@ -513,6 +538,7 @@ enum {
 #define _PROCBASED_CTLS2      VT_VMCS_2ND_VMEXEC_CTL_
 #define _PROCBASED_CTLS3      VT_VMCS_3RD_VMEXEC_CTL_
 #define _EXIT_CTLS            VT_VMCS_VMEXIT_CTL_
+#define _EXIT_CTLS2           VT_VMCS_VMEXIT_CTL2_
 #define _ENTRY_CTLS           VT_VMCS_VMENTRY_CTL_
 
 #define VMXREQUIRE(_msrName, _field, _pos, _len)                      \
@@ -524,6 +550,7 @@ enum {
    VMX_PINBASED_CTLS_CAP
    VMX_PROCBASED_CTLS_CAP
    VMX_EXIT_CTLS_CAP
+   VMX_EXIT_CTLS2_CAP
    VMX_ENTRY_CTLS_CAP
    VMX_PROCBASED_CTLS2_CAP
    VMX_PROCBASED_CTLS3_CAP
@@ -533,7 +560,9 @@ enum {
 #undef VMXREQUIRE
 
 #undef _ENTRY_CTLS
+#undef _EXIT_CTLS2
 #undef _EXIT_CTLS
+#undef _PROCBASED_CTLS3
 #undef _PROCBASED_CTLS2
 #undef _PROCBASED_CTLS
 #undef _PINBASED_CTLS
@@ -937,7 +966,7 @@ typedef struct VTMSREntry {
 
 typedef uint64 VTConfig[NUM_VMX_MSRS];
 
-typedef uint32 VTVMCSFieldBitmap[VT_ENCODING_NUM_SIZES][VT_ENCODING_NUM_TYPES];
+typedef uint64 VTVMCSFieldBitmap[VT_ENCODING_NUM_SIZES][VT_ENCODING_NUM_TYPES];
 
 /*
  *----------------------------------------------------------------------
@@ -947,7 +976,7 @@ typedef uint32 VTVMCSFieldBitmap[VT_ENCODING_NUM_SIZES][VT_ENCODING_NUM_TYPES];
  *   64-bit component?
  *----------------------------------------------------------------------
  */
-static INLINE Bool
+static inline Bool
 VTEncodingHighDword(uint32 encoding)
 {
    return (encoding & VT_ENCODING_ACCESS_HIGH) != 0;
@@ -960,7 +989,7 @@ VTEncodingHighDword(uint32 encoding)
  *   Extract the index field from a VMCS component encoding.
  *----------------------------------------------------------------------
  */
-static INLINE unsigned
+static inline unsigned
 VTEncodingIndex(uint32 encoding)
 {
    return (encoding & VT_ENCODING_INDEX_MASK) >> VT_ENCODING_INDEX_SHIFT;
@@ -973,7 +1002,7 @@ VTEncodingIndex(uint32 encoding)
  *   Extract the type field from a VMCS component encoding.
  *----------------------------------------------------------------------
  */
-static INLINE unsigned
+static inline unsigned
 VTEncodingType(uint32 encoding)
 {
    return (encoding & VT_ENCODING_TYPE_MASK) >> VT_ENCODING_TYPE_SHIFT;
@@ -986,7 +1015,7 @@ VTEncodingType(uint32 encoding)
  *   Extract the size field from a VMCS component encoding.
  *----------------------------------------------------------------------
  */
-static INLINE unsigned
+static inline unsigned
 VTEncodingSize(uint32 encoding)
 {
    return (encoding & VT_ENCODING_SIZE_MASK) >> VT_ENCODING_SIZE_SHIFT;
@@ -1001,7 +1030,7 @@ VTEncodingSize(uint32 encoding)
  *   the desired bits.
  *----------------------------------------------------------------------
  */
-static INLINE uint32
+static inline uint32
 VTComputeMandatoryBits(uint64 msrVal, uint32 bits)
 {
    uint32 ones = LODWORD(msrVal);
@@ -1020,7 +1049,7 @@ VTComputeMandatoryBits(uint64 msrVal, uint32 bits)
  *
  *----------------------------------------------------------------------
  */
-static INLINE Bool
+static inline Bool
 VT_EnabledFromFeatures(uint64 featCtl, Bool smxEnabled)
 {
    uint64 req = MSR_FEATCTL_LOCK |
@@ -1037,7 +1066,7 @@ VT_EnabledFromFeatures(uint64 featCtl, Bool smxEnabled)
  *
  *----------------------------------------------------------------------
  */
-static INLINE Bool
+static inline Bool
 VT_LockedFromFeatures(uint64 featCtl)
 {
    return (featCtl & MSR_FEATCTL_LOCK) != 0;
@@ -1053,7 +1082,7 @@ VT_LockedFromFeatures(uint64 featCtl)
  *
  *----------------------------------------------------------------------
  */
-static INLINE Bool
+static inline Bool
 VT_SupportedFromFeatures(uint64 pinBasedCtl, uint64 procBasedCtl,
                          uint64 entryCtl, uint64 exitCtl, uint64 basicCtl,
                          uint64 eptVpidFeat)
@@ -1102,7 +1131,7 @@ VT_SupportedFromFeatures(uint64 pinBasedCtl, uint64 procBasedCtl,
  *
  *----------------------------------------------------------------------
  */
-static INLINE Bool
+static inline Bool
 VT_RealModeSupportedFromFeatures(uint64 secondary)
 {
    return (HIDWORD(secondary) & VT_VMCS_2ND_VMEXEC_CTL_UNRESTRICTED) != 0;
@@ -1121,7 +1150,7 @@ VT_RealModeSupportedFromFeatures(uint64 secondary)
  *
  *----------------------------------------------------------------------
  */
-static INLINE Bool
+static inline Bool
 VT_MBXSupportedFromFeatures(uint64 secondary)
 {
    return (HIDWORD(secondary) & VT_VMCS_2ND_VMEXEC_CTL_EPT_MBX) != 0;
@@ -1140,7 +1169,7 @@ VT_MBXSupportedFromFeatures(uint64 secondary)
  *
  *----------------------------------------------------------------------
  */
-static INLINE Bool
+static inline Bool
 VT_ConvEPTViolSupportedFromFeatures(uint64 secondary)
 {
    return (HIDWORD(secondary) & VT_VMCS_2ND_VMEXEC_CTL_EPT_VIOL_VE) != 0;
@@ -1179,7 +1208,7 @@ VT_PasidTransSupportedFromFeatures(uint64 secondary)
  *
  *----------------------------------------------------------------------
  */
-static INLINE Bool
+static inline Bool
 VT_EnabledCPU(Bool smxEnabled)
 {
    return VT_EnabledFromFeatures(X86MSR_GetMSR(MSR_FEATCTL), smxEnabled);
@@ -1200,7 +1229,7 @@ VT_EnabledCPU(Bool smxEnabled)
  *
  *----------------------------------------------------------------------
  */
-static INLINE Bool
+static inline Bool
 VT_SupportedCPU(void)
 {
 
@@ -1225,7 +1254,7 @@ VT_SupportedCPU(void)
  *   Verify that this CPU is VT-capable.
  *----------------------------------------------------------------------
  */
-static INLINE Bool
+static inline Bool
 VT_CapableCPU(void)
 {
    return CPUID_ISSET(1, ECX, VMX, __GET_ECX_FROM_CPUID(1));
@@ -1243,7 +1272,7 @@ VT_CapableCPU(void)
  *
  *----------------------------------------------------------------------
  */
-static INLINE unsigned
+static inline unsigned
 VT_ConfigIndex(uint32 msrNum)
 {
    ASSERT(msrNum >= MSR_VMX_BASIC &&
@@ -1261,7 +1290,7 @@ VT_ConfigIndex(uint32 msrNum)
  *
  *----------------------------------------------------------------------
  */
-static INLINE uint32
+static inline uint32
 VT_ConfigMSRNum(unsigned index)
 {
    ASSERT(index < NUM_VMX_MSRS);

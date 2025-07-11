@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (c) 2015-2020 VMware, Inc. All rights reserved.
+ * Copyright (c) 2015-2020,2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -117,14 +117,16 @@
 #ifndef _MON_LOADER
 #define _MON_LOADER
 
+#if defined VMKERNEL && !defined VMK_HAS_VMM
+#error "VMK code should only include this file when the VMK supports the VMM!"
+#endif
+
 #include "vm_basic_types.h"
 #include "vm_pagetable.h"
 #include "vcpuid.h"   /* Vcpuid */
 
 #if defined VM_X86_64
 #include "x86paging_64.h"
-#elif defined VM_ARM_64
-#include "vmsa.h"
 #endif
 
 #define ML_NAME_MAX 16
@@ -145,24 +147,6 @@
 #define ML_PERM_WRITEABLE(_flags)   (((_flags) & PTE_RW) != 0)
 
 #define ML_PTE_2_PFN(_pte)          LM_PTE_2_PFN(_pte)
-
-#elif defined VM_ARM_64
-
-#define _ML_PERM_COMMON (ARM_PTE_BLOCK_AP(ARM_AP_PL0)   | ARM_PTE_BLOCK_AF | \
-                         ARM_PTE_BLOCK_SH(ARM_SH_OUTER) | ARM_PTE_BLOCK_L3_TYPE)
-#define ARM_PTE_BLOCK_AP_RO ARM_PTE_BLOCK_AP(ARM_AP_RO)
-
-#define ML_PERM_RW   (_ML_PERM_COMMON |                       ARM_PTE_BLOCK_XN)
-#define ML_PERM_RO   (_ML_PERM_COMMON | ARM_PTE_BLOCK_AP_RO | ARM_PTE_BLOCK_XN)
-#define ML_PERM_RX   (_ML_PERM_COMMON | ARM_PTE_BLOCK_AP_RO                   )
-
-#define ML_PERM_TBL   ML_PERM_RW
-#define ML_PERM_MASK (_ML_PERM_COMMON | ARM_PTE_BLOCK_AP_RO | ARM_PTE_BLOCK_XN)
-
-#define ML_PERM_PRESENT(_flags)   (((_flags) & ARM_PTE_VALID) != 0)
-#define ML_PERM_WRITEABLE(_flags) (((_flags) & ARM_PTE_BLOCK_AP_RO) == 0)
-
-#define ML_PTE_2_PFN(_pte)    (((_pte) & ARM_PTE_PFN_MASK) >> PT_PTE_PFN_SHIFT)
 
 #endif
 
@@ -315,7 +299,7 @@ MonLoaderError MonLoader_Process(MonLoaderHeader *header, unsigned numVCPUs,
  *
  *----------------------------------------------------------------------
  */
-static INLINE size_t
+static inline size_t
 MonLoader_GetFixedHeaderSize(void)
 {
    return sizeof(MonLoaderHeader);
@@ -332,7 +316,7 @@ MonLoader_GetFixedHeaderSize(void)
  *
  *----------------------------------------------------------------------
  */
-static INLINE size_t
+static inline size_t
 MonLoader_GetFullHeaderSize(MonLoaderHeader *header)
 {
    return MonLoader_GetFixedHeaderSize() +

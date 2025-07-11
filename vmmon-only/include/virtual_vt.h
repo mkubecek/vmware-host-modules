@@ -1,5 +1,6 @@
 /*********************************************************
- * Copyright (C) 2008-2023 VMware, Inc. All rights reserved.
+ * Copyright (c) 2008-2023 Broadcom. All Rights Reserved.
+ * The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -37,7 +38,7 @@
  * Virtualized VT support
  */
 
-#define VVT_NUM_MSRS                 (MSR_VMX_VMFUNC - MSR_VMX_BASIC + 1)
+#define VVT_NUM_MSRS                 (MSR_VMX_EXIT_CTLS2 - MSR_VMX_BASIC + 1)
 
 #define VVT_VMCS_ID                  CONST64U(1)
 #define VVT_VMCS_SIZE                ((uint64)(PAGE_SIZE))
@@ -84,6 +85,8 @@
 #define VVT_EXIT_CTLS1               VVT_TRUE_EXIT_CTLS1
 #define VVT_EXIT_CTLS                QWORD(VVT_EXIT_CTLS1,                  \
                                            VVT_EXIT_CTLS0)
+
+#define VVT_EXIT_CTLS2               MSR_VMX_EXIT_CTLS2_REPORT_FRACT_SHSTK
 
 #define VVT_ENTRY_CTLS0              (VT_ENTRY_CTLS_DEFAULT1 |              \
                                       VVT_TRUE_ENTRY_CTLS0)
@@ -314,7 +317,7 @@ typedef struct {
  *
  *----------------------------------------------------------------------
  */
-static INLINE Bool
+static inline Bool
 VVT_SupportedFromFeatures(uint64 basic, uint64 misc, uint64 cr0Fixed0,
                           uint64 cr0Fixed1, uint64 cr4Fixed0,
                           uint64 cr4Fixed1, uint64 secondary, uint64 eptVPID,

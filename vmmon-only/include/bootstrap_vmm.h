@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 2015,2017 VMware, Inc. All rights reserved.
+ * Copyright (C) 2015,2017,2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -19,7 +19,7 @@
 /*
  * bootstrap_vmm.h --
  *
- *    Public VMM bootstrap declarations.
+ *      Public VMM bootstrap declarations.
  */
 
 #ifndef _BOOTSTRAP_VMM_H
@@ -60,6 +60,6 @@ typedef struct BSVMM_HostParams {
    BSVMM_GDTInit    gdtInit;
 } BSVMM_HostParams;
 
-BSVMM_HostParams* BSVMM_Validate(void *buf, uint32 nbytes);
+BSVMM_HostParams *BSVMM_Validate(void *buf, uint32 nbytes);
 
 #endif

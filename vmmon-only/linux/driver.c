@@ -1,5 +1,6 @@
 /*********************************************************
- * Copyright (C) 1998-2022 VMware, Inc. All rights reserved.
+ * Copyright (c) 1998-2024 Broadcom. All Rights Reserved.
+ * The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -345,7 +346,7 @@ LinuxDriverExit(void)
 
    Log("Module %s: unloaded\n", vmmon_miscdev.name);
 
-   del_timer_sync(&tscTimer);
+   timer_delete_sync(&tscTimer);
 
    Vmx86_CleanupHVIOBitmap();
    Task_Terminate();

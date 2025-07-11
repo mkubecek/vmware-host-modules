@@ -1,5 +1,6 @@
 /*********************************************************
- * Copyright (C) 1998-2021 VMware, Inc. All rights reserved.
+ * Copyright (c) 1998-2024 Broadcom. All Rights Reserved.
+ * The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -218,12 +219,13 @@ extern int VNetProc_Init(void);
 
 extern void VNetProc_Cleanup(void);
 
+
 int VNetNetIf_Create(char *devName, VNetPort **ret, int hubNum);
 int VNetUserIf_Create(VNetPort **ret);
 int VNetBridge_Create(const char *devName, uint32 flags, VNetJack *hubJack,
-		      VNetPort **ret);
+                      VNetPort **ret);
 int VNetUserListener_Create(uint32 classMask, VNetJack *hubJack,
-			    VNetPort **port);
+                            VNetPort **port);
 
 
 /*

@@ -1,5 +1,6 @@
 /*********************************************************
- * Copyright (C) 1998-2014,2016-2023 VMware, Inc. All rights reserved.
+ * Copyright (c) 1998-2024 Broadcom. All Rights Reserved.
+ * The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -85,7 +86,7 @@
 
 
 /* Checked against the Intel manual and GCC --hpreg */
-static INLINE void
+static inline void
 _Set_GDT(_GETSET_DTR_TYPE *dtr)
 {
    __asm__(
@@ -96,7 +97,7 @@ _Set_GDT(_GETSET_DTR_TYPE *dtr)
 }
 
 /* Checked against the Intel manual and GCC --hpreg */
-static INLINE void
+static inline void
 _Set_IDT(_GETSET_DTR_TYPE *dtr)
 {
    __asm__(
@@ -111,7 +112,7 @@ _Set_IDT(_GETSET_DTR_TYPE *dtr)
  * volatile because there's a hidden input (the [IG]DTR) that can change
  * without the compiler knowing it.
  */
-static INLINE void
+static inline void
 _Get_GDT(_GETSET_DTR_TYPE *dtr)
 {
    __asm__ __volatile__(
@@ -125,7 +126,7 @@ _Get_GDT(_GETSET_DTR_TYPE *dtr)
  * volatile because the [IG]DT can change without the compiler knowing it
  * (when we use l[ig]dt).
  */
-static INLINE void
+static inline void
 _Get_IDT(_GETSET_DTR_TYPE *dtr)
 {
    __asm__ __volatile__(
@@ -153,7 +154,7 @@ _Get_IDT(_GETSET_DTR_TYPE *dtr)
  * volatile because the LDT can change without the compiler knowing it
  * (when we use lldt).
  */
-static INLINE void
+static inline void
 _GET_LDT(Selector * const result)
 {
    __asm__ __volatile__("sldt %0"
@@ -168,7 +169,7 @@ _GET_LDT(Selector * const result)
 
 
 #define _BUILD_SET_R(func, reg)        \
-   static INLINE void                  \
+   static inline void                  \
    func(uintptr_t r)                   \
    {                                   \
       __asm__("mov %0, %%" #reg        \
@@ -184,7 +185,7 @@ _GET_LDT(Selector * const result)
  * gcc that smsw clobbers cr0 for example).
  */
 #define _BUILD_GET_R(func, reg)                         \
-   static INLINE uintptr_t                              \
+   static inline uintptr_t                              \
    func(void)                                           \
    {                                                    \
       uintptr_t result;                                 \
@@ -252,7 +253,7 @@ _BUILD_GET_R(_GET_DR7, dr7)
  *      time install better type checking.
  */
 #define _BUILD_GET_SEG(func, reg)                \
-   static INLINE Selector                        \
+   static inline Selector                        \
    func(void)                                    \
    {                                             \
       Selector result;                           \
@@ -285,7 +286,7 @@ _BUILD_GET_SEG(GET_SS, ss)
 
    volatile because the content of TR can change without the compiler knowing
    it (when we use task gates). */
-static INLINE void
+static inline void
 _GET_TR(Selector * const result)
 {
    __asm__ __volatile__("str %0"
@@ -302,7 +303,7 @@ _GET_TR(Selector * const result)
 
    We use this to restore interrupts, so this cannot be reordered around
    by gcc */
-static INLINE void
+static inline void
 _Set_flags(uintptr_t f)
 {
    __asm__ __volatile__(
@@ -321,7 +322,7 @@ _Set_flags(uintptr_t f)
    volatile because gcc 2.7.2.3 doesn't know when eflags are modified (it
    seems to ignore the "cc" clobber). gcc 2.95.2 is ok: it optimize 2
    successive calls only if there is no instructions in between. */
-static INLINE uintptr_t
+static inline uintptr_t
 _Get_flags(void)
 {
    uintptr_t result;
@@ -341,20 +342,20 @@ _Get_flags(void)
    var = _Get_flags();       \
 } while (0)
 
-static INLINE Bool
+static inline Bool
 HwInterruptsEnabled(uint32 eflags)
 {
    return (eflags & EFLAGS_IF) != 0;
 }
 
-static INLINE void
+static inline void
 HwInterruptsDisable(uint64 *rflags)
 {
    *rflags &= ~EFLAGS_IF;
 }
 
 /* Checked against the Intel manual and GCC --hpreg */
-static INLINE void
+static inline void
 CLTS(void)
 {
    __asm__ __volatile__ ("clts");
@@ -376,7 +377,7 @@ CLTS(void)
 #define RETURN_FROM_INT()   __asm__ __volatile__("iret" :: )
 
 #ifdef VM_X86_64
-static INLINE uint64
+static inline uint64
 GET_SSP(void)
 {
    uint64 ssp = 0x3; /* INVALID_SSP */
@@ -396,28 +397,28 @@ GET_SSP(void)
 #elif defined _MSC_VER  /* !__GNUC__ */
 
 #define _BUILD_SET_DR(func, reg)                      \
-   static INLINE void                                 \
+   static inline void                                 \
    func(uintptr_t r)                                  \
    {                                                  \
       __writedr(reg, r);                              \
    }
 
 #define _BUILD_GET_DR(func, reg)                      \
-   static INLINE uintptr_t                            \
+   static inline uintptr_t                            \
    func(void)                                         \
    {                                                  \
       return __readdr(reg);                           \
    }
 
 #define _BUILD_SET_CR(func, reg)                      \
-   static INLINE void                                 \
+   static inline void                                 \
    func(uintptr_t r)                                  \
    {                                                  \
       __writecr##reg(r);                              \
    }
 
 #define _BUILD_GET_CR(func, reg)                      \
-   static INLINE uintptr_t                            \
+   static inline uintptr_t                            \
    func(void)                                         \
    {                                                  \
       return __readcr##reg();                         \
@@ -448,25 +449,25 @@ _BUILD_GET_CR(_GET_CR3, 3);
 _BUILD_GET_CR(_GET_CR4, 4);
 _BUILD_GET_CR(_GET_CR8, 8);
 
-static INLINE void
+static inline void
 _Set_GDT(_GETSET_DTR_TYPE *dtr)
 {
    _lgdt(dtr);
 }
 
-static INLINE void
+static inline void
 _Get_GDT(_GETSET_DTR_TYPE *dtr)
 {
    _sgdt(dtr);
 }
 
-static INLINE void
+static inline void
 _Set_IDT(_GETSET_DTR_TYPE *dtr)
 {
    __lidt(dtr);
 }
 
-static INLINE void
+static inline void
 _Get_IDT(_GETSET_DTR_TYPE *dtr)
 {
    __sidt(dtr);
@@ -524,7 +525,7 @@ _Get_IDT(_GETSET_DTR_TYPE *dtr)
 #define SET_CR4(expr) SET_CR_DR(CR, 4, expr)
 #define SET_CR8(expr) SET_CR_DR(CR, 8, expr)
 
-static INLINE Bool
+static inline Bool
 INTERRUPTS_ENABLED(void)
 {
 #if !defined(USERLEVEL)
@@ -562,7 +563,7 @@ INTERRUPTS_ENABLED(void)
 
 
 #if defined (__GNUC__)
-static INLINE unsigned
+static inline unsigned
 CURRENT_CPL(void)
 {
    return SELECTOR_RPL(GET_CS());
@@ -570,7 +571,7 @@ CURRENT_CPL(void)
 #endif
 
 
-static INLINE uint64
+static inline uint64
 RDPMC(int counter)
 {
 #ifdef __GNUC__
@@ -603,7 +604,7 @@ RDPMC(int counter)
 
 
 #if defined(VMM) || defined(VMKERNEL) || defined(FROBOS) || defined (ULM)
-static INLINE uint64
+static inline uint64
 __XGETBV(int cx)
 {
 #ifdef __GNUC__
@@ -629,7 +630,7 @@ __XGETBV(int cx)
 #endif
 }
 
-static INLINE void
+static inline void
 __XSETBV(int cx, uint64 val)
 {
 #ifdef __GNUC__
@@ -643,7 +644,7 @@ __XSETBV(int cx, uint64 val)
 #endif
 }
 
-static INLINE uint64
+static inline uint64
 GET_XCR0(void)
 {
    return __XGETBV(0);
@@ -651,7 +652,7 @@ GET_XCR0(void)
 
 #define SET_XCR0(val) __XSETBV(0, val)
 
-static INLINE void
+static inline void
 SET_XCR0_IF_NEEDED(uint64 newVal, uint64 oldVal)
 {
 #ifndef VMM_BOOTSTRAP
@@ -664,7 +665,7 @@ SET_XCR0_IF_NEEDED(uint64 newVal, uint64 oldVal)
 #endif
 
 
-static INLINE uint32
+static inline uint32
 RDTSCP_AuxOnly(void)
 {
 #ifdef __GNUC__
@@ -686,7 +687,7 @@ RDTSCP_AuxOnly(void)
 }
 
 
-static INLINE uint64
+static inline uint64
 RDTSCP(void)
 {
 #ifdef __GNUC__
@@ -706,27 +707,20 @@ RDTSCP(void)
 }
 
 
-static INLINE void
+static inline void
 MONITOR(void *addr, uint32 extensions, uint32 hints)
 {
-   /*
-    * Flush the monitored cache line to work around hardware bug
-    * on Dunnington CPUs which can cause false wakeups.
-    * (cf. PowerSetCState in the vmkernel.)
-    */
 #ifdef __GNUC__
    __asm__ __volatile__(
-      "clflush (%0);"
       "monitor" : : "a" (addr), "c" (extensions), "d" (hints)
    );
 #elif defined _MSC_VER
-   _mm_clflush(addr);
    _mm_monitor(addr, extensions, hints);
 #endif
 }
 
 
-static INLINE void
+static inline void
 MWAIT(uint32 extensions, uint32 hints)
 {
 #ifdef __GNUC__
@@ -739,7 +733,7 @@ MWAIT(uint32 extensions, uint32 hints)
 }
 
 
-static INLINE void
+static inline void
 MONITORX(void *addr, uint32 extensions, uint32 hints)
 {
 #ifdef __GNUC__
@@ -752,7 +746,7 @@ MONITORX(void *addr, uint32 extensions, uint32 hints)
 }
 
 
-static INLINE void
+static inline void
 MWAITX(uint32 extensions, uint32 hints, uint32 timeout)
 {
 #ifdef __GNUC__

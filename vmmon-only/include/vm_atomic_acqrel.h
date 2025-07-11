@@ -166,7 +166,7 @@ Atomic_Read8Acquire(Atomic_uint8 const *var)  // IN:
    uint8 val;
 
 #if defined VM_ATOMIC_USE_C11
-   val = atomic_load_explicit((_Atomic uint8 *)&var->value,
+   val = atomic_load_explicit((_Atomic(uint8) *)&var->value,
                               memory_order_acquire);
 #elif defined __GNUC__
 #  if defined __i386__ || defined __x86_64__
@@ -228,7 +228,7 @@ Atomic_Read16Acquire(Atomic_uint16 const *var)  // IN:
    ASSERT((uintptr_t)var % 2 == 0);
 
 #if defined VM_ATOMIC_USE_C11
-   val = atomic_load_explicit((_Atomic uint16 *)&var->value,
+   val = atomic_load_explicit((_Atomic(uint16) *)&var->value,
                               memory_order_acquire);
 #elif defined __GNUC__
 #  if defined __x86_64__ || defined __i386__
@@ -290,7 +290,7 @@ Atomic_Read32Acquire(Atomic_uint32 const *var)  // IN:
    ASSERT((uintptr_t)var % 4 == 0);
 
 #if defined VM_ATOMIC_USE_C11
-   val = atomic_load_explicit((_Atomic uint32 *)&var->value,
+   val = atomic_load_explicit((_Atomic(uint32) *)&var->value,
                               memory_order_acquire);
 #elif defined __GNUC__
    /*
@@ -361,7 +361,7 @@ Atomic_Read64Acquire(Atomic_uint64 const *var)  // IN:
    ASSERT((uintptr_t)var % 8 == 0);
 
 #if defined VM_ATOMIC_USE_C11
-   val = atomic_load_explicit((_Atomic uint64 *)&var->value,
+   val = atomic_load_explicit((_Atomic(uint64) *)&var->value,
                               memory_order_acquire);
 #elif defined __GNUC__
 #  if defined __x86_64__
@@ -458,7 +458,7 @@ Atomic_Write8Release(Atomic_uint8 *var,  // OUT:
                      uint8 val)          // IN:
 {
 #if defined VM_ATOMIC_USE_C11
-   atomic_store_explicit((_Atomic uint8 *)&var->value, val,
+   atomic_store_explicit((_Atomic(uint8) *)&var->value, val,
                          memory_order_release);
 #elif defined __GNUC__
 #  if defined __i386__ || defined __x86_64__
@@ -517,7 +517,7 @@ Atomic_Write16Release(Atomic_uint16 *var,  // OUT:
    ASSERT((uintptr_t)var % 2 == 0);
 
 #if defined VM_ATOMIC_USE_C11
-   atomic_store_explicit((_Atomic uint16 *)&var->value, val,
+   atomic_store_explicit((_Atomic(uint16) *)&var->value, val,
                          memory_order_release);
 #elif defined __GNUC__
 #  if defined __x86_64__ || defined __i386__
@@ -576,7 +576,7 @@ Atomic_Write32Release(Atomic_uint32 *var,  // OUT:
    ASSERT((uintptr_t)var % 4 == 0);
 
 #if defined VM_ATOMIC_USE_C11
-   atomic_store_explicit((_Atomic uint32 *)&var->value, val,
+   atomic_store_explicit((_Atomic(uint32) *)&var->value, val,
                          memory_order_release);
 #elif defined __GNUC__
 #  if defined __x86_64__ || defined __i386__
@@ -640,7 +640,7 @@ Atomic_Write64Release(Atomic_uint64 *var,  // OUT:
    ASSERT((uintptr_t)var % 8 == 0);
 
 #if defined VM_ATOMIC_USE_C11
-   atomic_store_explicit((_Atomic uint64 *)&var->value, val,
+   atomic_store_explicit((_Atomic(uint64) *)&var->value, val,
                          memory_order_release);
 #elif defined __GNUC__
 #  if defined __x86_64__

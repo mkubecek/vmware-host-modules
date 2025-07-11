@@ -1,5 +1,6 @@
 /*********************************************************
- * Copyright (C) 1998-2014, 2016-2021 VMware, Inc. All rights reserved.
+ * Copyright (c) 1998-2014,2016-2021,2024 Broadcom. All Rights Reserved.
+ * The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -50,7 +51,7 @@ typedef uint32 Vcpuid;                 // VCPU number
 #define IS_BOOT_VCPUID(vcpuid)  ((vcpuid) == BOOT_VCPU_ID)
 
 #define MAX_VCPUS            2048
-#define MAX_CORES_PER_SOCKET  256
+#define MAX_CORES_PER_SOCKET  512
 #define MAX_VCPU_SOCKETS      128
 
 /*
@@ -60,7 +61,7 @@ typedef uint32 Vcpuid;                 // VCPU number
 #define MAX_SMALL_VM_VCPUS 128
 
 /* Supported limit. */
-#define MAX_SUPPORTED_VCPUS   768
+#define MAX_SUPPORTED_VCPUS   960
 
 #if defined __cplusplus
 } // extern "C"

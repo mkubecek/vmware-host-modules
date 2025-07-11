@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (C) 1998-2014,2019 VMware, Inc. All rights reserved.
+ * Copyright (C) 1998-2014,2019,2024 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -44,41 +44,41 @@
 #include "vm_asm_x86.h"
 
 
-static INLINE void
+static inline void
 SET_FS64(uint64 fs64)
 {
    X86MSR_SetMSR(MSR_FSBASE, fs64);
 }
 
 
-static INLINE void
+static inline void
 SET_GS64(uint64 gs64)
 {
    X86MSR_SetMSR(MSR_GSBASE, gs64);
 }
 
-static INLINE void
+static inline void
 SET_KernelGS64(uint64 kgs64)
 {
    X86MSR_SetMSR(MSR_KERNELGSBASE, kgs64);
 }
 
 
-static INLINE uint64
+static inline uint64
 GET_FS64(void)
 {
    return X86MSR_GetMSR(MSR_FSBASE);
 }
 
 
-static INLINE uint64
+static inline uint64
 GET_GS64(void)
 {
    return X86MSR_GetMSR(MSR_GSBASE);
 }
 
 
-static INLINE uint64
+static inline uint64
 GET_KernelGS64(void)
 {
    return X86MSR_GetMSR(MSR_KERNELGSBASE);

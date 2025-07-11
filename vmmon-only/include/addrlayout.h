@@ -90,7 +90,7 @@ typedef struct {
  *
  * This checking is only performed when using gcc.
  */
-#define REGION(name, length) static INLINE void name(void) { \
+#define REGION(name, length) static inline void name(void) { \
    ASSERT_ON_COMPILE(FIELD_PAGE_NUMBER(name##_REGION_MARKER) == \
                      REGION_FIELD_PAGE_NUMBER(name)); \
    ASSERT_ON_COMPILE((length % 512) == 0); \
@@ -269,31 +269,31 @@ enum {
  * range of a particular monitor stack.  (Don't adjust without
  * considering uint64 overflow when va is very high.)
  */
-static INLINE Bool
+static inline Bool
 AddrLayout_InMonStack(VA64 va, size_t len)
 {
    return MON_STACK_BASE <= va && va <= MON_STACK_TOP - len;
 }
 
-static INLINE Bool
+static inline Bool
 AddrLayout_InNMIStack(VA64 va, size_t len)
 {
    return va >= NMI_STACK_BASE && va <= NMI_STACK_TOP - len;
 }
 
-static INLINE Bool
+static inline Bool
 AddrLayout_InDFStack(VA64 va, size_t len)
 {
    return va >= DF_STACK_BASE && va <= DF_STACK_TOP - len;
 }
 
-static INLINE Bool
+static inline Bool
 AddrLayout_InMCStack(VA64 va, size_t len)
 {
    return va >= MC_STACK_BASE && va <= MC_STACK_TOP - len;
 }
 
-static INLINE Bool
+static inline Bool
 AddrLayout_InAMonitorStack(VA va, size_t len)
 {
    return AddrLayout_InMonStack(va, len)  ||

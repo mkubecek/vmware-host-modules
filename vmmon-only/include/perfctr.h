@@ -1,5 +1,6 @@
 /*********************************************************
- * Copyright (C) 1998-2012,2014-2019,2022 VMware, Inc. All rights reserved.
+ * Copyright (c) 1998-2024 Broadcom. All Rights Reserved.
+ * The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -36,19 +37,6 @@
 #include "perfctr_arch.h"
 
 #define PERF_EVENT_NAME_LEN                      64
-/*
- * nmiNo      -- vmm peer is not attempting to do nmi profiling this run.
- * nmiYes     -- vmm peer is doing nmi profiling and nmis are currently enabled.
- * nmiStopped -- vmm peer is doing nmi profiling, but nmis are temporarily
- *               disabled for safety reasons.
- */
-typedef enum {nmiNo = 0, nmiYes, nmiStopped} NMIStatus;
-typedef struct NMIShared { /* shared with vmx and vmkernel */
-   NMIStatus vmmStatus;
-   int32     nmiErrorCode;
-   int64     nmiErrorData;
-   NMI_SHARED_ARCH_FIELDS
-} NMIShared;
 
 /*
  * CrossProf: structures for unified profiling of vmm, vmx, and

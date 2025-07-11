@@ -1,5 +1,6 @@
 /*********************************************************
- * Copyright (C) 2002 VMware, Inc. All rights reserved.
+ * Copyright (c) 2002-2024 Broadcom. All Rights Reserved.
+ * The term "Broadcom" refers to Broadcom Inc. and/or its subsidiaries.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -86,9 +87,11 @@ static inline _syscall0(int, compat_yield);
 #   define for_each_process(p) for_each_task(p)
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 8, 0)
 #ifndef do_each_thread
 #   define do_each_thread(g, t) for_each_task(g) { t = g; do
 #   define while_each_thread(g, t) while (0) }
+#endif
 #endif
 
 

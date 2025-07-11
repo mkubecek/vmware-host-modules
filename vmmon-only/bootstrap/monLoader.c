@@ -1,5 +1,5 @@
 /*********************************************************
- * Copyright (c) 2015-2022 VMware, Inc. All rights reserved.
+ * Copyright (c) 2015-2023 VMware, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -53,6 +53,7 @@
 #error MonLoader cannot be built as part of this environment
 #endif
 
+#if !defined VMKERNEL || defined VMK_HAS_VMM
 #include "vm_basic_types.h"
 #include "monLoader.h"
 #include "vcpuid.h"
@@ -914,3 +915,4 @@ MonLoader_Process(MonLoaderHeader  *header,   // IN/OUT
    MonLoaderCallout_CleanUp(ctx.envCtx);
    return ret;
 }
+#endif

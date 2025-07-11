@@ -1,0 +1,70 @@
+--- Makefile
++++ Makefile
+@@ -43,7 +43,11 @@
+ endif
+ 
+ 
++ifdef KVERSION
++VM_UNAME = $(KVERSION)
++else
+ VM_UNAME = $(shell uname -r)
++endif
+ 
+ # Header directory for the running kernel
+ ifdef LINUXINCLUDE
+--- driver.c
++++ driver.c
+@@ -268,7 +268,7 @@
+ /*
+  *----------------------------------------------------------------------
+  *
+- * init_module --
++ * LinuxDriverInit --
+  *
+  *      linux module entry point. Called by /sbin/insmod command.
+  *      Initializes module and Registers this driver for a
+@@ -285,7 +285,7 @@
+  */
+ 
+ int
+-init_module(void)
++LinuxDriverInit(void)
+ {
+    int retval;
+ 
+@@ -347,7 +347,7 @@
+ /*
+  *----------------------------------------------------------------------
+  *
+- * cleanup_module --
++ * LinuxDriverExit --
+  *
+  *      Called by /sbin/rmmod.  Unregisters this driver for a
+  *      vnet major #, and deinitializes the modules.  The 64-bit
+@@ -364,7 +364,7 @@
+  */
+ 
+ void
+-cleanup_module(void)
++LinuxDriverExit(void)
+ {
+    unregister_chrdev(VNET_MAJOR_NUMBER, "vmnet");
+    VNetProtoUnregister();
+@@ -1659,3 +1659,5 @@
+  * by default (i.e., neither mkinitrd nor modprobe will accept it).
+  */
+ MODULE_INFO(supported, "external");
++module_init(LinuxDriverInit);
++module_exit(LinuxDriverExit);
+--- userif.c
++++ userif.c
+@@ -1030,6 +1030,9 @@
+    userIf = (VNetUserIF *)port->jack.private;
+    hubJack = port->jack.peer;
+ 
++   /* never send link down events */
++   if (!linkUp) return 0;
++
+    if (port->jack.state == FALSE || hubJack == NULL) {
+       return -EINVAL;
+    }
