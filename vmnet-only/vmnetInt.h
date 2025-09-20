@@ -41,9 +41,18 @@
     compat_skb_set_network_header(skb, sizeof (struct ethhdr)),  \
     dev_queue_xmit(skb)                                   \
   )
+
+#if defined(CONFIG_NET) && defined(dev_base_lock)
+/* Older kernels: dev_base_lock present */
 #define dev_lock_list()    read_lock(&dev_base_lock)
 #define dev_unlock_list()  read_unlock(&dev_base_lock)
 
+#else
+/* Newer kernels removed dev_base_lock -> use rtnl locking as fallback */
+#include <linux/rtnetlink.h>
+#define dev_lock_list()    rtnl_lock()
+#define dev_unlock_list()  rtnl_unlock()
+#endif
 
 extern struct proto vmnet_proto;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0) || defined(sk_net_refcnt)

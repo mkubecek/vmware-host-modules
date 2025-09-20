@@ -279,7 +279,7 @@ VNetRemovePortFromList(const VNetPort *port) // IN: port to remove from list
 /*
  *----------------------------------------------------------------------
  *
- * init_module --
+ * vmnet_module_init --
  *
  *      linux module entry point. Called by /sbin/insmod command.
  *      Initializes module and Registers this driver for a
@@ -295,8 +295,8 @@ VNetRemovePortFromList(const VNetPort *port) // IN: port to remove from list
  *----------------------------------------------------------------------
  */
 
-int
-init_module(void)
+static int
+vmnet_module_init(void)
 {
    int retval;
 
@@ -353,12 +353,13 @@ err_proto:
    VNetProc_Cleanup();
    return retval;
 }
+module_init(vmnet_module_init);
 
 
 /*
  *----------------------------------------------------------------------
  *
- * cleanup_module --
+ * vmnet_module_cleanup --
  *
  *      Called by /sbin/rmmod.  Unregisters this driver for a
  *      vnet major #, and deinitializes the modules.  The 64-bit
@@ -374,13 +375,14 @@ err_proto:
  *----------------------------------------------------------------------
  */
 
-void
-cleanup_module(void)
+static void
+vmnet_module_cleanup(void)
 {
    unregister_chrdev(VNET_MAJOR_NUMBER, "vmnet");
    VNetProtoUnregister();
    VNetProc_Cleanup();
 }
+module_exit(vmnet_module_cleanup);
 
 
 /*

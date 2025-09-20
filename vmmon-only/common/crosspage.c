@@ -671,7 +671,16 @@ CrossPage_CodePage(void)
      [crossGDTHKLADesc]   "i" (offsetof(VMCrossPageData, crossGDTHKLADesc)),
      [switchHostIDTR]     "i" (offsetof(VMCrossPageData, switchHostIDTR))
    );
+#ifdef CONFIG_RETHUNK
+   /*
+    * With CONFIG_RETHUNK, objtool requires an explicit return instruction
+    * instead of relying on __builtin_unreachable(). Otherwise we get
+    * "'naked' return found in MITIGATION_RETHUNK build".
+    */
+   __asm__ __volatile__("ret\n");
+#else
    NOT_REACHED_MINIMAL();
+#endif
 }
 
 #ifdef STACK_FRAME_NON_STANDARD

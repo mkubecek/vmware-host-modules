@@ -1,3 +1,4 @@
+#include "../include/compat_entropy.h"
 /*********************************************************
  * Copyright (C) 1998-2022 VMware, Inc. All rights reserved.
  *

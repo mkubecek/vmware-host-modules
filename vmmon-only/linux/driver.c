@@ -34,6 +34,7 @@
 
 #include "compat_version.h"
 #include "compat_module.h"
+#include "compat_entropy.h"
 
 #include "usercalldefs.h"
 
@@ -345,7 +346,11 @@ LinuxDriverExit(void)
 
    Log("Module %s: unloaded\n", vmmon_miscdev.name);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 4)
+   timer_delete_sync(&tscTimer);
+#else
    del_timer_sync(&tscTimer);
+#endif
 
    Vmx86_CleanupHVIOBitmap();
    Task_Terminate();
@@ -1431,3 +1436,18 @@ MODULE_LICENSE("GPL v2");
 MODULE_INFO(supported, "external");
 module_init(LinuxDriverInit);
 module_exit(LinuxDriverExit);
+
+/* Compatibility: provide a non-static implementation of
+ * random_get_entropy_fallback so every TU can link to it.
+ */
+#ifndef HAVE_RANDOM_GET_ENTROPY_FALLBACK
+#include <linux/random.h>
+unsigned long random_get_entropy_fallback(void)
+{
+#if defined(CONFIG_ARCH_RANDOM)
+    return random_get_entropy();
+#else
+    return 0;
+#endif
+}
+#endif

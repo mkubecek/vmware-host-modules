@@ -78,5 +78,17 @@ typedef pgd_t compat_p4d_t;
 #define VM_PAGE_KERNEL_EXEC PAGE_KERNEL_EXEC
 #endif
 
+#ifndef pgd_large
+#define pgd_large(x) (0)
+#endif
+#ifndef p4d_large
+#define p4d_large(x) (0)
+#endif
+#ifndef pud_large
+#define pud_large(x) (0)
+#endif
+#ifndef pmd_large
+#define pmd_large(x) (0)
+#endif
 
 #endif /* __COMPAT_PGTABLE_H__ */
