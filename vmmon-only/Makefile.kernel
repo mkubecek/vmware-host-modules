@@ -21,6 +21,7 @@ CC_OPTS += -DVMMON -DVMCORE
 
 INCLUDE := -I$(SRCROOT)/include -I$(SRCROOT)/include/x86 -I$(SRCROOT)/common -I$(SRCROOT)/linux
 EXTRA_CFLAGS := $(CC_OPTS) $(INCLUDE)
+ccflags-y := $(CC_OPTS) $(INCLUDE)
 
 obj-m += $(DRIVER).o
 
