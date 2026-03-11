@@ -1,0 +1,35 @@
+#!/usr/bin/make -f
+##########################################################
+# Copyright (C) 1998,2015,2020 VMware, Inc. All rights reserved.
+#
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the
+# Free Software Foundation version 2 and no later version.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+# or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+# for more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+#
+##########################################################
+
+CC_OPTS += -DVMMON -DVMCORE
+
+INCLUDE := -I$(SRCROOT)/include -I$(SRCROOT)/include/x86 -I$(SRCROOT)/common -I$(SRCROOT)/linux
+EXTRA_CFLAGS := $(CC_OPTS) $(INCLUDE)
+
+obj-m += $(DRIVER).o
+
+$(DRIVER)-y := $(subst $(SRCROOT)/, , $(patsubst %.c, %.o, \
+		$(wildcard $(SRCROOT)/linux/*.c $(SRCROOT)/common/*.c \
+		$(SRCROOT)/bootstrap/*.c)))
+
+clean:
+	rm -rf $(wildcard $(DRIVER).mod.c $(DRIVER).ko .tmp_versions .cache.mk \
+		Module.symvers Modules.symvers Module.markers modules.order \
+		$(foreach dir,linux/ common/ bootstrap/ \
+		./,$(addprefix $(dir),.*.cmd .*.o.flags *.o)))
